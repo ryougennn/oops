@@ -59,6 +59,33 @@ Public surface kept small; items not used by the samples or demo were kept delib
 - Reserve the `oopshell` package ID on nuget.org.
 - Pick minimum sway/niri versions (§15); current assumption: whatever Fedora 44 ships (sway 1.11, niri 26.04).
 
+## Profiling (2026-11-18)
+
+`samples/oops-stress` drives one subsystem hard and prints CPU, allocations, GCs, RSS and fds; `tools/stress.sh <binary> <scenario>` runs it in a throwaway headless sway (GPU renderer) with its own session bus. AOT builds, RX 7900 XT, 800x600 headless output, 4 surfaces at 60 fps unless noted.
+
+| Scenario | Result |
+|---|---|
+| `frames raw` (ShmSwapchain only) | 28 µs CPU/frame, 105 B/frame allocated (the per-frame `WlCallback`), no GCs |
+| `frames shm/gl/vulkan`, clear only (library overhead) | 40 / 92 / 132 µs CPU/frame, 105 B/frame on every path |
+| same with a text-heavy scene | 200 / 270 / 290 µs; the 5.4 KB/frame is the scene's strings and SkiaSharp text calls |
+| resize storm (300 sizes) on each backend | keeps 60 fps, no errors |
+| `input` (virtual-pointer flood) | ~590k motion events/s, ~1 µs and 0 B per event |
+| `churn` (toplevel + layer + popup + 3 Skia surfaces, create/draw/destroy) | ~1.1 ms/round; RSS levels off (same after 1000 and 5000 rounds), heap and fds flat |
+| `outputs` (hotplug with a bar per output) | bars follow outputs, no growth |
+| `notify` (NotificationServer, 20k notifications) | ~3.5k/s incl. the client in the same process; heap flat once expired |
+
+RSS grows by up to ~20 MB under steady allocation before it levels off: that is the GC's default gen0 budget, not a leak (with `DOTNET_GCgen0size=100000`, i.e. 1 MB in hex, it stays flat). NativeAOT does not take this setting from the project file; set the environment variable if footprint matters more than GC frequency.
+
+oops95 under load (headless sway, GL): idle 0% CPU and 0 wakeups; 40 windows retitled 20×/s: 2.4% CPU (was 10.4%, see below); 1000 Hz pointer sweep over the taskbar: +0.4%; cold start to control socket ~55 ms.
+
+Found and fixed by profiling:
+- oops95 drew pixel-art icons as one rect per pixel (~256 draw calls per icon): sprites are now rasterized once (4x less CPU per taskbar repaint). Theme colors and the dither shader are cached instead of re-parsed/re-created per draw.
+- oops95 kept every notification's buttons forever (`Toasts.buttons` was never pruned): a leak of one entry per notification, found with `dotnet-gcdump` diffs.
+- oops95 task buttons narrower than their icon drew over their neighbours: button content is clipped.
+- `IconTheme.Find` stat()ed every theme directory per lookup (~2 ms/icon, a ~200 ms stall the first time the Programs menu opened): directory listings are read once (9x faster).
+
+Not a bug: a floating window resized by `swaymsg resize set` drifts off-screen and sway (correctly) stops sending frame callbacks, which looks like a stalled renderer.
+
 ## Known limitations
 
 - `Popup.Reposition` needs xdg_popup v3 (throws otherwise; recreate the popup).

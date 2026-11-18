@@ -11,6 +11,9 @@ public sealed class IconTheme
     readonly List<ThemeData> chain = new();
     readonly IReadOnlyList<string> baseDirs;
     readonly Dictionary<(string, int, int), string?> cache = new();
+    // File names per directory (null = missing), read once: probing hundreds of theme directories with
+    // stat() per lookup cost ~2 ms per icon.
+    readonly Dictionary<string, HashSet<string>?> listings = new();
 
     sealed record ThemeData(string Name, List<string> Roots, List<ThemeDirectory> Directories);
 
@@ -76,7 +79,7 @@ public sealed class IconTheme
         return result;
     }
 
-    static string? FindInTheme(ThemeData theme, string icon, int size, int scale)
+    string? FindInTheme(ThemeData theme, string icon, int size, int scale)
     {
         foreach (var dir in theme.Directories.Where(d => d.Matches(size, scale)))
         {
@@ -107,13 +110,16 @@ public sealed class IconTheme
         return null;
     }
 
-    static string? Existing(string dir, string icon)
+    string? Existing(string dir, string icon)
     {
+        if (!listings.TryGetValue(dir, out var names))
+            listings[dir] = names = Directory.Exists(dir) ? Directory.EnumerateFiles(dir).Select(f => System.IO.Path.GetFileName(f)).ToHashSet() : null;
+        if (names is null)
+            return null;
         foreach (var ext in Extensions)
         {
-            string path = System.IO.Path.Combine(dir, icon + ext);
-            if (File.Exists(path))
-                return path;
+            if (names.Contains(icon + ext))
+                return System.IO.Path.Combine(dir, icon + ext);
         }
         return null;
     }

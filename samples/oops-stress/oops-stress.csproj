@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>oops-stress</AssemblyName>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(RepoRoot)src/oopshell.Skia/oopshell.Skia.csproj" />
+    <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Notifications/oopshell.Services.Notifications.csproj" />
+  </ItemGroup>
+</Project>
