@@ -42,6 +42,38 @@ public class SkiaTests(SwayFixture sway)
         return sway.Screenshot();
     }
 
+    /// <summary>
+    /// Regression: an EGL window created before the first configure presented its first frame from a 1×1
+    /// buffer (stretched to a black rectangle by the viewport). EGL surfaces are now created lazily.
+    /// </summary>
+    [Fact]
+    [Trait("Requires", "GPU")]
+    public void Gpu_popup_first_frame_has_the_configured_size()
+    {
+        using var app = sway.Connect();
+        using var window = new Toplevel(app);
+        var windowFrames = Draw.SolidColor(window, 0xFF000000);
+        app.RunUntil(() => windowFrames() >= 1 && window.LogicalSize.Width == 800, what: "window");
+
+        using var popup = new Popup(window, new PopupOptions { Size = new System.Drawing.Size(150, 100), AnchorRect = new System.Drawing.Rectangle(100, 100, 1, 1) });
+        using var skia = new SkiaSurface(popup, SkiaBackend.Auto);
+        Assert.SkipUnless(skia.IsGpu, "EGL unavailable");
+        int frames = 0;
+        popup.Render += frame =>
+        {
+            if (skia.BeginFrame(frame) is not { } canvas)
+                return;
+            canvas.Clear(new SKColor(0x10, 0xC0, 0x20));
+            skia.EndFrame();
+            frames++;
+        };
+        app.RunUntil(() => frames >= 1, what: "popup frame");
+        app.RunFor(100);
+        var shot = sway.Screenshot();
+        Assert.Equal((0x10, 0xC0, 0x20), shot[101, 101]);
+        Assert.Equal((0x10, 0xC0, 0x20), shot[248, 198]);
+    }
+
     [Fact]
     public void Shm_backend_matches_golden()
     {

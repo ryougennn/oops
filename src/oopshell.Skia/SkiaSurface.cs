@@ -78,8 +78,11 @@ public sealed class SkiaSurface : IDisposable
         Rectangle repair;
         if (egl is not null)
         {
-            egl.MakeCurrent();
             egl.Resize(frame.BufferSize);
+            egl.MakeCurrent();
+            // The GRContext is shared by every GPU surface of the app; after switching EGL surfaces its cached
+            // GL state (bound framebuffer, viewport, scissor) is stale.
+            grContext!.ResetContext();
             if (gpuSurface is null || gpuSize != frame.BufferSize)
             {
                 gpuSurface?.Dispose();

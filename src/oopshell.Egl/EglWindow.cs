@@ -156,15 +156,28 @@ public sealed unsafe class EglWindow : IDisposable
     {
         this.surface = surface;
         Display = display;
-        size = surface.BufferSize.IsEmpty ? new Size(1, 1) : surface.BufferSize;
+        size = surface.BufferSize;
+    }
+
+    /// <summary>
+    /// Creates the wl_egl_window and EGLSurface on first use, at the real size. Created any earlier (before the
+    /// first configure, at a placeholder size), Mesa may present its first frame from a buffer of the old size.
+    /// </summary>
+    void EnsureCreated()
+    {
+        if (eglSurface != 0)
+            return;
+        if (size.IsEmpty)
+            size = surface.BufferSize.IsEmpty ? new Size(1, 1) : surface.BufferSize;
         window = wl_egl_window_create(surface.NativeSurface, size.Width, size.Height);
         if (window == 0)
             throw new InvalidOperationException("wl_egl_window_create failed.");
-        eglSurface = eglCreateWindowSurface(display.Handle, display.Config, window, null);
+        eglSurface = eglCreateWindowSurface(Display.Handle, Display.Config, window, null);
         if (eglSurface == 0)
             throw EglDisplay.Error("eglCreateWindowSurface");
-        MakeCurrent();
-        eglSwapInterval(display.Handle, 0);
+        if (eglMakeCurrent(Display.Handle, eglSurface, eglSurface, Display.Context) == EGL_FALSE)
+            throw EglDisplay.Error("eglMakeCurrent");
+        eglSwapInterval(Display.Handle, 0);
     }
 
     /// <summary>Creates an EGL window for <paramref name="surface"/>. Throws <see cref="NotSupportedException"/> without EGL.</summary>
@@ -172,7 +185,7 @@ public sealed unsafe class EglWindow : IDisposable
 
     public EglDisplay Display { get; }
 
-    /// <summary><c>EGLSurface</c>.</summary>
+    /// <summary><c>EGLSurface</c> (created by the first <see cref="MakeCurrent"/>).</summary>
     public nint Handle => eglSurface;
 
     public Size Size => size;
@@ -180,6 +193,7 @@ public sealed unsafe class EglWindow : IDisposable
     public void MakeCurrent()
     {
         ObjectDisposedException.ThrowIf(disposed, this);
+        EnsureCreated();
         if (eglMakeCurrent(Display.Handle, eglSurface, eglSurface, Display.Context) == EGL_FALSE)
             throw EglDisplay.Error("eglMakeCurrent");
     }
@@ -190,7 +204,8 @@ public sealed unsafe class EglWindow : IDisposable
         if (bufferSize == size || bufferSize.IsEmpty)
             return;
         size = bufferSize;
-        wl_egl_window_resize(window, size.Width, size.Height, 0, 0);
+        if (window != 0)
+            wl_egl_window_resize(window, size.Width, size.Height, 0, 0);
     }
 
     /// <summary>Age of the back buffer (EGL_EXT_buffer_age): 0 = undefined contents. Call after <see cref="MakeCurrent"/>.</summary>
@@ -253,6 +268,8 @@ public sealed unsafe class EglWindow : IDisposable
         if (disposed)
             return;
         disposed = true;
+        if (eglSurface == 0)
+            return;
         eglMakeCurrent(Display.Handle, 0, 0, 0);
         eglDestroySurface(Display.Handle, eglSurface);
         wl_egl_window_destroy(window);
