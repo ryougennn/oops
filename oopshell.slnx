@@ -7,14 +7,16 @@
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/oopshell.Egl/oopshell.Egl.csproj" />
-    <Project Path="src/oopshell.Vulkan/oopshell.Vulkan.csproj" />
     <Project Path="src/oopshell.Native/oopshell.Native.csproj" />
     <Project Path="src/oopshell.Protocol/oopshell.Protocol.csproj" />
     <Project Path="src/oopshell.Scanner/oopshell.Scanner.csproj" />
     <Project Path="src/oopshell.Services.DBus/oopshell.Services.DBus.csproj" />
     <Project Path="src/oopshell.Services.Desktop/oopshell.Services.Desktop.csproj" />
     <Project Path="src/oopshell.Services.Notifications/oopshell.Services.Notifications.csproj" />
+    <Project Path="src/oopshell.Services.Power/oopshell.Services.Power.csproj" />
+    <Project Path="src/oopshell.Services.Tray/oopshell.Services.Tray.csproj" />
     <Project Path="src/oopshell.Skia/oopshell.Skia.csproj" />
+    <Project Path="src/oopshell.Vulkan/oopshell.Vulkan.csproj" />
     <Project Path="src/oopshell/oopshell.csproj" />
   </Folder>
   <Folder Name="/tests/">

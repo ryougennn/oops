@@ -7,5 +7,6 @@
     <ProjectReference Include="$(RepoRoot)src/oopshell.Skia/oopshell.Skia.csproj" />
     <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Notifications/oopshell.Services.Notifications.csproj" />
     <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Tray/oopshell.Services.Tray.csproj" />
+    <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Power/oopshell.Services.Power.csproj" />
   </ItemGroup>
 </Project>

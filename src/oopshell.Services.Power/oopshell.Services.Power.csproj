@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>oopshell.Services.Power</RootNamespace>
+    <Description>Battery and power state from UPower (laptop batteries, AC, and peripherals such as wireless mice) for oopshell shells.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../oopshell.Services.DBus/oopshell.Services.DBus.csproj" />
+  </ItemGroup>
+</Project>

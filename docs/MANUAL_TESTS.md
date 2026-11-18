@@ -30,6 +30,10 @@ Record results (date, compositor + version, GPU) at the bottom.
 - [ ] `kill -9` oops95 while locked: the session **stays locked** (compositor fallback). Recover per compositor docs (e.g. restart a locker from another VT). Do this last.
 - [ ] Optional: install `config/pam.d/oops95` to `/etc/pam.d/oops95` and lock again.
 
+## Battery (UPower)
+- [ ] On a laptop: the tray battery shows the charge; plugging/unplugging AC toggles the bolt; the tooltip shows the percentage and time left.
+- [ ] A wireless mouse/keyboard with a battery appears in the tooltip with its level.
+
 ## Hot reload
 - [ ] `dotnet watch run --project samples/HelloSkia`: change the clear color in `Scene.Draw` → window redraws live.
 - [ ] Make a rude edit (e.g. change a method signature): `dotnet watch` restarts; the window comes back cleanly.
