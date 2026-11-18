@@ -44,3 +44,10 @@ Short ADR-style log. Newest at the bottom.
 
 ### D12. Geometry types from System.Drawing
 - `Size`, `Point`, `Rectangle` come from `System.Drawing.Primitives` (part of the BCL, AOT-safe) instead of new oopshell types. Pointer positions stay `double`.
+
+### D13. SkiaSharp 3.119.4
+- `oopshell.Skia` pins SkiaSharp 3.119.4 (+ `SkiaSharp.NativeAssets.Linux`), the latest 3.x stable. 4.x exists but was not evaluated; 3.119.4 AOT-publishes with zero warnings.
+
+### D14. One GL context per app, one GRContext per EGLDisplay
+- Every `EglWindow` of an app uses the same `EGLContext` (made current with its own `EGLSurface`), so resources are shared without share-lists, and `SkiaSurface` keeps one `GRContext` per `EglDisplay`.
+- `EglDisplay` is terminated when its `OopsApp` is disposed (`OopsApp.Disposing`): Mesa caches EGLDisplays by `wl_display*` address and a new connection can reuse the address, which otherwise produced `invalid object` protocol errors.

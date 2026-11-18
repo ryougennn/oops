@@ -12,6 +12,8 @@ public class InputTests(SwayFixture sway)
         Environment.SetEnvironmentVariable("LC_ALL", "en_US.UTF-8");
         var app = sway.Connect();
         var input = new VirtualInput(app);
+        // Park the pointer where no test moves it, so every test's first move is real motion.
+        input.MoveTo(1, 1);
         var window = new Toplevel(app) { AppId = "oopshell.test.input" };
         var frames = Draw.SolidColor(window, 0xFF000000);
         app.RunUntil(() => frames() >= 1 && window.LogicalSize.Width == 800, what: "window");

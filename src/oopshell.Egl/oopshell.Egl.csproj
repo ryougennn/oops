@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>oopshell.Egl</RootNamespace>
+    <Description>EGL windows and contexts for oopshell surfaces (GLES 3 by default).</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../oopshell/oopshell.csproj" />
+  </ItemGroup>
+</Project>

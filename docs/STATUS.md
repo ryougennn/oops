@@ -22,7 +22,7 @@ Integration prerequisites: `dnf install sway grim` (or `apt install sway grim`);
 | M1 | done | Event loop (epoll, eventfd, timerfd, fd watches, SynchronizationContext, SIGINT/SIGTERM), `ShmSwapchain`, `Toplevel`, xdg-decoration. `HelloWindow` animates only while the pointer is over it (or with `--animate`); golden screenshot test; idle AOT `HelloWindow`: **0 epoll wakeups in 10 s**. |
 | M2 | done | Outputs with hotplug (`ForEachOutput`), `LayerSurface`, input/opaque regions. `HelloBar` sample. Tests: exclusive zone shrinks toplevels, hotplug create/unplug, empty input region is click-through. |
 | M3 | done | Pointer (frame grouping, value120 incl. pre-v8 discrete), keyboard (xkb keymap via fd, compose from locale, timerfd key repeat that stops on focus loss/release), touch, cursor-shape + optional libwayland-cursor fallback. Virtual pointer/keyboard test helper uses the generated bindings. Tests: enter/motion/button, scroll coalescing, text + `é` via compose, repeat. |
-| M4 | in progress | Integer + fractional scale (viewporter) with buffer size test at 1.5 and 2; buffer age + damage history; presentation-time (`Surface.Presented`). Next: `oopshell.Egl`, `oopshell.Skia`, `HelloSkia`. |
+| M4 | done | Integer + fractional scale (viewporter): buffer sizes tested at 1.5 and 2. Buffer age + `DamageHistory`; partial damage verified on the wire with a WAYLAND_DEBUG trace test. presentation-time (`Surface.Presented`). `oopshell.Egl` (one EGLDisplay + shared context per app, swap interval 0, buffer age, swap-with-damage, `GetProcAddress`). `oopshell.Skia` (`SkiaSurface`: GPU via EGL, SHM fallback, canvas clipped to the age-based repair area). GPU and SHM render identically (max channel diff ≤ 2) against the same golden, on Mesa llvmpipe inside pixman sway. `HelloSkia` AOT: 2.2 MB + libSkiaSharp.so, zero warnings, renders on the GPU path. |
 
 ## Deviations from the spec (and why)
 
@@ -39,6 +39,8 @@ Integration prerequisites: `dnf install sway grim` (or `apt install sway grim`);
 - Pick minimum sway/niri versions (§15); current assumption: whatever Fedora 44 ships (sway 1.11, niri 26.04).
 
 ## Known limitations
+
+- Skia's fontconfig manager does not resolve generic families such as `sans-serif` on every system; samples fall back to `SKFontManager.MatchCharacter`.
 
 - Each frame callback allocates one small managed `WlCallback` wrapper (protocol objects are new per frame).
 - Damage is tracked as one bounding rectangle per frame, not a region.

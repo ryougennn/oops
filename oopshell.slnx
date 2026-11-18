@@ -1,13 +1,16 @@
 <Solution>
   <Folder Name="/samples/">
     <Project Path="samples/HelloBar/HelloBar.csproj" />
+    <Project Path="samples/HelloSkia/HelloSkia.csproj" />
     <Project Path="samples/HelloWindow/HelloWindow.csproj" />
     <Project Path="samples/oops-info/oops-info.csproj" />
   </Folder>
   <Folder Name="/src/">
+    <Project Path="src/oopshell.Egl/oopshell.Egl.csproj" />
     <Project Path="src/oopshell.Native/oopshell.Native.csproj" />
     <Project Path="src/oopshell.Protocol/oopshell.Protocol.csproj" />
     <Project Path="src/oopshell.Scanner/oopshell.Scanner.csproj" />
+    <Project Path="src/oopshell.Skia/oopshell.Skia.csproj" />
     <Project Path="src/oopshell/oopshell.csproj" />
   </Folder>
   <Folder Name="/tests/">

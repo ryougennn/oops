@@ -4,5 +4,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="$(RepoRoot)src/oopshell/oopshell.csproj" />
+    <ProjectReference Include="$(RepoRoot)src/oopshell.Skia/oopshell.Skia.csproj" />
   </ItemGroup>
 </Project>

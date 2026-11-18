@@ -253,11 +253,20 @@ public sealed partial class OopsApp : IDisposable, IEventSource
         Display.DispatchPending();
     }
 
+    /// <summary>
+    /// Raised when the app is disposed, before the connection closes; add-ons (EGL, D-Bus) release
+    /// resources tied to the connection here.
+    /// </summary>
+    public event Action? Disposing;
+
     public void Dispose()
     {
         if (disposed)
             return;
         disposed = true;
+        Disposing?.Invoke();
+        foreach (var surface in surfaces.ToList())
+            surface.Dispose();
         if (Current == this)
             Current = null;
         Display.Dispose();

@@ -11,14 +11,11 @@ namespace oopshell;
 /// </summary>
 public sealed class ShmSwapchain : IDisposable
 {
-    const int DamageHistoryLength = 8;
-
     readonly Surface surface;
     readonly WlShmFormat format;
     readonly int maxBuffers;
     readonly List<ShmBuffer> buffers = new();
-    // damageHistory[i] is the damage presented in frame (frameCounter - i).
-    readonly Rectangle[] damageHistory = new Rectangle[DamageHistoryLength];
+    readonly DamageHistory damageHistory = new();
     ShmPool? pool;
     long frameCounter;
     bool starved;
@@ -72,28 +69,14 @@ public sealed class ShmSwapchain : IDisposable
             buffer = new ShmBuffer(this, pool!, pool!.AddSlot(), size);
             buffers.Add(buffer);
         }
-        buffer.Lease(frameCounter, RepairDamage(buffer, damage, size));
+        buffer.Lease(frameCounter, damageHistory.RepairArea(buffer.AgeAt(frameCounter), damage, size));
         return buffer;
-    }
-
-    /// <summary>What must be redrawn in <paramref name="buffer"/>: this frame's damage plus everything presented since its contents were made.</summary>
-    Rectangle RepairDamage(ShmBuffer buffer, Rectangle frameDamage, Size size)
-    {
-        var full = new Rectangle(Point.Empty, size);
-        int age = buffer.AgeAt(frameCounter);
-        if (age == 0 || age > DamageHistoryLength)
-            return full;
-        var result = frameDamage;
-        for (int i = 0; i < age - 1; i++)
-            result = result.IsEmpty ? damageHistory[i] : Rectangle.Union(result, damageHistory[i]);
-        return Rectangle.Intersect(result, full);
     }
 
     internal void OnPresented(ShmBuffer buffer, Rectangle damage)
     {
         frameCounter++;
-        Array.Copy(damageHistory, 0, damageHistory, 1, DamageHistoryLength - 1);
-        damageHistory[0] = damage;
+        damageHistory.Add(damage);
         buffer.LastPresentedFrame = frameCounter;
     }
 
@@ -124,7 +107,7 @@ public sealed class ShmSwapchain : IDisposable
         }
         pool?.Dispose();
         pool = new ShmPool(surface.App.Shm, size, format);
-        Array.Clear(damageHistory);
+        damageHistory.Clear();
     }
 
     public void Dispose()
