@@ -168,6 +168,16 @@ public static class TestLoop
             throw new InvalidOperationException("Connection died.", error);
     }
 
+    /// <summary>
+    /// Runs the loop until <paramref name="task"/> finishes and returns its result, staying on the app's thread
+    /// (awaiting in a test would resume elsewhere, and Wayland objects are thread-affine).
+    /// </summary>
+    public static T Complete<T>(this OopsApp app, Task<T> task, int timeoutMs = 5000)
+    {
+        app.RunUntil(() => task.IsCompleted, timeoutMs, "task");
+        return task.GetAwaiter().GetResult();
+    }
+
     /// <summary>Runs the loop for a fixed time (to let things settle or to prove nothing happens).</summary>
     public static void RunFor(this OopsApp app, int milliseconds)
     {

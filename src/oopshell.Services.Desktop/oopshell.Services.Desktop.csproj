@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>oopshell.Services.Desktop</RootNamespace>
+    <Description>Freedesktop .desktop entry discovery, Exec expansion and icon theme lookup for oopshell shells.</Description>
+  </PropertyGroup>
+</Project>

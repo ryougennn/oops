@@ -37,6 +37,7 @@ public sealed partial class OopsApp : IDisposable, IEventSource
     OopsApp(OopsOptions options)
     {
         Options = options;
+        SynchronizationContext = new LoopSynchronizationContext(loop);
         Display = WlDisplay.Connect(options.Display);
         registry = Display.GetRegistry();
         registry.Global += e => OnGlobal(new GlobalInfo(e.Name, e.Interface, e.Version));
@@ -62,6 +63,9 @@ public sealed partial class OopsApp : IDisposable, IEventSource
     internal bool Initializing { get; private set; }
 
     public OopsOptions Options { get; }
+
+    /// <summary>Posts to this app's UI thread. Installed as the current context while <see cref="Run"/> runs; hand it to libraries that call back on other threads.</summary>
+    public SynchronizationContext SynchronizationContext { get; }
 
     /// <summary>The raw connection (escape hatch).</summary>
     public WlDisplay Display { get; }
@@ -153,7 +157,7 @@ public sealed partial class OopsApp : IDisposable, IEventSource
     public int Run()
     {
         var previousContext = SynchronizationContext.Current;
-        SynchronizationContext.SetSynchronizationContext(new LoopSynchronizationContext(loop));
+        SynchronizationContext.SetSynchronizationContext(SynchronizationContext);
         signals.Add(PosixSignalRegistration.Create(PosixSignal.SIGINT, OnSignal));
         signals.Add(PosixSignalRegistration.Create(PosixSignal.SIGTERM, OnSignal));
         if (!sourceAdded)

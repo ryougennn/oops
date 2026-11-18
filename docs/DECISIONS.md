@@ -60,3 +60,11 @@ Short ADR-style log. Newest at the bottom.
 
 ### D17. Lock surfaces skip the initial bufferless commit
 - ext-session-lock configures lock surfaces without an initial commit and makes committing before the first ack a protocol error (`commit_before_first_ack`). Roles can opt out via `CommitsBeforeConfigure`.
+
+### D18. D-Bus via Tmds.DBus.Protocol 0.95.2
+- Evaluated first, as §10 asks: a probe app AOT-publishes with zero IL warnings, so the services use it instead of a home-made client.
+- Integration is through `app.SynchronizationContext` (signal watches and exported-object calls run on the UI thread) rather than `WatchFd`, because Tmds owns its socket I/O. Recorded as a deviation in STATUS.
+- **Pitfall:** Tmds' `MessageWriter` is a mutable struct. Passing it through `Action<MessageWriter>` (legal since .NET 9's `allows ref struct`) writes into a copy, producing messages with an empty body, which dbus-daemon answers by disconnecting. oopshell's helpers take `BodyWriter(ref MessageWriter)` and never pass writers by value.
+
+### D19. Tray: become the watcher when nobody else is
+- `TrayHost` tries to own `org.kde.StatusNotifierWatcher`; if another bar already does, it registers as a host with that watcher and follows its signals. Items whose bus name disappears are unregistered via `NameOwnerChanged`.

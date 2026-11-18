@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>oopshell.Services.Notifications</RootNamespace>
+    <Description>An org.freedesktop.Notifications server for oopshell shells.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../oopshell.Services.DBus/oopshell.Services.DBus.csproj" />
+  </ItemGroup>
+</Project>

@@ -28,12 +28,15 @@ Integration prerequisites: `dnf install sway grim` (or `apt install sway grim`);
 | M6 | done | `app.Toplevels` (wlr-foreign-toplevel-management, ext-foreign-toplevel-list fallback), `app.LockAsync` (lock surfaces per output incl. hotplug while locked), `app.Idle.Watch`. Tests per §12.2. |
 | M7 | done | `MetadataUpdateHandler` → `HotReloadCacheClear`/`HotReloaded` + invalidate all surfaces; optional `DevOverlay` flash. Verified with `dotnet watch` on `HelloSkia` in headless sway: changing the clear color redraws live ("Hot reload succeeded", screenshot changes). Rude-edit restart on niri: see MANUAL_TESTS.md (not run unattended; the live niri session was off limits). |
 
+| M8 | done | `oopshell.Services.Desktop` (desktop entries across XDG dirs with id precedence, localized keys, Exec field codes and quoting, visibility rules, icon theme lookup with inheritance/scale/threshold, PNG before SVG), `oopshell.Services.DBus` (Tmds.DBus.Protocol, callbacks on the UI thread, `ExportedObject`), `oopshell.Services.Notifications` (server; tested with real `notify-send` on a private dbus-daemon: fields, hints, actions, replace-id, expiry), `oopshell.Services.Tray` (StatusNotifierWatcher or host-only, items with properties/pixmaps/tooltips, activate/scroll, dbusmenu model with mnemonics and clicks; tested with an in-test SNI item). `Services.Power` (stretch) not done. A real third-party tray app is a manual check. |
+
 ## Deviations from the spec (and why)
 
 - **Name** is `oopshell` (nuget `oops` is taken), see DECISIONS D1.
 - **`ShmSwapchain` needs `maxBuffers >= 2`.** wlroots keeps the current buffer until another one is attached, so one buffer can never be released (found by a test).
 - **Swapchain tests live in the integration test project**, because `wl_buffer.release` needs a real compositor.
 - **`xdg-output-unstable-v1` vendored** in addition to §5 (exact logical output geometry).
+- **D-Bus I/O is not on `WatchFd`.** Tmds.DBus.Protocol is AOT-clean (0 warnings) so §10 says use it; it does its own async socket I/O, so callbacks are marshalled to the UI thread through `app.SynchronizationContext` instead of the bus fd being registered with the loop. No idle wakeups either way.
 - **`PublishAot` is Release-only in samples**: set unconditionally it disables hot reload in Debug builds (see docs/guide/hot-reload.md).
 - **`Seat.LastSerial` only tracks button/key/touch serials**, not enter/leave/modifiers: a click that moves keyboard focus is followed by `wl_keyboard.enter`, whose serial made popup grabs fail.
 - **Sway grants CSD only to floating windows**; tiled toplevels get server-side mode. `Toplevel.Decoration` reports what the compositor chose.

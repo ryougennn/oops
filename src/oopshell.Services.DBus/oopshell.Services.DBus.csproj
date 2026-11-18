@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>oopshell.Services.DBus</RootNamespace>
+    <Description>D-Bus for oopshell shells: Tmds.DBus.Protocol with callbacks on the oopshell UI thread.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../oopshell/oopshell.csproj" />
+    <PackageReference Include="Tmds.DBus.Protocol" Version="0.95.2" />
+  </ItemGroup>
+</Project>
