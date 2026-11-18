@@ -87,7 +87,9 @@ ext-foreign-toplevel-image-capture-source (check `ScreenCapture.CanCaptureWindow
 ## Services
 
 Optional packages, each started with `await XService.StartAsync(app, …)`, raising events on the UI thread:
-`oopshell.Services.Desktop` (applications, icon themes, `SvgRenderer`), `.Notifications` (be the
+`oopshell.Services.Desktop` (applications, icon themes, `SvgRenderer`), `.Launcher` (`AppCatalog`: live
+app list, `Search`, `LaunchAsync` with terminals and desktop actions, `OpenAsync` with the user's default
+apps), `.Notifications` (be the
 notification daemon), `.Tray` (StatusNotifierItem), `.Power` (UPower), `.Audio` (default output volume and
 mute through the PulseAudio API, which PipeWire serves), `.Media` (MPRIS players: now playing, play/pause,
 next), `.Pam` (`PamAuthenticator.AuthenticateAsync` for lock screens; runs off the UI thread).

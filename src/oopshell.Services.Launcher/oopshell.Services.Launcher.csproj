@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>oopshell.Services.Launcher</RootNamespace>
+    <Description>Application launcher building blocks for oopshell shells: a live app catalog, ranked search (accent-, width- and kana-insensitive, initials, fuzzy, usage), launching with terminals and desktop actions, and opening files and URLs with the user's default applications.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../oopshell/oopshell.csproj" />
+    <ProjectReference Include="../oopshell.Services.Desktop/oopshell.Services.Desktop.csproj" />
+  </ItemGroup>
+</Project>

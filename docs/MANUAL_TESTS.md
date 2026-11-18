@@ -35,6 +35,9 @@ Record results (date, compositor + version, GPU) at the bottom.
   wrong one `AuthenticationFailed` after PAM's delay. (Checked 2026-11-18 with a test account.) The automated
   tests use a private PAM config (`pam_start_confdir`) instead.
 
+## Launcher on other distributions
+- [ ] On Debian/Ubuntu (Snap apps), Arch, NixOS and a Flatpak-heavy system: the OopsOSX search finds installed apps by name, by their English name in another locale, and their actions; Snap and Flatpak apps launch; a Terminal=true app opens in the system's terminal; Computer/Home in the Go menu open the default file manager; installing an app makes it searchable without restarting.
+
 ## Volume and media (OopsOSX)
 - [ ] The speaker in the menu bar follows volume changes made elsewhere (e.g. `wpctl set-volume @DEFAULT_AUDIO_SINK@ 30%`); dragging its slider and scrolling on it change the real volume; muting shows the crossed speaker.
 - [ ] Start a real player (a browser video, Spotify, mpv with MPRIS): the note appears; its menu shows the track and Play/Pause/Next work.

@@ -27,6 +27,16 @@ public sealed class DesktopEntry
     public bool Terminal { get; init; }
     /// <summary>The window class (Wayland app_id) the application's windows use, if the file says.</summary>
     public string? StartupWMClass { get; init; }
+    /// <summary>The untranslated Name (equal to <see cref="Name"/> without a translation), for searching in either language.</summary>
+    public string DefaultName { get; init; } = "";
+    /// <summary>The untranslated Keywords.</summary>
+    public IReadOnlyList<string> DefaultKeywords { get; init; } = [];
+    /// <summary>MIME types the application opens.</summary>
+    public IReadOnlyList<string> MimeTypes { get; init; } = [];
+    /// <summary>The application can be started over D-Bus (its Exec still works as a fallback).</summary>
+    public bool DBusActivatable { get; init; }
+    /// <summary>Extra entry points ("New Private Window"), from the Actions key and [Desktop Action …] groups.</summary>
+    public IReadOnlyList<DesktopAction> Actions { get; init; } = [];
 
     /// <summary>Parses a desktop file; returns null if it has no [Desktop Entry] group or no Name.</summary>
     public static DesktopEntry? Parse(string id, string path, string text, string? locale = null)
@@ -34,6 +44,13 @@ public sealed class DesktopEntry
         var file = KeyFile.Parse(text);
         if (file.GetLocalized(Group, "Name", locale) is not { } name)
             return null;
+        var actions = new List<DesktopAction>();
+        foreach (var actionId in file.GetList(Group, "Actions"))
+        {
+            string group = $"Desktop Action {actionId}";
+            if (file.GetLocalized(group, "Name", locale) is { } actionName)
+                actions.Add(new DesktopAction(actionId, actionName, file.Get(group, "Exec"), file.GetLocalized(group, "Icon", locale), file.Get(group, "Name")));
+        }
         return new DesktopEntry
         {
             Id = id,
@@ -54,6 +71,11 @@ public sealed class DesktopEntry
             Hidden = file.GetBool(Group, "Hidden"),
             Terminal = file.GetBool(Group, "Terminal"),
             StartupWMClass = file.Get(Group, "StartupWMClass"),
+            DefaultName = file.Get(Group, "Name") ?? name,
+            DefaultKeywords = file.GetList(Group, "Keywords"),
+            MimeTypes = file.GetList(Group, "MimeType"),
+            DBusActivatable = file.GetBool(Group, "DBusActivatable"),
+            Actions = actions,
         };
     }
 
@@ -75,13 +97,18 @@ public sealed class DesktopEntry
     /// The command line to run, with field codes expanded (<c>%f %F %u %U %i %c %k %%</c>; deprecated codes
     /// are dropped). The first element is the program.
     /// </summary>
-    public IReadOnlyList<string> ExpandExec(IReadOnlyList<string>? filesOrUrls = null)
+    public IReadOnlyList<string> ExpandExec(IReadOnlyList<string>? filesOrUrls = null) =>
+        ExpandExec(Exec ?? throw new InvalidOperationException($"{Id} has no Exec key."), filesOrUrls);
+
+    /// <summary>Expands an action's command line like <see cref="ExpandExec(IReadOnlyList{string}?)"/>.</summary>
+    public IReadOnlyList<string> ExpandExec(DesktopAction action, IReadOnlyList<string>? filesOrUrls = null) =>
+        ExpandExec(action.Exec ?? Exec ?? throw new InvalidOperationException($"{Id} action {action.Id} has no Exec key."), filesOrUrls);
+
+    IReadOnlyList<string> ExpandExec(string exec, IReadOnlyList<string>? filesOrUrls)
     {
-        if (Exec is null)
-            throw new InvalidOperationException($"{Id} has no Exec key.");
         filesOrUrls ??= [];
         var result = new List<string>();
-        foreach (var arg in SplitExec(Exec))
+        foreach (var arg in SplitExec(exec))
         {
             switch (arg)
             {
@@ -168,6 +195,14 @@ public sealed class DesktopEntry
 
     public override string ToString() => $"{Id}: {Name}";
 }
+
+/// <summary>An additional entry point of an application (desktop file actions, e.g. "New Private Window").</summary>
+/// <param name="Id">The action's id in the desktop file.</param>
+/// <param name="Name">The (localized) name to show.</param>
+/// <param name="Exec">Its command line, if it has its own.</param>
+/// <param name="Icon">Its icon, if it has its own.</param>
+/// <param name="DefaultName">The untranslated name, for searching in either language.</param>
+public sealed record DesktopAction(string Id, string Name, string? Exec, string? Icon, string? DefaultName = null);
 
 /// <summary>Finds installed applications.</summary>
 public static class DesktopEntries

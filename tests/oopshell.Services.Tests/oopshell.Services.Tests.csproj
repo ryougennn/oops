@@ -2,5 +2,6 @@
   <ItemGroup>
     <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Desktop/oopshell.Services.Desktop.csproj" />
     <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Pam/oopshell.Services.Pam.csproj" />
+    <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Launcher/oopshell.Services.Launcher.csproj" />
   </ItemGroup>
 </Project>

@@ -9,9 +9,12 @@ public sealed class KeyFile
     {
         var file = new KeyFile();
         Dictionary<string, string>? group = null;
+        // Some files start with a UTF-8 byte order mark, which would hide the first group.
+        if (text.Length > 0 && text[0] == '\uFEFF')
+            text = text[1..];
         foreach (var rawLine in text.Split('\n'))
         {
-            var line = rawLine.TrimEnd('\r');
+            var line = rawLine.TrimEnd('\r').TrimStart(' ', '\t');
             if (line.Length == 0 || line[0] == '#')
                 continue;
             if (line[0] == '[' && line.EndsWith(']'))
