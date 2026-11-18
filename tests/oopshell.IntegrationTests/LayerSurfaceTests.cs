@@ -79,14 +79,14 @@ public class LayerSurfaceTests(SwayFixture sway)
             InputRegion = Region.Empty,
         };
         var overlayFrames = Draw.SolidColor(overlay, 0x40FF0000);
-        bool overlayEntered = false, windowEntered = false;
+        bool overlayEntered = false;
         overlay.PointerEnter += _ => overlayEntered = true;
-        window.PointerEnter += _ => windowEntered = true;
         app.RunUntil(() => overlayFrames() >= 1, what: "overlay");
 
+        var seat = app.DefaultSeat!;
         input.MoveTo(400, 300);
         input.MoveTo(401, 301);
-        app.RunUntil(() => windowEntered, what: "pointer reaching the window through the overlay");
+        app.RunUntil(() => seat.PointerFocus == window && seat.PointerX == 401, what: "pointer reaching the window through the overlay");
         Assert.False(overlayEntered);
     }
 
@@ -114,7 +114,7 @@ public class LayerSurfaceTests(SwayFixture sway)
         finally
         {
             sway.Swaymsg("output", "HEADLESS-1", "scale", "1");
-            app.RunFor(50);
+            app.RunUntil(() => app.Outputs[0].LogicalSize.Width == 800 && bar.Scale == 1, what: "scale reset");
         }
     }
 

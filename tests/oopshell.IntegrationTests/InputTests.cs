@@ -17,6 +17,9 @@ public class InputTests(SwayFixture sway)
         var window = new Toplevel(app) { AppId = "oopshell.test.input" };
         var frames = Draw.SolidColor(window, 0xFF000000);
         app.RunUntil(() => frames() >= 1 && window.LogicalSize.Width == 800, what: "window");
+        // Real motion after mapping, so pointer focus is settled before the test starts.
+        input.MoveTo(2, 2);
+        app.RunUntil(() => app.DefaultSeat!.PointerFocus == window, what: "initial pointer focus");
         return (app, input, window);
     }
 
@@ -28,15 +31,30 @@ public class InputTests(SwayFixture sway)
         using (input)
         using (window)
         {
+            // A small surface at a known place, to check enter/leave with surface-local coordinates.
+            using var badge = new LayerSurface(app, app.Outputs[0], Layer.Overlay, "test-badge")
+            {
+                Anchor = Anchor.Top | Anchor.Left,
+                Margins = new Margins(300, 0, 0, 300),
+                Size = new Size(50, 50),
+            };
+            var badgeFrames = Draw.SolidColor(badge, 0xFFFFFF00);
+            app.RunUntil(() => badgeFrames() >= 1, what: "badge");
+
             var events = new List<string>();
-            window.PointerEnter += e => events.Add($"enter {e.X:0},{e.Y:0}");
+            window.PointerEnter += e => events.Add($"window enter {e.X:0},{e.Y:0}");
+            window.PointerLeave += _ => events.Add("window leave");
+            badge.PointerEnter += e => events.Add($"badge enter {e.X:0},{e.Y:0}");
+            badge.PointerLeave += _ => events.Add("badge leave");
             window.PointerMove += e => events.Add($"move {e.X:0},{e.Y:0}");
             window.PointerButton += e => events.Add($"button {e.Button} {(e.Pressed ? "down" : "up")} {e.X:0},{e.Y:0}");
 
-            // The pointer may already be over the new window (left there by another test), so the enter
-            // can carry an older position; what matters is that it arrives before the motion.
+            input.MoveTo(310, 320);
+            app.RunUntil(() => events.Contains("badge enter 10,20"), what: "badge enter");
+            Assert.Equal(["window leave", "badge enter 10,20"], events);
             input.MoveTo(100, 100);
-            app.RunUntil(() => events.Any(e => e.StartsWith("enter")), what: "enter");
+            app.RunUntil(() => events.Contains("window enter 100,100"), what: "window enter");
+            Assert.Contains("badge leave", events);
             input.MoveTo(200, 150);
             app.RunUntil(() => events.Contains("move 200,150"), what: "motion");
             input.Click();
@@ -139,10 +157,9 @@ public class InputTests(SwayFixture sway)
         using (window)
         {
             window.Cursor = CursorShape.Pointer;
-            bool entered = false;
-            window.PointerEnter += _ => entered = true;
             input.MoveTo(50, 60);
-            app.RunUntil(() => entered, what: "enter");
+            // The enter may already have happened when the window mapped under the pointer.
+            app.RunUntil(() => app.DefaultSeat!.PointerFocus == window, what: "pointer focus");
             // No protocol error after set_shape: a roundtrip proves the connection is healthy.
             app.Display.Roundtrip();
             window.Cursor = CursorShape.Text;

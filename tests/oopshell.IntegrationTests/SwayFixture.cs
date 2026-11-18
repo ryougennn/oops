@@ -69,6 +69,31 @@ public sealed class SwayFixture : IDisposable
 
     public string Swaymsg(params string[] args) => Run("swaymsg", args);
 
+    /// <summary>The layout rectangle of the window with <paramref name="appId"/>, from sway's tree.</summary>
+    public System.Drawing.Rectangle WindowRect(string appId)
+    {
+        using var tree = System.Text.Json.JsonDocument.Parse(Swaymsg("-t", "get_tree"));
+        var node = FindNode(tree.RootElement, appId) ?? throw new InvalidOperationException($"No window with app_id {appId}.");
+        var rect = node.GetProperty("rect");
+        return new System.Drawing.Rectangle(rect.GetProperty("x").GetInt32(), rect.GetProperty("y").GetInt32(),
+            rect.GetProperty("width").GetInt32(), rect.GetProperty("height").GetInt32());
+    }
+
+    static System.Text.Json.JsonElement? FindNode(System.Text.Json.JsonElement node, string appId)
+    {
+        if (node.TryGetProperty("app_id", out var id) && id.ValueKind == System.Text.Json.JsonValueKind.String && id.GetString() == appId)
+            return node;
+        foreach (var listName in new[] { "nodes", "floating_nodes" })
+        {
+            if (!node.TryGetProperty(listName, out var children))
+                continue;
+            foreach (var child in children.EnumerateArray())
+                if (FindNode(child, appId) is { } found)
+                    return found;
+        }
+        return null;
+    }
+
     /// <summary>Screenshot of the whole layout (or one output) via grim.</summary>
     public Png Screenshot(string? output = null)
     {

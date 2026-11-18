@@ -45,7 +45,11 @@ public sealed class Seat
 
     public WlSeatCapability Capabilities { get; private set; }
 
-    /// <summary>Serial of the latest input event; used for popups, move/resize, cursor changes and activation.</summary>
+    /// <summary>
+    /// Serial of the latest button, key or touch event. Popup grabs, move/resize and activation tokens use it.
+    /// (Enter/leave/modifier serials are deliberately excluded: a click that moves keyboard focus is followed
+    /// by a <c>wl_keyboard.enter</c>, and its serial is not valid for a grab.)
+    /// </summary>
     public uint LastSerial { get; private set; }
 
     /// <summary>The surface under the pointer, if it is one of ours.</summary>
@@ -132,7 +136,7 @@ public sealed class Seat
 
         p.Enter += e =>
         {
-            LastSerial = pointerEnterSerial = e.Serial;
+            pointerEnterSerial = e.Serial;
             if (PointerFocus is not null)
                 frame.Leave = true;
             frame.Enter = app.FindSurface(e.Surface);
@@ -142,7 +146,6 @@ public sealed class Seat
         };
         p.Leave += e =>
         {
-            LastSerial = e.Serial;
             frame.Leave = true;
             EndFrameIfUnframed();
         };
@@ -274,13 +277,11 @@ public sealed class Seat
         };
         k.Enter += e =>
         {
-            LastSerial = e.Serial;
             KeyboardFocus = app.FindSurface(e.Surface);
             KeyboardFocus?.RaiseKeyboardFocus(new KeyboardFocusEvent(this, true));
         };
         k.Leave += e =>
         {
-            LastSerial = e.Serial;
             StopRepeat();
             var old = KeyboardFocus;
             KeyboardFocus = null;
@@ -288,7 +289,6 @@ public sealed class Seat
         };
         k.Modifiers += e =>
         {
-            LastSerial = e.Serial;
             xkb.UpdateModifiers(e.ModsDepressed, e.ModsLatched, e.ModsLocked, e.Group);
             KeyboardFocus?.RaiseModifiersChanged(new ModifiersEvent(this, xkb.Modifiers));
         };
