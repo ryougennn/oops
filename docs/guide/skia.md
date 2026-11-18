@@ -1,6 +1,6 @@
 # Drawing with Skia
 
-Package `oopshell.Skia` (SkiaSharp 3.119) wraps an `EglWindow` (GPU, OpenGL ES), a `VulkanWindow`
+Package `oopshell.Skia` (SkiaSharp 4.157) wraps an `EglWindow` (GPU, OpenGL ES), a `VulkanWindow`
 (GPU, Vulkan) or a `ShmSwapchain` (CPU). `Auto` picks EGL when it works, else SHM; Vulkan is opt-in
 (`SkiaBackend.Vulkan`, falling back like `Auto` when Vulkan is unavailable).
 

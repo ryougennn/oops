@@ -17,7 +17,7 @@ namespace oopshell.Vulkan;
 /// </summary>
 public sealed unsafe class VulkanWindow : IDisposable
 {
-    // No INPUT_ATTACHMENT: with it, SkiaSharp 3.119's Vulkan backend crashes on blend modes that read the
+    // No INPUT_ATTACHMENT: with it, SkiaSharp's Vulkan backend (3.119 and 4.157) crashes on blend modes that read the
     // destination (e.g. Multiply) when drawing into a wrapped image; without it Skia copies the destination instead.
     const uint DesiredUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT
         | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;

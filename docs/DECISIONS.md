@@ -45,8 +45,10 @@ Short ADR-style log. Newest at the bottom.
 ### D12. Geometry types from System.Drawing
 - `Size`, `Point`, `Rectangle` come from `System.Drawing.Primitives` (part of the BCL, AOT-safe) instead of new oopshell types. Pointer positions stay `double`.
 
-### D13. SkiaSharp 3.119.4
-- `oopshell.Skia` pins SkiaSharp 3.119.4 (+ `SkiaSharp.NativeAssets.Linux`), the latest 3.x stable. 4.x exists but was not evaluated; 3.119.4 AOT-publishes with zero warnings.
+### D13. SkiaSharp 4.157.0
+- `oopshell.Skia` pins SkiaSharp 4.157.0 (+ `SkiaSharp.NativeAssets.Linux`), the latest 4.x stable; it AOT-publishes with zero warnings.
+- Moved from 3.119.4 on 2026-11-18 with no source changes in the library (oops95 only had to pass `SKSamplingOptions` to two `DrawImage` calls). No parallel 3.x package: both majors ship the same `SkiaSharp` assembly and `libSkiaSharp.so`, so one app can only load one of them.
+- 4.157 still has no semaphore API and no persistent shader cache (checked the native exports), so D20 and the shader-cache notes are unchanged.
 
 ### D14. One GL context per app, one GRContext per EGLDisplay
 - Every `EglWindow` of an app uses the same `EGLContext` (made current with its own `EGLSurface`), so resources are shared without share-lists, and `SkiaSurface` keeps one `GRContext` per `EglDisplay`.
@@ -70,7 +72,7 @@ Short ADR-style log. Newest at the bottom.
 - `TrayHost` tries to own `org.kde.StatusNotifierWatcher`; if another bar already does, it registers as a host with that watcher and follows its signals. Items whose bus name disappears are unregistered via `NameOwnerChanged`.
 
 ### D20. Vulkan: CPU-waited acquire, oopshell does the layout transitions, opt-in for Skia
-- SkiaSharp 3.119 cannot wait on or signal semaphores, so `VulkanWindow.Acquire` waits for the acquire fence on the CPU and transitions the image to `COLOR_ATTACHMENT_OPTIMAL`; `Present` transitions to `PRESENT_SRC_KHR` and signals the semaphore the present waits on. Skia's wrapped surfaces are told the image is in `COLOR_ATTACHMENT_OPTIMAL`, which is where Skia leaves a render target after drawing.
+- SkiaSharp (3.119 and 4.157) cannot wait on or signal semaphores, so `VulkanWindow.Acquire` waits for the acquire fence on the CPU and transitions the image to `COLOR_ATTACHMENT_OPTIMAL`; `Present` transitions to `PRESENT_SRC_KHR` and signals the semaphore the present waits on. Skia's wrapped surfaces are told the image is in `COLOR_ATTACHMENT_OPTIMAL`, which is where Skia leaves a render target after drawing.
 - Mailbox (else immediate, else FIFO) present mode: with FIFO, Mesa waits for its own frame callbacks and blocks the event loop while a surface is hidden.
 - Device choice: first device in loader order (Mesa's device-select layer puts the display GPU first) whose graphics queue can present to the display; CPU devices (lavapipe) only as a fallback.
 - `SkiaBackend.Auto` stays EGL: GL has buffer-age partial repaints and longer field use; Vulkan measured equal on steady frames and memory.

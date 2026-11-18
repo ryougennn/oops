@@ -40,7 +40,7 @@ Public surface kept small; items not used by the samples or demo were kept delib
 ### Library bugs the demo found (fixed, with regression tests)
 - EGL windows created before the first configure presented a 1×1 first frame (black popups via the viewport) → EGL surfaces are created lazily; Skia sets up GL with a surfaceless current context.
 - The shared `GRContext` kept stale GL state across EGL surfaces → reset per frame.
-- Swapchain images with INPUT_ATTACHMENT usage made SkiaSharp's Vulkan backend segfault on blend modes that read the destination (Multiply) → usage flag dropped.
+- Swapchain images with INPUT_ATTACHMENT usage (still true on SkiaSharp 4.157) made SkiaSharp's Vulkan backend segfault on blend modes that read the destination (Multiply) → usage flag dropped.
 
 ## Deviations from the spec (and why)
 
@@ -83,6 +83,8 @@ Found and fixed by profiling:
 - oops95 kept every notification's buttons forever (`Toasts.buttons` was never pruned): a leak of one entry per notification, found with `dotnet-gcdump` diffs.
 - oops95 task buttons narrower than their icon drew over their neighbours: button content is clipped.
 - `IconTheme.Find` stat()ed every theme directory per lookup (~2 ms/icon, a ~200 ms stall the first time the Programs menu opened): directory listings are read once (9x faster).
+
+SkiaSharp 4.157 (moved from 3.119.4 after this profiling): all tests pass, library frame costs within noise of 3.x (clear-only shm/gl/vulkan 47/95/154 µs, text scene 178/254/291 µs), oops95 retitling 2.4% → 1.4% CPU and cold start ~55 → ~38 ms. `libSkiaSharp.so` is 12.4 MB (was 11.2 MB).
 
 Not a bug: a floating window resized by `swaymsg resize set` drifts off-screen and sway (correctly) stops sending frame callbacks, which looks like a stalled renderer.
 
