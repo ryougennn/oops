@@ -105,6 +105,52 @@ internal sealed unsafe class EventLoop : IDisposable
         return new Disposer(Dispose);
     }
 
+    /// <summary>
+    /// Calls <paramref name="callback"/> at every multiple of <paramref name="interval"/> of local wall-clock
+    /// time (every minute on the minute…), from an absolute CLOCK_REALTIME deadline re-armed each time: one
+    /// that passed during suspend fires on resume, and setting the clock fires it at once and realigns it.
+    /// </summary>
+    public IDisposable SetClockTimer(TimeSpan interval, Action callback)
+    {
+        if (interval < TimeSpan.FromMilliseconds(1))
+            throw new ArgumentOutOfRangeException(nameof(interval), "The interval must be at least a millisecond.");
+        int fd = timerfd_create(CLOCK_REALTIME, TFD_CLOEXEC | TFD_NONBLOCK);
+        if (fd < 0)
+            throw LastError("timerfd_create");
+        void Arm()
+        {
+            // The next boundary in local time (so hours and days follow the time zone), as an absolute UTC deadline.
+            long local = DateTime.Now.Ticks;
+            var next = new DateTime((local / interval.Ticks + 1) * interval.Ticks, DateTimeKind.Local).ToUniversalTime();
+            var spec = new ITimerSpec { Value = TimeSpec.From(next - DateTime.UnixEpoch) };
+            if (timerfd_settime(fd, TFD_TIMER_ABSTIME | TFD_TIMER_CANCEL_ON_SET, &spec, null) < 0)
+                throw LastError("timerfd_settime");
+        }
+        try
+        {
+            Arm();
+        }
+        catch
+        {
+            close(fd);
+            throw;
+        }
+        var watch = WatchFd(fd, FdEvents.Readable, _ =>
+        {
+            ulong expirations;
+            // Either the deadline passed or the clock was set (ECANCELED): both mean realign and tell the caller.
+            if (read(fd, &expirations, sizeof(ulong)) < 0 && Marshal.GetLastPInvokeError() is not ECANCELED)
+                return;
+            Arm();
+            callback();
+        });
+        return new Disposer(() =>
+        {
+            watch.Dispose();
+            close(fd);
+        });
+    }
+
     /// <summary>Runs until <see cref="Stop"/>. <paramref name="source"/> is called around each wait.</summary>
     public void Run(IEventSource source)
     {

@@ -222,8 +222,19 @@ public sealed partial class OopsApp : IDisposable, IEventSource
         return done.Task;
     }
 
-    /// <summary>Calls <paramref name="callback"/> after <paramref name="due"/>, then every <paramref name="period"/> if given. Dispose to cancel.</summary>
+    /// <summary>
+    /// Calls <paramref name="callback"/> after <paramref name="due"/>, then every <paramref name="period"/> if given.
+    /// Dispose to cancel. Measured on the monotonic clock, which stops during suspend: for anything that shows
+    /// the time, use <see cref="SetClockTimer"/>.
+    /// </summary>
     public IDisposable SetTimer(TimeSpan due, TimeSpan? period, Action callback) => loop.SetTimer(due, period, callback);
+
+    /// <summary>
+    /// Calls <paramref name="callback"/> on every multiple of <paramref name="interval"/> of local wall-clock time:
+    /// <c>SetClockTimer(TimeSpan.FromMinutes(1), …)</c> ticks on the minute, for a clock. After a suspend it fires
+    /// on resume, and when the system clock is set it fires at once and realigns. Dispose to cancel.
+    /// </summary>
+    public IDisposable SetClockTimer(TimeSpan interval, Action callback) => loop.SetClockTimer(interval, callback);
 
     /// <summary>Calls <paramref name="callback"/> on the UI thread whenever <paramref name="fd"/> is ready. Dispose to stop.</summary>
     public IDisposable WatchFd(int fd, FdEvents events, Action<FdEvents> callback) => loop.WatchFd(fd, events, callback);

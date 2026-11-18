@@ -123,3 +123,16 @@ Short ADR-style log. Newest at the bottom.
 - `Surface.BlurRegion` (a `Region`, like the input and opaque regions, sent with the next commit) and `OopsApp.CanBlurBehind` + `CanBlurBehindChanged` from the manager's capabilities. `Region.All` covers a whole surface; the compositor clips it.
 - The per-surface protocol object is created only when a surface first asks for blur, so surfaces that never blur cost nothing, and it is destroyed before the surface. Without the global, or without the blur capability, setting the region is a no-op rather than an error: blur is decoration, and a shell should not need two code paths to set it.
 - The capability can change at runtime (a user turning blur off), so it is an event, not just a startup flag. Verified on niri 26.04 (Crossbar's overlay over a running app) and as a no-op on sway.
+
+### D33. Async: tasks for operations, events for changes, everything on the UI thread
+- A one-off operation (launching, capturing a frame, locking, authenticating, a D-Bus call) returns a `Task`; state that keeps changing (windows, outputs, players, volume, capabilities) is an event or a `Changed` notification. No public API takes completion callbacks.
+- Every event, the services' included, is raised on the UI thread (services post from their own threads). Awaiting from the UI thread resumes there through the app's synchronization context, so application code never marshals.
+- Inside the library, protocol exchanges complete their tasks from Wayland event callbacks rather than awaiting each other (D30): the rule is about the public surface, which stays uniform.
+
+### D34. IPC replies carry a status
+- `IpcServer.Send` returns `IpcReply(Status, Text)`: `Ok` with the handler's reply, `Failed` with the message of the exception the handler threw, or `NotRunning`. On the wire the server prefixes its answer with one status byte.
+- It used to return the reply text, or null when not running, with failures as text starting "error: ". A failure could not be told from a reply that looked like one, and a caller that only checked for null treated failures as success (this hid a real bug in a demo's toggle command).
+
+### D35. Clock timers on the wall clock
+- `SetTimer` measures on CLOCK_MONOTONIC, which stops during suspend: a clock refreshed by a one-minute timer showed the time from before the suspend for up to a minute after resume (both demos did exactly this). `SetClockTimer(interval, callback)` fires on every multiple of the interval of local time, from an absolute CLOCK_REALTIME deadline that is re-armed after each tick: a deadline that passed while suspended fires on resume, and `TFD_TIMER_CANCEL_ON_SET` fires it as soon as the clock is set (NTP step, manual change), after which it realigns.
+- Boundaries are computed in local time, so hour and day intervals follow the time zone and DST. A change of time zone while running is not noticed (.NET caches the zone until restart); a shell that travels can call `TimeZoneInfo.ClearCachedData()` when it learns of one.

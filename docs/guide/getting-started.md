@@ -20,8 +20,14 @@ says why; disposing surfaces and services afterwards is safe, so `using` blocks 
 Everything Wayland belongs to that thread. From other threads use `app.Post(action)` or
 `await app.InvokeAsync(...)`; `await` inside handlers resumes on the UI thread automatically.
 
+The API follows one rule: a one-off operation returns a `Task` (`LaunchAsync`, `CaptureAsync`,
+`LockAsync`, `AuthenticateAsync`, D-Bus calls…), and anything that keeps changing is an event or a
+`Changed` notification. Events, including every service's, are raised on the UI thread, and awaiting
+a `Task` from the UI thread resumes there, so handlers never need to marshal.
+
 ```csharp
-app.SetTimer(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1), () => clock.Invalidate());
+app.SetClockTimer(TimeSpan.FromMinutes(1), clock.Invalidate);   // on the minute, and right after resume
+app.SetTimer(TimeSpan.FromSeconds(5), null, HideToast);           // monotonic: pauses during suspend
 app.WatchFd(fd, FdEvents.Readable, events => ReadMore());
 ```
 
@@ -79,7 +85,8 @@ Compositor key bindings run a command; `IpcServer` gets it to the running shell:
 ```csharp
 using var ipc = IpcServer.Listen(app, "myshell", args => args[0] == "toggle-menu" ? Toggle() : null);
 // `myshell --toggle-menu` in another process:
-if (IpcServer.Send("myshell", "toggle-menu") is null) Console.Error.WriteLine("not running");
+var reply = IpcServer.Send("myshell", "toggle-menu");   // Status: Ok, Failed (handler threw), NotRunning
+if (!reply.IsOk) Console.Error.WriteLine(reply.Status == IpcStatus.NotRunning ? "not running" : reply.Text);
 ```
 
 The socket lives in `$XDG_RUNTIME_DIR`; `Listen` refuses to start a second instance and replaces a stale

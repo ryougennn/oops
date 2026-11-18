@@ -9,11 +9,28 @@ namespace oopshell;
 /// // in the shell
 /// using var ipc = IpcServer.Listen(app, "myshell", args => args[0] switch { "toggle" => Toggle(), _ => "unknown" });
 /// // in `myshell toggle` (another process)
-/// string? reply = IpcServer.Send("myshell", "toggle");   // null: not running
+/// var reply = IpcServer.Send("myshell", "toggle");
+/// if (reply.Status == IpcStatus.NotRunning) …            // reply.Text: the answer, or the error message
 /// </code>
 /// The socket is <c>$XDG_RUNTIME_DIR/&lt;name&gt;.sock</c> (or the name itself if it is an absolute
 /// path). Requests are served on the UI thread from the event loop, without threads or blocking reads.
 /// </summary>
+public enum IpcStatus
+{
+    /// <summary>Nothing is serving the name.</summary>
+    NotRunning,
+    /// <summary>The handler ran; <see cref="IpcReply.Text"/> is its reply ("" for none).</summary>
+    Ok,
+    /// <summary>The handler threw; <see cref="IpcReply.Text"/> is the exception's message.</summary>
+    Failed,
+}
+
+/// <summary>The outcome of <see cref="IpcServer.Send"/>.</summary>
+public readonly record struct IpcReply(IpcStatus Status, string Text)
+{
+    public bool IsOk => Status == IpcStatus.Ok;
+}
+
 public sealed class IpcServer : IDisposable
 {
     const int MaxRequest = 64 * 1024;
@@ -50,7 +67,8 @@ public sealed class IpcServer : IDisposable
 
     /// <summary>
     /// Starts serving <paramref name="name"/>. <paramref name="handler"/> gets the arguments a client sent and
-    /// returns the reply (null for none). Throws <see cref="InvalidOperationException"/> if another instance is
+    /// returns the reply (null for none); to fail a request, throw (the client gets <see cref="IpcStatus.Failed"/>
+    /// and the message). Throws <see cref="InvalidOperationException"/> if another instance is
     /// already serving it; a stale socket file left by a crash is replaced.
     /// </summary>
     public static IpcServer Listen(OopsApp app, string name, Func<IReadOnlyList<string>, string?> handler)
@@ -58,7 +76,7 @@ public sealed class IpcServer : IDisposable
         string path = PathFor(name);
         if (File.Exists(path))
         {
-            if (Send(name) is not null)
+            if (IsRunning(name))
                 throw new InvalidOperationException($"Another instance is already serving {path}.");
             File.Delete(path);
         }
@@ -69,14 +87,14 @@ public sealed class IpcServer : IDisposable
     }
 
     /// <summary>True if an instance is serving <paramref name="name"/>.</summary>
-    public static bool IsRunning(string name) => Send(name) is not null;
+    public static bool IsRunning(string name) => Send(name).Status != IpcStatus.NotRunning;
 
     /// <summary>
-    /// Sends <paramref name="args"/> to the instance serving <paramref name="name"/> and returns its reply
-    /// ("" if it had none), or null if nothing is serving it. Blocks for at most two seconds.
-    /// With no arguments it only checks that the instance answers.
+    /// Sends <paramref name="args"/> to the instance serving <paramref name="name"/>: its reply, the error its
+    /// handler threw, or <see cref="IpcStatus.NotRunning"/>. Blocks for at most two seconds. With no
+    /// arguments it only checks that the instance answers.
     /// </summary>
-    public static string? Send(string name, params string[] args)
+    public static IpcReply Send(string name, params string[] args)
     {
         try
         {
@@ -93,11 +111,16 @@ public sealed class IpcServer : IDisposable
             int n;
             while ((n = socket.Receive(buffer)) > 0)
                 reply.Write(buffer, 0, n);
-            return Encoding.UTF8.GetString(reply.GetBuffer(), 0, (int)reply.Length);
+            // The first byte is the status: '+' answered, '!' the handler failed.
+            var bytes = reply.GetBuffer().AsSpan(0, (int)reply.Length);
+            if (bytes.Length == 0)
+                return new IpcReply(IpcStatus.NotRunning, ""); // accepted, then closed without an answer: not a live instance
+            var status = bytes[0] == (byte)'!' ? IpcStatus.Failed : IpcStatus.Ok;
+            return new IpcReply(status, Encoding.UTF8.GetString(bytes[1..]));
         }
         catch (SocketException)
         {
-            return null;
+            return new IpcReply(IpcStatus.NotRunning, "");
         }
     }
 
@@ -154,24 +177,23 @@ public sealed class IpcServer : IDisposable
         client.Watch?.Dispose();
         client.Watch = null;
         string text = Encoding.UTF8.GetString(client.Request.GetBuffer(), 0, (int)client.Request.Length);
-        string? reply = null;
+        string reply = "+";
         if (text.Length > 0)
         {
             try
             {
-                reply = handler(text.Split('\0'));
+                reply = "+" + handler(text.Split('\0'));
             }
             catch (Exception e)
             {
-                reply = $"error: {e.Message}";
+                reply = "!" + e.Message;
             }
         }
         try
         {
             client.Socket.Blocking = true;
             client.Socket.SendTimeout = (int)ClientTimeout.TotalMilliseconds;
-            if (reply is { Length: > 0 })
-                client.Socket.Send(Encoding.UTF8.GetBytes(reply));
+            client.Socket.Send(Encoding.UTF8.GetBytes(reply));
         }
         catch (SocketException)
         {

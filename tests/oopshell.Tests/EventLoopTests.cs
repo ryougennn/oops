@@ -165,4 +165,26 @@ public class EventLoopTests
         // One wait until the timer fires, maybe one more for the stop wake-up: never a busy loop.
         Assert.InRange(source.Waits, 1, 3);
     }
+
+    [Fact]
+    public void Clock_timers_tick_on_wall_clock_boundaries()
+    {
+        using var loop = new EventLoop();
+        using var source = new IdleSource();
+        loop.AddSource(source.Fd);
+        var ticks = new List<DateTime>();
+        using var timer = loop.SetClockTimer(TimeSpan.FromMilliseconds(200), () =>
+        {
+            ticks.Add(DateTime.Now);
+            if (ticks.Count == 4)
+                loop.Stop();
+        });
+        RunWithTimeout(loop, source);
+
+        // Each tick lands just after a multiple of 200 ms of the clock (not 200 ms after the timer was made).
+        // The first can be late here: its deadline may pass before the loop starts running.
+        foreach (var tick in ticks.Skip(1))
+            Assert.InRange(tick.TimeOfDay.Ticks % TimeSpan.FromMilliseconds(200).Ticks, 0, TimeSpan.FromMilliseconds(40).Ticks);
+        Assert.Throws<ArgumentOutOfRangeException>(() => loop.SetClockTimer(TimeSpan.Zero, () => { }));
+    }
 }

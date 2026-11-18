@@ -19,8 +19,8 @@ public class IpcTests(SwayFixture sway)
             return args[0] == "echo" ? string.Join("|", args.Skip(1)) : null;
         });
 
-        Assert.Equal("a b|ü日本|", app.Complete(Task.Run(() => IpcServer.Send(name, "echo", "a b", "ü日本", ""))));
-        Assert.Equal("", app.Complete(Task.Run(() => IpcServer.Send(name, "toggle"))));
+        Assert.Equal(new IpcReply(IpcStatus.Ok, "a b|ü日本|"), app.Complete(Task.Run(() => IpcServer.Send(name, "echo", "a b", "ü日本", ""))));
+        Assert.Equal(new IpcReply(IpcStatus.Ok, ""), app.Complete(Task.Run(() => IpcServer.Send(name, "toggle"))));
         Assert.Equal(["toggle"], received[1]);
 
         // A ping (no arguments) answers without reaching the handler.
@@ -33,19 +33,19 @@ public class IpcTests(SwayFixture sway)
     }
 
     [Fact]
-    public void Stale_sockets_are_replaced_and_missing_instances_report_null()
+    public void Stale_sockets_are_replaced_and_missing_instances_report_not_running()
     {
         using var app = sway.Connect();
         string name = Name;
-        Assert.Null(IpcServer.Send(name, "anything"));
+        Assert.Equal(IpcStatus.NotRunning, IpcServer.Send(name, "anything").Status);
 
         // A socket file nobody listens on, as a crashed shell leaves behind (bound, never listening).
         using var dead = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
         dead.Bind(new UnixDomainSocketEndPoint(name));
         Assert.True(File.Exists(name));
-        Assert.Null(IpcServer.Send(name, "anything"));
+        Assert.Equal(IpcStatus.NotRunning, IpcServer.Send(name, "anything").Status);
         using (var server = IpcServer.Listen(app, name, _ => "alive"))
-            Assert.Equal("alive", app.Complete(Task.Run(() => IpcServer.Send(name, "x"))));
+            Assert.Equal("alive", app.Complete(Task.Run(() => IpcServer.Send(name, "x"))).Text);
         Assert.False(File.Exists(name)); // disposed: the socket file is gone
     }
 
@@ -66,13 +66,20 @@ public class IpcTests(SwayFixture sway)
     {
         using var app = sway.Connect();
         string name = Name;
-        using var server = IpcServer.Listen(app, name, args => args[0] == "fail" ? throw new InvalidOperationException("nope") : "ok");
-        Assert.Equal("error: nope", app.Complete(Task.Run(() => IpcServer.Send(name, "fail"))));
+        using var server = IpcServer.Listen(app, name, args => args[0] switch
+        {
+            "fail" => throw new InvalidOperationException("nope"),
+            "fake" => "error: just text",
+            _ => "ok",
+        });
+        // A failure is distinguishable from a reply that happens to look like one.
+        Assert.Equal(new IpcReply(IpcStatus.Failed, "nope"), app.Complete(Task.Run(() => IpcServer.Send(name, "fail"))));
+        Assert.Equal(new IpcReply(IpcStatus.Ok, "error: just text"), app.Complete(Task.Run(() => IpcServer.Send(name, "fake"))));
 
         // A client that connects and never finishes its request: others are still served meanwhile.
         using var idle = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
         idle.Connect(new UnixDomainSocketEndPoint(name));
         idle.Send("half a request"u8.ToArray());
-        Assert.Equal("ok", app.Complete(Task.Run(() => IpcServer.Send(name, "go"))));
+        Assert.Equal(new IpcReply(IpcStatus.Ok, "ok"), app.Complete(Task.Run(() => IpcServer.Send(name, "go"))));
     }
 }

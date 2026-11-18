@@ -25,7 +25,11 @@ public static unsafe partial class LibC
     public const int EFD_CLOEXEC = O_CLOEXEC;
     public const int EFD_NONBLOCK = O_NONBLOCK;
 
+    public const int CLOCK_REALTIME = 0;
     public const int CLOCK_MONOTONIC = 1;
+    public const int TFD_TIMER_ABSTIME = 1;
+    public const int TFD_TIMER_CANCEL_ON_SET = 2;
+    public const int ECANCELED = 125;
     public const int TFD_CLOEXEC = O_CLOEXEC;
     public const int TFD_NONBLOCK = O_NONBLOCK;
 
