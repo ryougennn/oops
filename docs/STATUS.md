@@ -33,6 +33,9 @@ Integration prerequisites: `dnf install sway grim` (or `apt install sway grim`);
 | M9 | done (headless-verified) | `demo/oops95`: separate solution consuming oopshell only as packages from `artifacts/packages` (`build.sh`). Desktop, taskbar (Start, tasks, tray, clock + tooltip), cascading Start menu (mouse + keyboard), notification toasts, Run dialog, Shut Down dialog (dithered dim, dry-run commands), lock screen (ext-session-lock + PAM; fake authenticator only in `-c Test`), System Properties (CSD with SSD fallback), screensaver (stretch, idle-notify), control socket. AOT publish: **0 warnings**, `oops95` 5.4 MB + libSkiaSharp.so 11 MB. **Cold start ≈ 90 ms** (to control socket, headless sway). **Idle: 1 epoll wakeup in 30 s** (the minute clock). Verified by scripted headless tours (screenshots) on sway; the live niri session was not touched. Real-session checks are in MANUAL_TESTS.md. |
 | M10 | done | Guides in `docs/guide/` (getting started, rendering paths incl. Vulkan example, Skia, hot reload, own protocols, AOT). `docs/MANUAL_TESTS.md`. Root README. |
 
+### API review (M10)
+Public surface kept small; items not used by the samples or demo were kept deliberately: `OopsApp.TryGet/Bind/Globals` (escape hatches the spec asks for), `RequestActivationTokenAsync`/`Activate` (activation for apps that receive a token), `DamageHistory` (custom renderers implementing buffer age), `IdleMonitor.Watch(ignoreInhibitors)`. `tools/ci.sh` runs the full build/test/AOT check.
+
 ### Library bugs the demo found (fixed, with regression tests)
 - EGL windows created before the first configure presented a 1×1 first frame (black popups via the viewport) → EGL surfaces are created lazily; Skia sets up GL with a surfaceless current context.
 - The shared `GRContext` kept stale GL state across EGL surfaces → reset per frame.
