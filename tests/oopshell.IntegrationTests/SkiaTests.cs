@@ -28,6 +28,8 @@ public class SkiaTests(SwayFixture sway)
         using var skia = new SkiaSurface(window, backend);
         if (backend == SkiaBackend.Gpu)
             Assert.True(skia.IsGpu);
+        if (backend == SkiaBackend.Vulkan)
+            Assert.SkipUnless(skia.IsVulkan, "Vulkan unavailable");
         int frames = 0;
         window.Render += frame =>
         {
@@ -101,5 +103,76 @@ public class SkiaTests(SwayFixture sway)
         Assert.Equal(golden.Rgba.Length, gpu.Rgba.Length);
         int maxDiff = golden.Rgba.Zip(gpu.Rgba, (a, b) => Math.Abs(a - b)).Max();
         Assert.True(maxDiff <= 2, $"GPU and SHM differ by up to {maxDiff} per channel.");
+    }
+
+    [Fact]
+    [Trait("Requires", "GPU")]
+    public void Vulkan_backend_renders_the_same_as_shm()
+    {
+        sway.RequireSway();
+        var vulkan = RenderWith(SkiaBackend.Vulkan);
+        var golden = Png.Decode(File.ReadAllBytes(Path.Combine(SwayFixture.RepoRoot, "tests/goldens/skia-scene.png")));
+        Assert.Equal(golden.Rgba.Length, vulkan.Rgba.Length);
+        int maxDiff = golden.Rgba.Zip(vulkan.Rgba, (a, b) => Math.Abs(a - b)).Max();
+        Assert.True(maxDiff <= 2, $"Vulkan and SHM differ by up to {maxDiff} per channel.");
+    }
+
+    /// <summary>
+    /// Regression: blend modes that read the destination crashed Skia inside its Vulkan render pass setup while
+    /// the swapchain images had INPUT_ATTACHMENT usage.
+    /// </summary>
+    [Fact]
+    [Trait("Requires", "GPU")]
+    public void Vulkan_blend_modes_that_read_the_destination_work()
+    {
+        using var app = sway.Connect();
+        using var window = new Toplevel(app);
+        window.SetFullscreen(true);
+        using var skia = new SkiaSurface(window, SkiaBackend.Vulkan);
+        Assert.SkipUnless(skia.IsVulkan, "Vulkan unavailable");
+        int frames = 0;
+        window.Render += frame =>
+        {
+            if (skia.BeginFrame(frame) is not { } canvas)
+                return;
+            canvas.Clear(new SKColor(0xFF, 0xFF, 0x00));
+            using var multiply = new SKPaint { Color = new SKColor(0x00, 0xFF, 0xFF), BlendMode = SKBlendMode.Multiply };
+            canvas.DrawRect(100, 100, 200, 200, multiply);
+            skia.EndFrame();
+            frames++;
+        };
+        app.RunUntil(() => frames >= 1 && window.LogicalSize == new Size(800, 600), what: "frame");
+        app.RunFor(100);
+        var shot = sway.Screenshot();
+        Assert.Equal((0x00, 0xFF, 0x00), shot[200, 200]);
+        Assert.Equal((0xFF, 0xFF, 0x00), shot[50, 50]);
+    }
+
+    /// <summary>A resize recreates the swapchain; the next frame has the new size and the old images are released cleanly.</summary>
+    [Fact]
+    [Trait("Requires", "GPU")]
+    public void Vulkan_swapchain_follows_resizes()
+    {
+        using var app = sway.Connect();
+        using var window = new Toplevel(app);
+        using var skia = new SkiaSurface(window, SkiaBackend.Vulkan);
+        Assert.SkipUnless(skia.IsVulkan, "Vulkan unavailable");
+        var sizes = new List<Size>();
+        window.Render += frame =>
+        {
+            if (skia.BeginFrame(frame) is not { } canvas)
+                return;
+            canvas.Clear(new SKColor(0xC0, 0x20, 0x40));
+            skia.EndFrame();
+            sizes.Add(frame.BufferSize);
+        };
+        app.RunUntil(() => sizes.Count >= 1 && sizes[^1] == new Size(800, 600), what: "first frame");
+
+        // A second tiled window halves the first one.
+        using var other = new Toplevel(app);
+        var otherFrames = Draw.SolidColor(other, 0xFF000000);
+        app.RunUntil(() => otherFrames() >= 1 && sizes[^1] == new Size(400, 600), what: "frame at half width");
+        app.RunFor(100);
+        Assert.Equal((0xC0, 0x20, 0x40), sway.Screenshot()[200, 300]);
     }
 }

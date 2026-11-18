@@ -1,5 +1,6 @@
 using System.Drawing;
 using oopshell.Egl;
+using oopshell.Vulkan;
 using SkiaSharp;
 
 namespace oopshell.Skia;
@@ -7,10 +8,13 @@ namespace oopshell.Skia;
 /// <summary>Which Skia backend to use.</summary>
 public enum SkiaBackend
 {
-    /// <summary>GPU when EGL works, otherwise SHM.</summary>
+    /// <summary>GPU (OpenGL ES via EGL) when EGL works, otherwise SHM.</summary>
     Auto,
+    /// <summary>OpenGL ES via EGL.</summary>
     Gpu,
     Shm,
+    /// <summary>Vulkan. Falls back like <see cref="Auto"/> when Vulkan is unavailable.</summary>
+    Vulkan,
 }
 
 /// <summary>
@@ -31,6 +35,9 @@ public sealed class SkiaSurface : IDisposable
     readonly DamageHistory gpuHistory = new();
     SKSurface? gpuSurface;
     Size gpuSize;
+    // Vulkan
+    readonly VulkanWindow? vulkan;
+    SKSurface?[] vulkanSurfaces = [];
     // SHM
     readonly ShmSwapchain? chain;
     readonly Dictionary<nint, SKSurface> shmSurfaces = new();
@@ -43,6 +50,22 @@ public sealed class SkiaSurface : IDisposable
     public SkiaSurface(Surface surface, SkiaBackend backend = SkiaBackend.Auto)
     {
         this.surface = surface;
+        if (backend == SkiaBackend.Vulkan)
+        {
+            try
+            {
+                vulkan = VulkanWindow.Create(surface);
+                grContext = SharedContext(vulkan.Device);
+                vulkan.ImagesDestroying += DropVulkanSurfaces;
+                return;
+            }
+            catch (Exception e) when (e is NotSupportedException or InvalidOperationException)
+            {
+                vulkan?.Dispose();
+                vulkan = null;
+                backend = SkiaBackend.Auto;
+            }
+        }
         if (backend != SkiaBackend.Shm)
         {
             try
@@ -60,8 +83,11 @@ public sealed class SkiaSurface : IDisposable
             chain = new ShmSwapchain(surface);
     }
 
-    /// <summary>True when drawing on the GPU.</summary>
-    public bool IsGpu => egl is not null;
+    /// <summary>True when drawing on the GPU (EGL or Vulkan).</summary>
+    public bool IsGpu => egl is not null || vulkan is not null;
+
+    /// <summary>True when drawing with Vulkan.</summary>
+    public bool IsVulkan => vulkan is not null;
 
     /// <summary>The GPU context (shared by all GPU surfaces of the app), or null on SHM.</summary>
     public GRContext? GRContext => grContext;
@@ -76,7 +102,17 @@ public sealed class SkiaSurface : IDisposable
             throw new InvalidOperationException("EndFrame was not called for the previous frame.");
         this.frame = frame;
         Rectangle repair;
-        if (egl is not null)
+        if (vulkan is not null)
+        {
+            int index = vulkan.Acquire(frame.BufferSize);
+            if (vulkanSurfaces.Length <= index)
+                Array.Resize(ref vulkanSurfaces, index + 1);
+            current = vulkanSurfaces[index] ??= WrapVulkanImage(vulkan.GetImage(index));
+            // shortcut: Vulkan has no buffer age, so every frame repaints the whole buffer; track per-image
+            // damage like DamageHistory does if partial repaints ever matter here.
+            repair = new Rectangle(Point.Empty, frame.BufferSize);
+        }
+        else if (egl is not null)
         {
             egl.Resize(frame.BufferSize);
             egl.MakeCurrent();
@@ -118,6 +154,19 @@ public sealed class SkiaSurface : IDisposable
         if (current is null)
             return;
         current.Canvas.Restore();
+        if (vulkan is not null)
+        {
+            var flash = surface.App.ReloadFlashRect(frame.BufferSize, frame.Scale);
+            if (!flash.IsEmpty)
+            {
+                using var magenta = new SKPaint { Color = SKColors.Magenta };
+                current.Canvas.DrawRect(flash.X, flash.Y, flash.Width, flash.Height, magenta);
+            }
+            grContext!.Flush(submit: true, synchronous: false);
+            vulkan.Present();
+            current = null;
+            return;
+        }
         current.Flush();
         if (egl is not null)
         {
@@ -152,6 +201,69 @@ public sealed class SkiaSurface : IDisposable
         return skSurface;
     }
 
+    SKSurface WrapVulkanImage(ulong image)
+    {
+        var info = new GRVkImageInfo
+        {
+            Image = image,
+            ImageTiling = Native.Vulkan.VK_IMAGE_TILING_OPTIMAL,
+            ImageLayout = Native.Vulkan.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            Format = (uint)vulkan!.Format,
+            ImageUsageFlags = vulkan.ImageUsage,
+            SampleCount = 1,
+            LevelCount = 1,
+            CurrentQueueFamily = vulkan.Device.QueueFamily,
+        };
+        var colorType = vulkan.Format == Native.Vulkan.VK_FORMAT_B8G8R8A8_UNORM ? SKColorType.Bgra8888 : SKColorType.Rgba8888;
+        using var target = new GRBackendRenderTarget(vulkan.Size.Width, vulkan.Size.Height, info);
+        return SKSurface.Create(grContext, target, GRSurfaceOrigin.TopLeft, colorType)
+            ?? throw new InvalidOperationException("Skia could not wrap the Vulkan swapchain image.");
+    }
+
+    void DropVulkanSurfaces()
+    {
+        foreach (var s in vulkanSurfaces)
+            s?.Dispose();
+        vulkanSurfaces = [];
+        // Let Skia finish and release what referenced the images before they are destroyed.
+        grContext!.Flush(submit: true, synchronous: true);
+    }
+
+    static readonly Dictionary<VulkanDevice, GRContext> VulkanContexts = new();
+
+    static GRContext SharedContext(VulkanDevice device)
+    {
+        if (VulkanContexts.TryGetValue(device, out var context))
+            return context;
+        GRVkGetProcedureAddressDelegate getProc = VulkanDevice.GetProcAddress;
+        // Kept alive with the context: Skia may still call back into getProc after creation.
+        var extensions = GRVkExtensions.Create(getProc, device.Instance, device.PhysicalDevice,
+            VulkanDevice.InstanceExtensions, VulkanDevice.DeviceExtensions);
+        var backend = new GRVkBackendContext
+        {
+            VkInstance = device.Instance,
+            VkPhysicalDevice = device.PhysicalDevice,
+            VkDevice = device.Device,
+            VkQueue = device.Queue,
+            GraphicsQueueIndex = device.QueueFamily,
+            MaxAPIVersion = device.ApiVersion,
+            Extensions = extensions,
+            VkPhysicalDeviceFeatures = device.EnabledFeatures,
+            GetProcedureAddress = getProc,
+        };
+        context = GRContext.CreateVulkan(backend) ?? throw new InvalidOperationException("Skia could not create a Vulkan context.");
+        VulkanContexts[device] = context;
+        device.Disposing += () =>
+        {
+            VulkanContexts.Remove(device);
+            context.AbandonContext(releaseResources: false);
+            context.Dispose();
+            backend.Dispose();
+            extensions.Dispose();
+        };
+        return context;
+    }
+
     static readonly Dictionary<EglDisplay, GRContext> Contexts = new();
 
     static GRContext SharedContext(EglDisplay display)
@@ -182,6 +294,10 @@ public sealed class SkiaSurface : IDisposable
             s.Dispose();
         shmSurfaces.Clear();
         chain?.Dispose();
+        if (vulkan is not null)
+        {
+            vulkan.Dispose(); // raises ImagesDestroying, which drops the SKSurfaces first
+        }
         if (egl is not null)
         {
             egl.MakeCurrent();

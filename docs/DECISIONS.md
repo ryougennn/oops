@@ -68,3 +68,9 @@ Short ADR-style log. Newest at the bottom.
 
 ### D19. Tray: become the watcher when nobody else is
 - `TrayHost` tries to own `org.kde.StatusNotifierWatcher`; if another bar already does, it registers as a host with that watcher and follows its signals. Items whose bus name disappears are unregistered via `NameOwnerChanged`.
+
+### D20. Vulkan: CPU-waited acquire, oopshell does the layout transitions, opt-in for Skia
+- SkiaSharp 3.119 cannot wait on or signal semaphores, so `VulkanWindow.Acquire` waits for the acquire fence on the CPU and transitions the image to `COLOR_ATTACHMENT_OPTIMAL`; `Present` transitions to `PRESENT_SRC_KHR` and signals the semaphore the present waits on. Skia's wrapped surfaces are told the image is in `COLOR_ATTACHMENT_OPTIMAL`, which is where Skia leaves a render target after drawing.
+- Mailbox (else immediate, else FIFO) present mode: with FIFO, Mesa waits for its own frame callbacks and blocks the event loop while a surface is hidden.
+- Device choice: first device in loader order (Mesa's device-select layer puts the display GPU first) whose graphics queue can present to the display; CPU devices (lavapipe) only as a fallback.
+- `SkiaBackend.Auto` stays EGL: GL has buffer-age partial repaints and longer field use; Vulkan measured equal on steady frames and memory.

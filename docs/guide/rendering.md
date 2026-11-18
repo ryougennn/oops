@@ -35,7 +35,24 @@ surface.Render += frame =>
 Swap interval is 0: pacing comes from oopshell's frame callbacks. The EGL surface is created on the
 first `MakeCurrent`, at the configured size.
 
-## C. Raw handles (Vulkan, wgpu, …)
+## C. Vulkan
+
+`oopshell.Vulkan` gives each surface a swapchain on one shared device per app (`VulkanDevice`):
+
+```csharp
+using var vk = VulkanWindow.Create(surface);
+surface.Render += frame =>
+{
+    int index = vk.Acquire(frame.BufferSize);       // ready to draw, in COLOR_ATTACHMENT_OPTIMAL
+    // record and submit rendering to vk.GetImage(index) on vk.Device.Queue; leave the layout as is
+    vk.Present();                                  // PrepareCommit + vkQueuePresentKHR
+};
+```
+
+The acquire is waited for on the CPU and the final layout transition is done for you, so libraries
+that cannot use semaphores (SkiaSharp) work. Mailbox present mode; pacing comes from oopshell.
+
+## D. Raw handles (your own Vulkan setup, wgpu, …)
 
 `surface.NativeDisplay` (`wl_display*`) and `surface.NativeSurface` (`wl_surface*`) are what
 `vkCreateWaylandSurfaceKHR` needs:
@@ -51,7 +68,7 @@ var createInfo = new VkWaylandSurfaceCreateInfoKHR
 surface.Render += frame =>
 {
     surface.PrepareCommit();                       // frame callback + pending scale/viewport/regions
-    // vkQueuePresentKHR(...) — present mode FIFO is fine, or MAILBOX/IMMEDIATE with oopshell pacing
+    // vkQueuePresentKHR(...) — prefer MAILBOX/IMMEDIATE: with FIFO, Mesa blocks while the surface is hidden
 };
 ```
 

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>oopshell.Vulkan</RootNamespace>
+    <Description>Vulkan swapchains for oopshell surfaces (VK_KHR_wayland_surface).</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../oopshell/oopshell.csproj" />
+  </ItemGroup>
+</Project>

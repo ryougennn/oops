@@ -8,5 +8,6 @@
     <InternalsVisibleTo Include="oopshell.Tests" />
     <InternalsVisibleTo Include="oopshell.IntegrationTests" />
     <InternalsVisibleTo Include="oopshell.Egl" />
+    <InternalsVisibleTo Include="oopshell.Skia" />
   </ItemGroup>
 </Project>

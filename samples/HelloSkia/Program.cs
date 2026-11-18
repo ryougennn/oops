@@ -1,4 +1,4 @@
-// A Skia-drawn window: GPU through EGL when available (pass --shm to force CPU), crisp at any scale
+// A Skia-drawn window: GPU through EGL when available (--vulkan for Vulkan, --shm to force CPU), crisp at any scale
 // because everything is drawn in logical units scaled by the frame's scale. Edit Scene.Draw while
 // running under `dotnet watch` to see hot reload.
 using oopshell;
@@ -7,8 +7,8 @@ using SkiaSharp;
 
 using var app = OopsApp.Connect();
 using var window = new Toplevel(app) { Title = "HelloSkia", AppId = "oopshell.HelloSkia" };
-using var skia = new SkiaSurface(window, args.Contains("--shm") ? SkiaBackend.Shm : SkiaBackend.Auto);
-Console.WriteLine($"Rendering on the {(skia.IsGpu ? "GPU (EGL)" : "CPU (SHM)")}");
+using var skia = new SkiaSurface(window, args.Contains("--shm") ? SkiaBackend.Shm : args.Contains("--vulkan") ? SkiaBackend.Vulkan : SkiaBackend.Auto);
+Console.WriteLine($"Rendering on the {(skia.IsVulkan ? $"GPU (Vulkan, {oopshell.Vulkan.VulkanDevice.Get(app).DeviceName})" : skia.IsGpu ? "GPU (EGL)" : "CPU (SHM)")}");
 
 window.CloseRequested += () => app.Quit();
 window.Render += frame =>

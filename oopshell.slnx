@@ -7,6 +7,7 @@
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/oopshell.Egl/oopshell.Egl.csproj" />
+    <Project Path="src/oopshell.Vulkan/oopshell.Vulkan.csproj" />
     <Project Path="src/oopshell.Native/oopshell.Native.csproj" />
     <Project Path="src/oopshell.Protocol/oopshell.Protocol.csproj" />
     <Project Path="src/oopshell.Scanner/oopshell.Scanner.csproj" />
