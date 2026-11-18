@@ -13,7 +13,7 @@ namespace oopshell;
 /// render phase, so properties set right after construction are part of it. After the first configure,
 /// <see cref="Render"/> is raised whenever the surface is invalidated, at most once per frame callback.
 /// </remarks>
-public abstract class Surface : IDisposable
+public abstract partial class Surface : IDisposable
 {
     readonly WpViewport? viewport;
     readonly WpFractionalScaleV1? fractionalScale;
@@ -170,6 +170,7 @@ public abstract class Surface : IDisposable
             frameCallback = Proxy.Frame();
             frameCallback.Done += onFrameDone ??= e => OnFrameDone(e.CallbackData);
         }
+        RequestPresentationFeedback();
         SendPendingState();
     }
 

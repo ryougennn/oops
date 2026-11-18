@@ -24,9 +24,15 @@ public sealed class ShmSwapchain : IDisposable
     bool starved;
     bool disposed;
 
+    /// <param name="surface">The surface to present to.</param>
+    /// <param name="format">A 32-bit <c>wl_shm</c> format.</param>
+    /// <param name="maxBuffers">
+    /// At least 2: compositors keep the current buffer until another one replaces it, so a single buffer
+    /// could never be released.
+    /// </param>
     public ShmSwapchain(Surface surface, WlShmFormat format = WlShmFormat.Argb8888, int maxBuffers = 3)
     {
-        ArgumentOutOfRangeException.ThrowIfLessThan(maxBuffers, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxBuffers, 2);
         this.surface = surface;
         this.format = format;
         this.maxBuffers = maxBuffers;
