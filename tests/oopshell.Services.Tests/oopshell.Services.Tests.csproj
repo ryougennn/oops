@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
     <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Desktop/oopshell.Services.Desktop.csproj" />
+    <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Pam/oopshell.Services.Pam.csproj" />
   </ItemGroup>
 </Project>

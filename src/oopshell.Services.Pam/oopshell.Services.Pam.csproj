@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>oopshell.Services.Pam</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Description>Password checks through PAM (libpam) for oopshell lock screens, with the full conversation for other prompts.</Description>
+  </PropertyGroup>
+</Project>

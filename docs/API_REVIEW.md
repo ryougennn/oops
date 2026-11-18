@@ -16,28 +16,23 @@ overlays with modifier tracking (the app switcher). Tested on niri 26.04 (nested
 | `DesktopEntry.StartupWMClass`, `DesktopEntries.FindByAppId` | every dock/taskbar must map app_id → application; oops95 lacked it too | D22; `DesktopTests` |
 | Fix: `Popup.Grab` uses the serial current at the call | the release serial cost the keyboard grab on niri | D23; `DamageTraceTests.Popup_grab_uses_the_serial_of_the_click_that_opened_it` |
 
-## Candidates, not added (decide before freezing)
+## Candidates and what became of them
 
-Ranked by how much both desktops would gain.
+1. **Text with font fallback (oopshell.Skia): still open.** Skia draws missing glyphs as boxes; it does
+   not fall back. OopsOSX carries a ~60-line run splitter (`Kit/Ui.cs`: `Runs`, `Measure`, `DrawText`);
+   oops95 still shows boxes for CJK window titles. A `SkiaText.Draw/Measure` helper would fix it for every app.
+2. **Single-instance control channel: added** as `IpcServer` in the core package (D24). Both demos use it.
+3. **PAM: added** as `oopshell.Services.Pam` (D25). Both demos use it.
+4. **SVG icons: added** as `SvgRenderer` in `oopshell.Services.Desktop`, through the system librsvg (D26).
+   Both demos render SVG theme icons.
+5. **Audio and media: added** as `oopshell.Services.Audio` (volume and mute, PulseAudio API, D27) and
+   `oopshell.Services.Media` (MPRIS, D28). OopsOSX has volume and now-playing menu extras.
+6. **Window previews: blocked by compositors.** Thumbnails need
+   `ext-foreign-toplevel-image-capture-source-v1` (with `ext-image-copy-capture-v1`). niri 26.04 has neither;
+   sway 1.11 can capture outputs only. Add when a target compositor ships it, so it can be tested.
 
-1. **Text with font fallback (oopshell.Skia).** Skia draws missing glyphs as boxes; it does not fall back.
-   Both desktops show user-supplied text (window titles, user names, app names in other languages).
-   OopsOSX carries a ~60-line run splitter (`Kit/Ui.cs`: `Runs`, `Measure`, `DrawText`). A
-   `SkiaText.Draw/Measure` helper in `oopshell.Skia` would fix this for every app. Strong candidate.
-2. **Single-instance control channel.** oops95 and OopsOSX carry the same `ControlSocket` (Unix socket in
-   `$XDG_RUNTIME_DIR`, served with `WatchFd`) so compositor key bindings can reach the shell. Quickshell
-   has `IpcHandler`. A small `OopsApp`-level helper (name → command handler, plus a client `Send`) would
-   remove the duplication. Strong candidate.
-3. **PAM.** Both desktops carry the same `PamAuthenticator` for the lock screen. Quickshell has
-   `PamContext`. Candidate for an `oopshell.Services.Pam` package (conversation callbacks, so it can also
-   handle OTP/fingerprint prompts later).
-4. **SVG icons.** `IconTheme` finds SVG icons but nothing renders them, so SVG-only themes (Breeze,
-   Papirus, Adwaita apps) fall back to drawn icons. Needs a dependency (Svg.Skia, or librsvg via interop);
-   would be an optional package, not core.
-5. **Audio and media.** No PipeWire/PulseAudio volume and no MPRIS service, so OopsOSX has no volume or
-   now-playing menu extra. Quickshell has both. Services, not core; add when a demo needs them.
-6. **Window previews.** No toplevel capture (ext-image-copy-capture with a foreign-toplevel source), so
-   no Exposé or window thumbnails. Compositor support is still uneven (niri: output screencopy only).
+Found while doing these: layer-surface property changes waited for the next frame and could arrive after a
+popup's grab (fixed, D29).
 
 ## Things that are app-level and stay that way
 

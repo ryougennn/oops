@@ -165,6 +165,7 @@ public abstract partial class Surface : IDisposable
     {
         ObjectDisposedException.ThrowIf(IsDisposed, this);
         presentedThisFrame = true;
+        HasPresented = true;
         if (frameCallback is null)
         {
             frameCallback = Proxy.Frame();
@@ -248,6 +249,9 @@ public abstract partial class Surface : IDisposable
     }
 
     internal bool IsRendering => inRender;
+
+    /// <summary>A buffer has been committed (so a state-only commit keeps the surface mapped).</summary>
+    internal bool HasPresented { get; private set; }
 
     /// <summary>False for roles that are configured without an initial commit (and must not commit before acking).</summary>
     private protected virtual bool CommitsBeforeConfigure => true;

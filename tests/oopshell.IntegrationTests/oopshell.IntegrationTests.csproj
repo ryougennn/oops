@@ -8,5 +8,7 @@
     <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Notifications/oopshell.Services.Notifications.csproj" />
     <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Tray/oopshell.Services.Tray.csproj" />
     <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Power/oopshell.Services.Power.csproj" />
+    <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Media/oopshell.Services.Media.csproj" />
+    <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Audio/oopshell.Services.Audio.csproj" />
   </ItemGroup>
 </Project>

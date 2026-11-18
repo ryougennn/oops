@@ -65,6 +65,27 @@ returned `IDisposable` is disposed when that output goes away.
 `oopshell.Services.Desktop` maps a window's app id to its application for names and icons), `app.LockAsync`, `app.Idle.Watch`,
 `app.LaunchAsync` (starts a detached process with an activation token).
 
+## Commands from key bindings
+
+Compositor key bindings run a command; `IpcServer` gets it to the running shell:
+
+```csharp
+using var ipc = IpcServer.Listen(app, "myshell", args => args[0] == "toggle-menu" ? Toggle() : null);
+// `myshell --toggle-menu` in another process:
+if (IpcServer.Send("myshell", "toggle-menu") is null) Console.Error.WriteLine("not running");
+```
+
+The socket lives in `$XDG_RUNTIME_DIR`; `Listen` refuses to start a second instance and replaces a stale
+socket left by a crash. Requests are served on the UI thread from the event loop.
+
+## Services
+
+Optional packages, each started with `await XService.StartAsync(app, …)`, raising events on the UI thread:
+`oopshell.Services.Desktop` (applications, icon themes, `SvgRenderer`), `.Notifications` (be the
+notification daemon), `.Tray` (StatusNotifierItem), `.Power` (UPower), `.Audio` (default output volume and
+mute through the PulseAudio API, which PipeWire serves), `.Media` (MPRIS players: now playing, play/pause,
+next), `.Pam` (`PamAuthenticator.AuthenticateAsync` for lock screens; runs off the UI thread).
+
 ## Escape hatches
 
 `app.Globals`, `app.Get<T>()`/`Has<T>()`/`Bind<T>()` for any generated interface, `surface.Proxy`

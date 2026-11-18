@@ -33,6 +33,7 @@ Integration prerequisites: `dnf install sway grim` (or `apt install sway grim`);
 | M9 | done (headless-verified) | `demo/oops95`: separate solution consuming oopshell only as packages from `artifacts/packages` (`build.sh`). Desktop, taskbar (Start, tasks, tray, battery + tooltip, clock + tooltip), cascading Start menu (mouse + keyboard), notification toasts, Run dialog, Shut Down dialog (dithered dim, dry-run commands), lock screen (ext-session-lock + PAM; fake authenticator only in `-c Test`), System Properties (CSD with SSD fallback), screensaver (stretch, idle-notify), control socket. AOT publish: **0 warnings**, `oops95` 5.4 MB + libSkiaSharp.so 11 MB. **Cold start ≈ 90 ms** (to control socket, headless sway). **Idle: 1 epoll wakeup in 30 s** (the minute clock). Verified by scripted headless tours (screenshots) on sway; the live niri session was not touched. Real-session checks are in MANUAL_TESTS.md. |
 | Post | done | `oopshell.Vulkan` (one device per app, Wayland swapchain per surface, mailbox, CPU-waited acquire + layout transitions so SkiaSharp needs no semaphores) and `SkiaBackend.Vulkan` (opt-in). Same golden as SHM/GL; resize and dst-read blend tests. Verified on RX 7900 XT (RADV) in a nested sway: HelloSkia `--vulkan`, oops95 `OOPS95_BACKEND=vulkan` incl. popups; AOT 0 warnings. Shader cache: measured, see docs/guide/skia.md (driver cache only; SkiaSharp has no persistent-cache hook). |
 | OopsOSX | done (niri-verified) | `demo/oopsosx`: a second desktop to test the API before freezing it (see `docs/API_REVIEW.md`). Menu bar (logo, app and Window menus, sliding between menus via `Reposition`, tray/battery/clock/search extras), Dock (magnification, auto-hide, bounce, running indicators, context menus, kept apps saved), wallpaper and desktop icons, search overlay, app switcher (held modifier), notification bubbles, shut-down/restart/log-out alerts with a pulsing default button, lock screen with shake, About window with client-side decorations and shadow. All drawing procedural; no third-party assets. Library additions: `ShadowMargins` (D21), `FindByAppId` (D22), popup grab serial fix (D23). AOT: **0 warnings**, 5.7 MB; cold start ~70 ms; idle ~0 CPU. Verified by scripted tours in a private niri nested in headless sway, and by hand in a nested niri. |
+| Review follow-up | done | From docs/API_REVIEW.md: `IpcServer` (core), `oopshell.Services.Pam`, `SvgRenderer` (librsvg), `oopshell.Services.Audio` (libpulse), `oopshell.Services.Media` (MPRIS); both demos switched over (oops95: IPC, PAM, SVG icons; OopsOSX also gets volume and now-playing menu extras). Fix: layer-surface state is committed at once (D29). Tests: IPC (sway), PAM (private `pam_start_confdir` service with `pam_exec`), SVG (pixels), audio (temporary null sink on the user's server; real outputs untouched), media (fake MPRIS player). System PAM checked by hand with a test account. Window previews not done: no compositor here supports toplevel capture. |
 | M10 | done | Guides in `docs/guide/` (getting started, rendering paths incl. Vulkan example, Skia, hot reload, own protocols, AOT). `docs/MANUAL_TESTS.md`. Root README. |
 
 ### API review (M10)
@@ -91,7 +92,7 @@ Not a bug: a floating window resized by `swaymsg resize set` drifts off-screen a
 
 ## Known limitations
 
-- OopsOSX: SVG-only app icons fall back to drawn ones; no volume/media extras; niri ignores minimize (Hide, Minimize do nothing there); the switcher's held-modifier path was verified on sway (niri does not carry a virtual keyboard's modifiers across focus changes, so the scripted rig cannot hold one there).
+- OopsOSX: apps without any themed icon get drawn ones; on niri the active window looks inactive while a menu-bar menu is open (niri only lets a focused layer surface's popup take the keyboard, so the bar takes focus while the pointer is over it and gives it back after); niri ignores minimize (Hide, Minimize do nothing there); the switcher's held-modifier path was verified on sway (niri does not carry a virtual keyboard's modifiers across focus changes, so the scripted rig cannot hold one there).
 
 - `Popup.Reposition` needs xdg_popup v3 (throws otherwise; recreate the popup).
 - When the Start menu is opened from a compositor keybinding there is no input serial to grab with, so it opens without a grab and takes keys through the taskbar's exclusive keyboard; an outside click does not close it then (Escape or the Start button does).
@@ -100,6 +101,9 @@ Not a bug: a floating window resized by `swaymsg resize set` drifts off-screen a
 - Not verified unattended: real GPU, real HiDPI, real tray apps, PAM with a real password, niri (see MANUAL_TESTS.md).
 
 - Skia's fontconfig manager does not resolve generic families such as `sans-serif` on every system; samples fall back to `SKFontManager.MatchCharacter`.
+
+- `oopshell.Services.Audio` reads libpulse structs at fixed LP64 offsets (x86_64/aarch64); `AudioTests` would catch a mismatch.
+- Unprivileged `pam_unix` can only check the calling user's password (fine for lock screens; not for greeters).
 
 - Each frame callback allocates one small managed `WlCallback` wrapper (protocol objects are new per frame).
 - Damage is tracked as one bounding rectangle per frame, not a region.

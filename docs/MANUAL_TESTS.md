@@ -29,6 +29,15 @@ Record results (date, compositor + version, GPU) at the bottom.
 - [ ] Plug a monitor in while locked: it gets a lock surface too.
 - [ ] `kill -9` oops95 while locked: the session **stays locked** (compositor fallback). Recover per compositor docs (e.g. restart a locker from another VT). Do this last.
 - [ ] Optional: install `config/pam.d/oops95` to `/etc/pam.d/oops95` and lock again.
+- [ ] System PAM (`pam_unix`) with a throwaway account: unprivileged processes can only check their own
+  user's password, so run the check *as* that user (e.g. `su testuser -c '<probe>'` with a tiny program calling
+  `PamAuthenticator.AuthenticateAsync(Environment.UserName, password)`): the right password gives `Success`, a
+  wrong one `AuthenticationFailed` after PAM's delay. (Checked 2026-11-18 with a test account.) The automated
+  tests use a private PAM config (`pam_start_confdir`) instead.
+
+## Volume and media (OopsOSX)
+- [ ] The speaker in the menu bar follows volume changes made elsewhere (e.g. `wpctl set-volume @DEFAULT_AUDIO_SINK@ 30%`); dragging its slider and scrolling on it change the real volume; muting shows the crossed speaker.
+- [ ] Start a real player (a browser video, Spotify, mpv with MPRIS): the note appears; its menu shows the track and Play/Pause/Next work.
 
 ## Battery (UPower)
 - [ ] On a laptop: the tray battery shows the charge; plugging/unplugging AC toggles the bolt; the tooltip shows the percentage and time left.

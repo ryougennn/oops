@@ -17,6 +17,40 @@ public partial class DamageTraceTests(SwayFixture sway)
     private static partial int dup2(int fd, int fd2);
 
     [Fact]
+    public void Layer_surface_state_changes_are_committed_at_once()
+    {
+        sway.RequireSway();
+        string log = Path.Combine(sway.RuntimeDir, "wayland-debug-layer.log");
+        int savedStderr = dup(2);
+        using (var file = File.Create(log))
+        {
+            setenv("WAYLAND_DEBUG", "client", 1);
+            dup2((int)file.SafeFileHandle.DangerousGetHandle(), 2);
+            try
+            {
+                using var app = sway.Connect();
+                using var bar = new LayerSurface(app, null, Layer.Top, "test-bar") { Anchor = Anchor.Top, Size = new Size(100, 20) };
+                var frames = Draw.SolidColor(bar, 0xFF808080);
+                app.RunUntil(() => frames() >= 1, what: "first frame");
+                // Right after a frame (its callback may still be pending): the change must not wait for the next one.
+                bar.KeyboardInteractivity = KeyboardInteractivity.OnDemand;
+                app.Display.Flush();
+                app.RunFor(100);
+            }
+            finally
+            {
+                dup2(savedStderr, 2);
+                unsetenv("WAYLAND_DEBUG");
+            }
+        }
+        var requests = File.ReadAllLines(log).Where(l => l.Contains(" -> ")).ToList();
+        int set = requests.FindIndex(l => l.Contains(".set_keyboard_interactivity(2)"));
+        Assert.True(set >= 0, string.Join("\n", requests.TakeLast(15)));
+        var next = requests.Skip(set + 1).First(l => l.Contains("wl_surface#"));
+        Assert.Contains(".commit()", next);
+    }
+
+    [Fact]
     public void Popup_grab_uses_the_serial_of_the_click_that_opened_it()
     {
         sway.RequireSway();

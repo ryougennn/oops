@@ -126,10 +126,16 @@ public sealed class LayerSurface : Surface
         }
     }
 
-    // Changes take effect on commit; a render pass makes the next commit happen.
+    // Changes take effect on commit. Outside a render they are committed at once, without a new buffer:
+    // waiting for the next frame (which may wait on a frame callback) could let later requests overtake them,
+    // e.g. a popup's grab reaching the compositor before the keyboard interactivity it depends on.
     void Changed()
     {
-        if (IsConfigured)
+        if (!IsConfigured || IsRendering)
+            return; // before the first configure, or the frame being drawn commits it
+        if (HasPresented)
+            Proxy.Commit();
+        else
             Invalidate(Rectangle.Empty);
     }
 

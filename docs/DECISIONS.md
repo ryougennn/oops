@@ -87,3 +87,22 @@ Short ADR-style log. Newest at the bottom.
 
 ### D23. `Popup.Grab` records the serial when it is called
 - It used to read `seat.LastSerial` at the popup's first commit, which comes after the button *release* when press and release arrive together (fast clicks, scripted input). niri then grants the pointer grab but not the keyboard grab, so menus ignored arrow keys and Escape. Found with OopsOSX on niri; regression test checks the serial on the wire.
+
+### D24. `IpcServer` in the core package
+- Both demos carried the same single-instance Unix socket so compositor key bindings could reach the shell (Quickshell has `IpcHandler`). It is now core: `$XDG_RUNTIME_DIR/<name>.sock`, arguments NUL-separated, the client half-closes, the reply is read to EOF. Served from the event loop with non-blocking sockets (`WatchFd` per client), so a stuck client cannot block the UI; clients that never finish are dropped after two seconds; requests are capped at 64 KiB. An empty request is a ping that never reaches the handler.
+
+### D25. `oopshell.Services.Pam`
+- Both demos carried the same PAM interop. The package exposes `PamAuthenticator.AuthenticateAsync(user, password, service)` and a full-conversation overload (info/error messages, visible prompts) for later OTP or fingerprint flows; it runs on a worker thread and returns a `PamResult` (success, auth failed, account unavailable, aborted, error). Answers are malloc'ed copies wiped before freeing on abort.
+- Tested with `pam_start_confdir` and a private service where `pam_exec` checks the password it receives through our conversation, so CI needs no real password. Real `pam_unix` was checked by hand with a test account (it can only verify the calling user's password).
+
+### D26. SVG icons through the system librsvg (not a managed dependency)
+- Most icon themes are SVG-only. Managed SVG renderers are large and reflection-heavy (AOT warnings); librsvg and cairo are on every desktop Linux. `SvgRenderer.Render(path, w, h)` loads them at run time and returns premultiplied BGRA; `IsAvailable` is false where they are missing, so nothing else breaks.
+
+### D27. Volume through libpulse
+- PipeWire serves the PulseAudio protocol, so one small libpulse binding covers both servers. A `pa_threaded_mainloop` thread does the I/O; snapshots (`AudioSink` records) are posted to the UI thread. Struct fields are read at offsets checked with `offsetof` against `<pulse/introspect.h>` (LP64). Native PipeWire API would need far more interop for the same result.
+
+### D28. `oopshell.Services.Media` (MPRIS)
+- Players are found by bus name (`org.mpris.MediaPlayer2.*`, via ListNames + NameOwnerChanged) and refreshed with GetAll when their unique name emits PropertiesChanged. `Active` is a playing player, else the one that changed last.
+
+### D29. Layer-surface state changes are committed at once
+- Setting a `LayerSurface` property used to wait for the next frame, and a pending frame callback could delay it past later requests: on niri a menu's popup grab then saw the old keyboard interactivity. Changes made outside a render now get a state-only commit right away (inside a render, the frame's commit carries them).

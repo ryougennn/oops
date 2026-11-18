@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <RootNamespace>oopshell.Services.Desktop</RootNamespace>
-    <Description>Freedesktop .desktop entry discovery, Exec expansion and icon theme lookup for oopshell shells.</Description>
+    <Description>Freedesktop .desktop entry discovery, Exec expansion, icon theme lookup and SVG icon rendering (via the system librsvg) for oopshell shells.</Description>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 </Project>
