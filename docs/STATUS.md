@@ -30,6 +30,13 @@ Integration prerequisites: `dnf install sway grim` (or `apt install sway grim`);
 
 | M8 | done | `oopshell.Services.Desktop` (desktop entries across XDG dirs with id precedence, localized keys, Exec field codes and quoting, visibility rules, icon theme lookup with inheritance/scale/threshold, PNG before SVG), `oopshell.Services.DBus` (Tmds.DBus.Protocol, callbacks on the UI thread, `ExportedObject`), `oopshell.Services.Notifications` (server; tested with real `notify-send` on a private dbus-daemon: fields, hints, actions, replace-id, expiry), `oopshell.Services.Tray` (StatusNotifierWatcher or host-only, items with properties/pixmaps/tooltips, activate/scroll, dbusmenu model with mnemonics and clicks; tested with an in-test SNI item). `Services.Power` (stretch) not done. A real third-party tray app is a manual check. |
 
+| M9 | done (headless-verified) | `demo/oops95`: separate solution consuming oopshell only as packages from `artifacts/packages` (`build.sh`). Desktop, taskbar (Start, tasks, tray, clock + tooltip), cascading Start menu (mouse + keyboard), notification toasts, Run dialog, Shut Down dialog (dithered dim, dry-run commands), lock screen (ext-session-lock + PAM; fake authenticator only in `-c Test`), System Properties (CSD with SSD fallback), screensaver (stretch, idle-notify), control socket. AOT publish: **0 warnings**, `oops95` 5.4 MB + libSkiaSharp.so 11 MB. **Cold start ≈ 90 ms** (to control socket, headless sway). **Idle: 1 epoll wakeup in 30 s** (the minute clock). Verified by scripted headless tours (screenshots) on sway; the live niri session was not touched. Real-session checks are in MANUAL_TESTS.md. |
+| M10 | done | Guides in `docs/guide/` (getting started, rendering paths incl. Vulkan example, Skia, hot reload, own protocols, AOT). `docs/MANUAL_TESTS.md`. Root README. |
+
+### Library bugs the demo found (fixed, with regression tests)
+- EGL windows created before the first configure presented a 1×1 first frame (black popups via the viewport) → EGL surfaces are created lazily; Skia sets up GL with a surfaceless current context.
+- The shared `GRContext` kept stale GL state across EGL surfaces → reset per frame.
+
 ## Deviations from the spec (and why)
 
 - **Name** is `oopshell` (nuget `oops` is taken), see DECISIONS D1.
@@ -48,6 +55,12 @@ Integration prerequisites: `dnf install sway grim` (or `apt install sway grim`);
 - Pick minimum sway/niri versions (§15); current assumption: whatever Fedora 44 ships (sway 1.11, niri 26.04).
 
 ## Known limitations
+
+- `Popup.Reposition` needs xdg_popup v3 (throws otherwise; recreate the popup).
+- When the Start menu is opened from a compositor keybinding there is no input serial to grab with, so it opens without a grab and takes keys through the taskbar's exclusive keyboard; an outside click does not close it then (Escape or the Start button does).
+- `oopshell.Services.Power` (stretch) is not implemented.
+- niri binds cannot use a bare modifier; `config/niri.kdl` uses Mod+Space for the Start menu.
+- Not verified unattended: real GPU, real HiDPI, real tray apps, PAM with a real password, niri (see MANUAL_TESTS.md).
 
 - Skia's fontconfig manager does not resolve generic families such as `sans-serif` on every system; samples fall back to `SKFontManager.MatchCharacter`.
 
