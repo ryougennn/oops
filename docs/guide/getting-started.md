@@ -78,6 +78,12 @@ if (IpcServer.Send("myshell", "toggle-menu") is null) Console.Error.WriteLine("n
 The socket lives in `$XDG_RUNTIME_DIR`; `Listen` refuses to start a second instance and replaces a stale
 socket left by a crash. Requests are served on the UI thread from the event loop.
 
+## Capture (thumbnails)
+
+`ScreenCapture.ForWindow(app, window)` / `ForOutput(app, output)` (null where the compositor cannot), then
+`await capture.CaptureAsync()` for the pixels. Window capture needs ext-image-copy-capture and
+ext-foreign-toplevel-image-capture-source (check `ScreenCapture.CanCaptureWindows(app)` and fall back to icons).
+
 ## Services
 
 Optional packages, each started with `await XService.StartAsync(app, …)`, raising events on the UI thread:

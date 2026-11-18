@@ -9,5 +9,6 @@ Pinned copies; update deliberately and regenerate goldens (`UPDATE_GOLDENS=1 dot
 | `wlr-protocols/*` | https://gitlab.freedesktop.org/wlroots/wlr-protocols | commit `1106a4a1c57562ddd438c547da4c0d6dc150d624` |
 | `wlroots/virtual-keyboard-unstable-v1.xml` | https://gitlab.freedesktop.org/wlroots/wlroots (`protocol/`) | tag 0.19.0, commit `b2a10ed7bcdd366acb20cb55327ea5df45b6b5b9` |
 
+`ext-image-capture-source-v1.xml` and `ext-image-copy-capture-v1.xml` (staging) back `ScreenCapture` (window and output capture).
 `tablet-v2.xml` is only here because `cursor-shape-v1` references `zwp_tablet_tool_v2`.
 `xdg-output-unstable-v1.xml` gives exact logical output geometry (see docs/DECISIONS.md).

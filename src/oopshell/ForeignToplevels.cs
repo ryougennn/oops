@@ -13,7 +13,7 @@ public sealed class ForeignToplevel
 {
     readonly OopsApp app;
     readonly ZwlrForeignToplevelHandleV1? wlr;
-    readonly ExtForeignToplevelHandleV1? ext;
+    ExtForeignToplevelHandleV1? ext;
     readonly List<Output> outputs = new();
 
     internal ForeignToplevel(OopsApp app, ZwlrForeignToplevelHandleV1 handle)
@@ -64,6 +64,11 @@ public sealed class ForeignToplevel
     public bool IsMaximized { get; private set; }
     public bool IsFullscreen { get; private set; }
     public IReadOnlyList<Output> Outputs => outputs;
+
+    /// <summary>The ext-foreign-toplevel handle, for capture (paired with the wlr handle when both protocols are in use).</summary>
+    internal ExtForeignToplevelHandleV1? CaptureHandle => ext;
+
+    internal void AttachCaptureHandle(ExtForeignToplevelHandleV1? handle) => ext = handle;
 
     /// <summary>False with the read-only ext-foreign-toplevel-list fallback.</summary>
     public bool CanActivate => wlr is not null;
@@ -146,12 +151,71 @@ public sealed partial class OopsApp
         }
 
         if (TryGet<ZwlrForeignToplevelManagerV1>() is { } wlr)
+        {
             wlr.Toplevel += e => Track(new ForeignToplevel(this, e.Toplevel));
+            if (Has<ExtForeignToplevelImageCaptureSourceManagerV1>() && TryGet<ExtForeignToplevelListV1>() is { } captureList)
+                PairCaptureHandles(list, captureList);
+        }
         else if (TryGet<ExtForeignToplevelListV1>() is { } ext)
             ext.Toplevel += e => Track(new ForeignToplevel(this, e.Toplevel));
         else
             return;
         toplevels = list;
         toplevelsView = new ReadOnlyObservableCollection<ForeignToplevel>(list);
+    }
+
+    sealed class CaptureHandle(ExtForeignToplevelHandleV1 handle)
+    {
+        public readonly ExtForeignToplevelHandleV1 Handle = handle;
+        public string Title = "", AppId = "";
+        public bool Done;
+        public ForeignToplevel? Owner;
+    }
+
+    /// <summary>
+    /// Window capture needs ext-foreign-toplevel handles, while actions need the wlr ones: bind both lists and
+    /// pair each ext handle with the wlr window that has the same app id and title (both lists announce a
+    /// window when it maps, so identical windows pair in order).
+    /// </summary>
+    static void PairCaptureHandles(ObservableCollection<ForeignToplevel> windows, ExtForeignToplevelListV1 extList)
+    {
+        var unpaired = new List<CaptureHandle>();
+        void Pair()
+        {
+            foreach (var entry in unpaired.Where(e => e.Done).ToList())
+            {
+                if (windows.FirstOrDefault(w => w.CaptureHandle is null && w.AppId == entry.AppId && w.Title == entry.Title) is not { } window)
+                    continue;
+                window.AttachCaptureHandle(entry.Handle);
+                window.Closed += () => entry.Handle.Dispose();
+                entry.Owner = window;
+                unpaired.Remove(entry);
+            }
+        }
+        extList.Toplevel += e =>
+        {
+            var entry = new CaptureHandle(e.Toplevel);
+            e.Toplevel.Title += t => entry.Title = t.Title;
+            e.Toplevel.AppId += a => entry.AppId = a.AppId;
+            e.Toplevel.Done += () =>
+            {
+                entry.Done = true;
+                if (entry.Owner is null)
+                    Pair();
+            };
+            e.Toplevel.Closed += () =>
+            {
+                unpaired.Remove(entry);
+                entry.Owner?.AttachCaptureHandle(null);
+                entry.Handle.Dispose();
+            };
+            unpaired.Add(entry);
+        };
+        ((System.Collections.Specialized.INotifyCollectionChanged)windows).CollectionChanged += (_, args) =>
+        {
+            foreach (ForeignToplevel window in args.NewItems ?? Array.Empty<ForeignToplevel>())
+                window.Changed += Pair;
+            Pair();
+        };
     }
 }

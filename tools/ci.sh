@@ -3,6 +3,8 @@
 set -e
 cd "$(dirname "$0")/.."
 dotnet build oopshell.slnx -c Release
+# The window-capture test compositor (needs wlroots 0.20); CaptureTests skip if it cannot be built.
+tests/fixtures/capturewl/build.sh || echo "ci: capturewl not built, CaptureTests will skip" >&2
 for t in oopshell.Scanner.Tests oopshell.Tests oopshell.Services.Tests oopshell.IntegrationTests; do
     dotnet test --project tests/$t
 done

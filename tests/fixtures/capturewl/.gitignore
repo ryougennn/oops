@@ -1,0 +1,4 @@
+capturewl
+xdg-shell-protocol.h
+.deps/
+wlr-layer-shell-unstable-v1-protocol.h

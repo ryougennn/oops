@@ -106,3 +106,9 @@ Short ADR-style log. Newest at the bottom.
 
 ### D29. Layer-surface state changes are committed at once
 - Setting a `LayerSurface` property used to wait for the next frame, and a pending frame callback could delay it past later requests: on niri a menu's popup grab then saw the old keyboard interactivity. Changes made outside a render now get a state-only commit right away (inside a render, the frame's commit carries them).
+
+### D30. `ScreenCapture`: windows and outputs through ext-image-copy-capture
+- The standard protocols, not portals: xdg-desktop-portal's ScreenCast is for sandboxed apps (a consent dialog, PipeWire streams); a shell asks the compositor directly. `ScreenCapture.ForWindow/ForOutput` keep one capture session each; `CaptureAsync` copies a frame into shared memory (ARGB/XRGB8888) and returns the pixels; a buffer-constraints failure (size change) is retried once with the new constraints.
+- Driven by callbacks from the Wayland events, not `await`s inside the library: a `ConfigureAwait(false)` continuation is not run inline when the completing thread has a synchronization context (the UI thread always does), so it would resume on the thread pool and touch thread-affine Wayland objects.
+- Window capture needs `ext_foreign_toplevel_handle_v1`s while actions need the wlr handles. When the compositor offers window capture and both lists, oopshell binds both and pairs each ext handle with the wlr window with the same app id and title (in announcement order for identical ones). With the ext list alone, the handles are used directly.
+- Tested against `tests/fixtures/capturewl` (tinywl + wlroots 0.20 capture sources, optional wlr toplevel list and minimal layer-shell), because no packaged compositor here implements window capture yet. wlroots' scene-node capture renders whatever covers the window's area, so the fixture keeps windows apart; real compositors differ.

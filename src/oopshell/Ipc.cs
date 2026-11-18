@@ -197,6 +197,13 @@ public sealed class IpcServer : IDisposable
         foreach (var client in clients.ToList())
             Drop(client);
         listener.Dispose();
-        File.Delete(SocketPath);
+        try
+        {
+            File.Delete(SocketPath);
+        }
+        catch (IOException)
+        {
+            // The runtime directory is already gone (the session ended first).
+        }
     }
 }

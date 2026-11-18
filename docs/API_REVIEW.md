@@ -27,9 +27,13 @@ overlays with modifier tracking (the app switcher). Tested on niri 26.04 (nested
    Both demos render SVG theme icons.
 5. **Audio and media: added** as `oopshell.Services.Audio` (volume and mute, PulseAudio API, D27) and
    `oopshell.Services.Media` (MPRIS, D28). OopsOSX has volume and now-playing menu extras.
-6. **Window previews: blocked by compositors.** Thumbnails need
-   `ext-foreign-toplevel-image-capture-source-v1` (with `ext-image-copy-capture-v1`). niri 26.04 has neither;
-   sway 1.11 can capture outputs only. Add when a target compositor ships it, so it can be tested.
+6. **Window previews: added** as `ScreenCapture` (core, D30): window and output capture through
+   `ext-image-copy-capture-v1`. No packaged compositor here offers window capture yet (niri 26.04: none;
+   sway 1.11: outputs only; KWin: its own `zkde_screencast`), so it is tested against
+   `tests/fixtures/capturewl`, a tinywl built on wlroots 0.20 (which implements it). OopsOSX uses it for
+   Exposé, with app-icon tiles where capture is missing. For comparison, Quickshell's `ScreencopyView`
+   captures outputs through ext-image-copy-capture or wlr-screencopy, and windows only through Hyprland's
+   own `hyprland-toplevel-export` protocol.
 
 Found while doing these: layer-surface property changes waited for the next frame and could arrive after a
 popup's grab (fixed, D29).
@@ -53,6 +57,6 @@ popup's grab (fixed, D29).
 | `WlSessionLock`, `IdleMonitor` | `app.LockAsync`, `app.Idle.Watch` |
 | `DesktopEntries.heuristicLookup` | `DesktopEntries.FindByAppId` (new) |
 | `SystemTray`, `NotificationServer`, `UPower` | `TrayHost`, `NotificationServer`, `PowerService` |
-| `IpcHandler`, `PamContext` | missing (candidates 2 and 3) |
-| `Pipewire`, `Mpris`, `ScreencopyView` | missing (candidates 5 and 6) |
+| `IpcHandler`, `PamContext` | `IpcServer`, `PamAuthenticator` |
+| `Pipewire`, `Mpris`, `ScreencopyView` | `AudioService`, `MediaService`, `ScreenCapture` |
 | `Process`, `FileView`, `SystemClock` | .NET's own `Process`, `File`, timers |
