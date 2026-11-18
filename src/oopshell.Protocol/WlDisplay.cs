@@ -14,8 +14,12 @@ public sealed unsafe partial class WlDisplay
         nint display = wl_display_connect(nameUtf8.Pointer);
         if (display == 0)
         {
+            int error = System.Runtime.InteropServices.Marshal.GetLastPInvokeError();
             string target = name ?? Environment.GetEnvironmentVariable("WAYLAND_DISPLAY") ?? "wayland-0";
-            throw new WaylandConnectionException($"Could not connect to Wayland display '{target}': {LibC.ErrorText(System.Runtime.InteropServices.Marshal.GetLastSystemError())}.");
+            string where = target.Length == 0 ? "WAYLAND_DISPLAY is set but empty"
+                : Path.IsPathRooted(target) ? target
+                : Path.Combine(Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR") ?? "$XDG_RUNTIME_DIR (unset)", target);
+            throw new WaylandConnectionException($"Could not connect to the Wayland compositor at {where}: {LibC.ErrorText(error)}.");
         }
         return Wrap(display);
     }

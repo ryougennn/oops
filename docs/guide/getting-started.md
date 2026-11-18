@@ -11,9 +11,11 @@ dotnet add package oopshell
 ## The app and the loop
 
 `OopsApp.Connect()` connects (honoring `WAYLAND_DISPLAY`/`WAYLAND_SOCKET`), binds the globals oopshell
-uses, and waits until outputs and seats are described. `app.Run()` turns the calling thread into the UI
-thread and returns an exit code (non-zero after connection loss; `app.Quit(code)`, SIGINT and SIGTERM
-also stop it).
+uses, and waits until outputs and seats are described. Without a compositor it throws
+`WaylandConnectionException`, whose message names the socket and the reason; catch it to exit cleanly.
+`app.Run()` turns the calling thread into the UI thread and returns an exit code (`app.Quit(code)`,
+SIGINT and SIGTERM stop it). When the compositor goes away, `Run()` returns 1 and `app.ConnectionError`
+says why; disposing surfaces and services afterwards is safe, so `using` blocks unwind normally.
 
 Everything Wayland belongs to that thread. From other threads use `app.Post(action)` or
 `await app.InvokeAsync(...)`; `await` inside handlers resumes on the UI thread automatically.

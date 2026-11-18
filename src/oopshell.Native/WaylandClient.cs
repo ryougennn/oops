@@ -10,7 +10,7 @@ public static unsafe partial class WaylandClient
     /// <summary><c>WL_MARSHAL_FLAG_DESTROY</c>: destroy the proxy after marshalling.</summary>
     public const uint MarshalFlagDestroy = 1;
 
-    [LibraryImport(Lib)] public static partial nint wl_display_connect(byte* name);
+    [LibraryImport(Lib, SetLastError = true)] public static partial nint wl_display_connect(byte* name);
     [LibraryImport(Lib)] public static partial nint wl_display_connect_to_fd(int fd);
     [LibraryImport(Lib)] public static partial void wl_display_disconnect(nint display);
     [LibraryImport(Lib)] public static partial int wl_display_get_fd(nint display);

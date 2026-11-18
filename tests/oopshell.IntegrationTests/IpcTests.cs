@@ -50,6 +50,18 @@ public class IpcTests(SwayFixture sway)
     }
 
     [Fact]
+    public void Disposing_after_the_runtime_directory_is_gone_does_not_throw()
+    {
+        // A session ending can remove $XDG_RUNTIME_DIR before the shell has shut down.
+        using var app = sway.Connect();
+        string dir = Path.Combine(sway.RuntimeDir, $"gone-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        var server = IpcServer.Listen(app, Path.Combine(dir, "shell.sock"), _ => null);
+        Directory.Delete(dir, recursive: true);
+        server.Dispose();
+    }
+
+    [Fact]
     public void Handler_errors_are_replied_and_slow_clients_do_not_block_the_loop()
     {
         using var app = sway.Connect();
