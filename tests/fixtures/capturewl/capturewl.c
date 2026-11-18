@@ -6,7 +6,10 @@
  * backend and one 800x600 output, ext-foreign-toplevel-list, ext-image-copy-capture with output and
  * window capture sources, and (with -w) wlr-foreign-toplevel-management, so clients see both lists
  * like on sway and niri; a minimal layer-shell lets shells run on it. No released compositor in Fedora 44 offers window capture yet. Windows are placed
- * side by side, 330 px apart, 40 px from the top.
+ * side by side without overlapping (at least 330 px apart), 40 px from the top.
+ *
+ * Options: -w also offer wlr-foreign-toplevel-management; -n run as a window in the current session (for
+ * looking at a shell by hand); -s CMD startup command. Alt+E runs $CAPTUREWL_ALT_E, Alt+Esc quits.
  *
  * Build: tests/fixtures/capturewl/build.sh
  */
@@ -56,11 +59,12 @@ static struct wlr_output *first_output;
 static struct wlr_scene_tree *below_tree, *window_tree, *above_tree;
 static struct wl_list layers;
 static struct wl_listener new_layer_surface;
+static struct tinywl_server *the_server; /* for the layer-shell additions */
 struct capture_layer {
 	struct wl_list link;
 	struct wlr_layer_surface_v1 *layer_surface;
 	struct wlr_scene_layer_surface_v1 *scene;
-	struct wl_listener commit, destroy;
+	struct wl_listener commit, destroy, new_popup;
 };
 
 /* For brevity's sake, struct members are annotated where they are used. */
@@ -222,6 +226,13 @@ static bool handle_keybinding(struct tinywl_server *server, xkb_keysym_t sym) {
 	switch (sym) {
 	case XKB_KEY_Escape:
 		wl_display_terminate(server->wl_display);
+		break;
+	case XKB_KEY_e:
+		/* capturewl: run $CAPTUREWL_ALT_E (e.g. a shell's "show all windows"). */
+		if (getenv("CAPTUREWL_ALT_E") && fork() == 0) {
+			execl("/bin/sh", "/bin/sh", "-c", getenv("CAPTUREWL_ALT_E"), (void *)NULL);
+			_exit(1);
+		}
 		break;
 	case XKB_KEY_F1:
 		/* Cycle to the next toplevel */
@@ -419,10 +430,11 @@ static struct tinywl_toplevel *desktop_toplevel_at(
 	/* Find the node corresponding to the tinywl_toplevel at the root of this
 	 * surface tree, it is the only one for which we set the data field. */
 	struct wlr_scene_tree *tree = node->parent;
-	while (tree != NULL && tree->node.data == NULL) {
+	/* capturewl: layer surfaces and their popups are not windows; only trees under window_tree are. */
+	while (tree != NULL && tree->node.parent != window_tree) {
 		tree = tree->node.parent;
 	}
-	return tree->node.data;
+	return tree != NULL ? tree->node.data : NULL;
 }
 
 static void reset_cursor_mode(struct tinywl_server *server) {
@@ -728,9 +740,11 @@ static void xdg_toplevel_map(struct wl_listener *listener, void *data) {
 	/* Side by side: wlroots' scene-node capture renders everything over the node's area, so overlapping
 	 * windows would show up in each other's captures. */
 	static int next_x = 0;
-	/* Below a 22 px menu bar: scene capture would include whatever covers the window. */
+	/* Below a 22 px menu bar, each window after the previous one: scene capture would include whatever
+	 * covers the window. Windows past the right edge are still captured. */
 	wlr_scene_node_set_position(&toplevel->scene_tree->node, next_x, 40);
-	next_x += 330;
+	int width = toplevel->xdg_toplevel->base->geometry.width;
+	next_x += (width > 320 ? width : 320) + 10;
 	if (wlr_manager) {
 		toplevel->wlr_handle = wlr_foreign_toplevel_handle_v1_create(wlr_manager);
 		wlr_foreign_toplevel_handle_v1_set_title(toplevel->wlr_handle, state.title);
@@ -941,8 +955,12 @@ static void server_new_xdg_popup(struct wl_listener *listener, void *data) {
 	 * provide the proper parent scene node of the xdg popup. To enable this,
 	 * we always set the user data field of xdg_surfaces to the corresponding
 	 * scene node. */
-	struct wlr_xdg_surface *parent = wlr_xdg_surface_try_from_wlr_surface(xdg_popup->parent);
-	assert(parent != NULL);
+	struct wlr_xdg_surface *parent = xdg_popup->parent ? wlr_xdg_surface_try_from_wlr_surface(xdg_popup->parent) : NULL;
+	if (parent == NULL) {
+		/* capturewl: a layer surface's popup (its parent is set later); the layer's new_popup places it. */
+		free(popup);
+		return;
+	}
 	struct wlr_scene_tree *parent_tree = parent->data;
 	xdg_popup->base->data = wlr_scene_xdg_surface_create(parent_tree, xdg_popup->base);
 
@@ -980,13 +998,44 @@ static void arrange_layers(void) {
 
 static void layer_commit(struct wl_listener *listener, void *data) {
 	struct capture_layer *layer = wl_container_of(listener, layer, commit);
+	/* Overlays that ask for the keyboard get it (search, Exposé, alerts). */
+	struct wlr_layer_surface_v1 *ls = layer->layer_surface;
+	struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(the_server->seat);
+	if (ls->surface->mapped && keyboard != NULL &&
+			ls->current.keyboard_interactive == ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE &&
+			the_server->seat->keyboard_state.focused_surface != ls->surface) {
+		wlr_seat_keyboard_notify_enter(the_server->seat, ls->surface,
+			keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
+	}
 	/* Only when layer state changed: re-arranging (and so re-configuring) on every buffer commit would loop. */
 	if (layer->layer_surface->initial_commit || layer->layer_surface->current.committed)
 		arrange_layers();
 }
 
+static void layer_new_popup(struct wl_listener *listener, void *data) {
+	struct capture_layer *layer = wl_container_of(listener, layer, new_popup);
+	struct wlr_xdg_popup *xdg_popup = data;
+	xdg_popup->base->data = wlr_scene_xdg_surface_create(layer->scene->tree, xdg_popup->base);
+	struct tinywl_popup *popup = calloc(1, sizeof(*popup));
+	popup->xdg_popup = xdg_popup;
+	popup->commit.notify = xdg_popup_commit;
+	wl_signal_add(&xdg_popup->base->surface->events.commit, &popup->commit);
+	popup->destroy.notify = xdg_popup_destroy;
+	wl_signal_add(&xdg_popup->events.destroy, &popup->destroy);
+}
+
 static void layer_destroy(struct wl_listener *listener, void *data) {
 	struct capture_layer *layer = wl_container_of(listener, layer, destroy);
+	/* Give the keyboard back to the top window. */
+	if (the_server->seat->keyboard_state.focused_surface == layer->layer_surface->surface &&
+			!wl_list_empty(&the_server->toplevels)) {
+		struct tinywl_toplevel *top = wl_container_of(the_server->toplevels.next, top, link);
+		struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(the_server->seat);
+		if (keyboard != NULL)
+			wlr_seat_keyboard_notify_enter(the_server->seat, top->xdg_toplevel->base->surface,
+				keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
+	}
+	wl_list_remove(&layer->new_popup.link);
 	wl_list_remove(&layer->link);
 	wl_list_remove(&layer->commit.link);
 	wl_list_remove(&layer->destroy.link);
@@ -1002,6 +1051,8 @@ static void handle_new_layer_surface(struct wl_listener *listener, void *data) {
 	bool below = layer_surface->pending.layer == ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND
 		|| layer_surface->pending.layer == ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM;
 	layer->scene = wlr_scene_layer_surface_v1_create(below ? below_tree : above_tree, layer_surface);
+	layer->new_popup.notify = layer_new_popup;
+	wl_signal_add(&layer_surface->events.new_popup, &layer->new_popup);
 	layer->commit.notify = layer_commit;
 	wl_signal_add(&layer_surface->surface->events.commit, &layer->commit);
 	layer->destroy.notify = layer_destroy;
@@ -1014,11 +1065,14 @@ int main(int argc, char *argv[]) {
 	char *startup_cmd = NULL;
 
 	int c;
-	bool with_wlr = false;
-	while ((c = getopt(argc, argv, "s:hw")) != -1) {
+	bool with_wlr = false, nested = false;
+	while ((c = getopt(argc, argv, "s:hwn")) != -1) {
 		switch (c) {
 		case 'w':
 			with_wlr = true;
+			break;
+		case 'n':
+			nested = true; /* a window in the current session instead of headless */
 			break;
 		case 's':
 			startup_cmd = optarg;
@@ -1041,7 +1095,10 @@ int main(int argc, char *argv[]) {
 	 * output hardware. The autocreate option will choose the most suitable
 	 * backend based on the current environment, such as opening an X11 window
 	 * if an X11 server is running. */
-	server.backend = wlr_headless_backend_create(wl_display_get_event_loop(server.wl_display));
+	server.backend = nested
+		? wlr_backend_autocreate(wl_display_get_event_loop(server.wl_display), NULL)
+		: wlr_headless_backend_create(wl_display_get_event_loop(server.wl_display));
+	the_server = &server;
 	if (server.backend == NULL) {
 		wlr_log(WLR_ERROR, "failed to create wlr_backend");
 		return 1;
@@ -1203,7 +1260,8 @@ int main(int argc, char *argv[]) {
 		wl_display_destroy(server.wl_display);
 		return 1;
 	}
-	wlr_headless_add_output(server.backend, 800, 600);
+	if (!nested)
+		wlr_headless_add_output(server.backend, 800, 600);
 
 	/* Set the WAYLAND_DISPLAY environment variable to our socket and run the
 	 * startup command if requested. */

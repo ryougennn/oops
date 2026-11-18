@@ -18,20 +18,21 @@ public sealed class CaptureTests
         readonly Process process;
         readonly string runtimeDir = Directory.CreateTempSubdirectory("oopscap.").FullName;
 
-        public Compositor(bool withWlrToplevels)
+        public Compositor(bool withWlrToplevels, string? renderer = null)
         {
             Assert.SkipUnless(File.Exists(Binary), "capturewl is not built (tests/fixtures/capturewl/build.sh).");
             var start = new ProcessStartInfo(Binary, withWlrToplevels ? ["-w"] : []) { RedirectStandardError = true, RedirectStandardOutput = true };
             start.Environment["XDG_RUNTIME_DIR"] = runtimeDir;
-            start.Environment["WLR_RENDERER"] = "pixman";
+            start.Environment["WLR_RENDERER"] = renderer ?? "pixman";
             start.Environment.Remove("WAYLAND_DISPLAY");
             process = Process.Start(start)!;
             process.ErrorDataReceived += (_, _) => { };
             process.BeginErrorReadLine();
             process.BeginOutputReadLine();
             var deadline = DateTime.UtcNow.AddSeconds(10);
-            while (DateTime.UtcNow < deadline && !File.Exists(Path.Combine(runtimeDir, "wayland-0")))
+            while (DateTime.UtcNow < deadline && !File.Exists(Path.Combine(runtimeDir, "wayland-0")) && !process.HasExited)
                 Thread.Sleep(20);
+            Assert.SkipWhen(process.HasExited, $"capturewl did not start (renderer {renderer ?? "pixman"}).");
         }
 
         public OopsApp Connect() => OopsApp.Connect(new OopsOptions { Display = Path.Combine(runtimeDir, "wayland-0") });
@@ -57,10 +58,13 @@ public sealed class CaptureTests
         return window;
     }
 
-    [Fact]
-    public void A_window_is_captured_with_its_own_pixels()
+    // pixman offers ARGB8888 for capture; GPU renderers (gles2) offer only XBGR8888, which is converted.
+    [Theory]
+    [InlineData("pixman")]
+    [InlineData("gles2")]
+    public void A_window_is_captured_with_its_own_pixels(string renderer)
     {
-        using var compositor = new Compositor(withWlrToplevels: false);
+        using var compositor = new Compositor(withWlrToplevels: false, renderer);
         using var app = compositor.Connect();
         Assert.True(ScreenCapture.CanCaptureWindows(app));
         using var window = Window(app, "blue window", 0xFF3060C0, out var frames);

@@ -5,9 +5,9 @@ using oopshell.Protocol;
 namespace oopshell;
 
 /// <summary>
-/// One captured image: <see cref="Width"/>×<see cref="Height"/> pixels in a 32-bit <c>wl_shm</c> format
-/// (<see cref="WlShmFormat.Argb8888"/>/<see cref="WlShmFormat.Xrgb8888"/> are B, G, R, A bytes on
-/// little-endian machines, alpha premultiplied), <see cref="Stride"/> bytes per row.
+/// One captured image: <see cref="Width"/>×<see cref="Height"/> pixels, always B, G, R, A bytes (little-endian
+/// <see cref="WlShmFormat.Argb8888"/>, or <see cref="WlShmFormat.Xrgb8888"/> when there is no alpha; alpha
+/// premultiplied), <see cref="Stride"/> bytes per row. Compositors that capture in R, G, B order are converted.
 /// </summary>
 public sealed record CapturedImage(int Width, int Height, int Stride, WlShmFormat Format, byte[] Pixels)
 {
@@ -152,14 +152,11 @@ public sealed class ScreenCapture : IDisposable
             fail(new InvalidOperationException("The capture source has no size."));
             return;
         }
-        WlShmFormat format;
-        if (formats.Contains(WlShmFormat.Argb8888))
-            format = WlShmFormat.Argb8888;
-        else if (formats.Contains(WlShmFormat.Xrgb8888))
-            format = WlShmFormat.Xrgb8888;
-        else
+        // GPU renderers often offer only the R/B-swapped formats; those are converted when copying out.
+        WlShmFormat[] preferred = [WlShmFormat.Argb8888, WlShmFormat.Xrgb8888, WlShmFormat.Abgr8888, WlShmFormat.Xbgr8888];
+        if (preferred.FirstOrDefault(f => formats.Contains(f), (WlShmFormat)uint.MaxValue) is var format && format == (WlShmFormat)uint.MaxValue)
         {
-            fail(new InvalidOperationException("The compositor offers no 32-bit shared-memory format for capture."));
+            fail(new InvalidOperationException($"The compositor offers no usable shared-memory format for capture (offered: {(formats.Count == 0 ? "none" : string.Join(", ", formats))})."));
             return;
         }
         if (pool is null || pool.BufferSize != size || bufferFormat != format)
@@ -180,7 +177,14 @@ public sealed class ScreenCapture : IDisposable
             var pixels = new byte[stride * frameSize.Height];
             Marshal.Copy(pool.SlotPointer(0), pixels, 0, pixels.Length);
             frame.Dispose();
-            done(new CapturedImage(frameSize.Width, frameSize.Height, stride, format, pixels));
+            bool swapped = format is WlShmFormat.Abgr8888 or WlShmFormat.Xbgr8888;
+            if (swapped)
+            {
+                for (int i = 0; i < pixels.Length; i += 4)
+                    (pixels[i], pixels[i + 2]) = (pixels[i + 2], pixels[i]);
+            }
+            var reported = format switch { WlShmFormat.Abgr8888 => WlShmFormat.Argb8888, WlShmFormat.Xbgr8888 => WlShmFormat.Xrgb8888, _ => format };
+            done(new CapturedImage(frameSize.Width, frameSize.Height, stride, reported, pixels));
         };
         frame.Failed += e =>
         {
