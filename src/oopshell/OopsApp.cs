@@ -32,6 +32,7 @@ public sealed partial class OopsApp : IDisposable, IEventSource
     readonly List<PosixSignalRegistration> signals = new();
     int exitCode;
     bool disposed;
+    bool sourceAdded;
 
     OopsApp(OopsOptions options)
     {
@@ -155,7 +156,11 @@ public sealed partial class OopsApp : IDisposable, IEventSource
         SynchronizationContext.SetSynchronizationContext(new LoopSynchronizationContext(loop));
         signals.Add(PosixSignalRegistration.Create(PosixSignal.SIGINT, OnSignal));
         signals.Add(PosixSignalRegistration.Create(PosixSignal.SIGTERM, OnSignal));
-        loop.AddSource(Display.Fd);
+        if (!sourceAdded)
+        {
+            loop.AddSource(Display.Fd);
+            sourceAdded = true;
+        }
         try
         {
             loop.Run(this);

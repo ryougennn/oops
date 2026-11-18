@@ -6,6 +6,7 @@
   <ItemGroup>
     <ProjectReference Include="../oopshell.Protocol/oopshell.Protocol.csproj" />
     <InternalsVisibleTo Include="oopshell.Tests" />
+    <InternalsVisibleTo Include="oopshell.IntegrationTests" />
     <InternalsVisibleTo Include="oopshell.Egl" />
   </ItemGroup>
 </Project>
