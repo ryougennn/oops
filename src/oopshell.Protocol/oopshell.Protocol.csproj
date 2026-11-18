@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>oopshell.Protocol</RootNamespace>
+    <Description>Generated Wayland protocol bindings for oopshell, plus the scanner for your own protocol XML.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../oopshell.Native/oopshell.Native.csproj" />
+    <ProjectReference Include="../oopshell.Scanner/oopshell.Scanner.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" />
+    <WaylandProtocol Include="$(RepoRoot)protocols/**/*.xml" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Ship the scanner and the WaylandProtocol item mapping so package users can bind their own XML. -->
+    <None Include="build/oopshell.Protocol.targets" Pack="true" PackagePath="build;buildTransitive" />
+    <None Include="$(RepoRoot)src/oopshell.Scanner/bin/$(Configuration)/netstandard2.0/oopshell.Scanner.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+  </ItemGroup>
+  <Import Project="build/oopshell.Protocol.targets" />
+</Project>

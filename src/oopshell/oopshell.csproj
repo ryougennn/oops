@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>oopshell</RootNamespace>
+    <Description>Build Wayland desktop shells (bars, docks, launchers, lock screens) in C#, NativeAOT-ready.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../oopshell.Protocol/oopshell.Protocol.csproj" />
+    <InternalsVisibleTo Include="oopshell.Tests" />
+    <InternalsVisibleTo Include="oopshell.Egl" />
+  </ItemGroup>
+</Project>

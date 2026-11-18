@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>oopshell.Native</RootNamespace>
+    <Description>Raw interop for oopshell: libwayland-client, xkbcommon, libc.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="oopshell.Tests" />
+  </ItemGroup>
+</Project>

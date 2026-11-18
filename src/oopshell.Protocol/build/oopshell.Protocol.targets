@@ -1,0 +1,11 @@
+<Project>
+  <ItemGroup>
+    <CompilerVisibleProperty Include="RootNamespace" />
+    <CompilerVisibleProperty Include="WaylandProtocolNamespace" />
+  </ItemGroup>
+  <Target Name="_OopshellAddWaylandProtocols" BeforeTargets="GenerateMSBuildEditorConfigFileShouldRun;CoreCompile">
+    <ItemGroup>
+      <AdditionalFiles Include="@(WaylandProtocol)" />
+    </ItemGroup>
+  </Target>
+</Project>

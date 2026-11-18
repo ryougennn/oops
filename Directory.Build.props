@@ -1,0 +1,18 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RepoRoot>$(MSBuildThisFileDirectory)</RepoRoot>
+    <Version>0.1.0-alpha.1</Version>
+    <Authors>oopshell contributors</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageOutputPath>$(MSBuildThisFileDirectory)artifacts/packages</PackageOutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- shortcut: the machine's SDK (10.0.113) ships ILCompiler 10.0.13, which has this advisory; remove once the SDK is updated. See docs/STATUS.md. -->
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-p3jp-9v83-76w9" />
+  </ItemGroup>
+</Project>

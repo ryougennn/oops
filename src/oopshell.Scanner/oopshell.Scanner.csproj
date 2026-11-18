@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk" TreatAsLocalProperty="PublishAot;IsAotCompatible">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <IsAotCompatible>false</IsAotCompatible>
+    <!-- A compiler plugin, never AOT-published itself (even when a sample is published with -p:PublishAot=true). -->
+    <PublishAot>false</PublishAot>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <IsPackable>false</IsPackable>
+    <!-- Two fixed diagnostics; release tracking files add nothing here. -->
+    <NoWarn>$(NoWarn);RS2008</NoWarn>
+    <RootNamespace>oopshell.Scanner</RootNamespace>
+    <Description>Roslyn source generator: Wayland protocol XML to C# bindings.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" PrivateAssets="all" />
+  </ItemGroup>
+</Project>
