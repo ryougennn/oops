@@ -52,20 +52,24 @@ public class ToplevelTests(SwayFixture sway)
     public void Toplevel_is_resized_when_a_second_window_tiles_next_to_it()
     {
         using var app = sway.Connect();
-        using var first = new Toplevel(app);
+        using var first = new Toplevel(app) { AppId = "oopshell.test.first" };
         var firstFrames = Draw.SolidColor(first, 0xFFFF0000);
         app.RunUntil(() => firstFrames() >= 1 && first.LogicalSize.Width == 800, what: "first window");
 
-        using var second = new Toplevel(app);
+        using var second = new Toplevel(app) { AppId = "oopshell.test.second" };
         var secondFrames = Draw.SolidColor(second, 0xFF00FF00);
         app.RunUntil(() => secondFrames() >= 1 && first.LogicalSize.Width == 400, what: "tiling resize");
 
         Assert.Equal(new Size(400, 600), first.LogicalSize);
         Assert.Equal(new Size(400, 600), second.LogicalSize);
         app.RunUntil(() => firstFrames() >= 2, what: "redraw after resize");
+        app.RunFor(50);
+        // Which side the new window lands on depends on focus, so ask sway.
+        var firstRect = sway.WindowRect("oopshell.test.first");
+        var secondRect = sway.WindowRect("oopshell.test.second");
         var shot = sway.Screenshot();
-        Assert.Equal((255, 0, 0), shot[100, 300]);
-        Assert.Equal((0, 255, 0), shot[700, 300]);
+        Assert.Equal((255, 0, 0), shot[firstRect.X + 100, 300]);
+        Assert.Equal((0, 255, 0), shot[secondRect.X + 100, 300]);
     }
 
     [Fact]
