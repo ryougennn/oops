@@ -158,6 +158,7 @@ public sealed class SkiaSurface : IDisposable
     {
         if (Contexts.TryGetValue(display, out var context))
             return context;
+        display.MakeCurrentWithoutSurface(); // Skia queries GL while building its function table
         using var glInterface = (display.Options.Api == GlApi.GLES
             ? GRGlInterface.CreateGles(EglDisplay.GetProcAddress)
             : GRGlInterface.CreateOpenGl(EglDisplay.GetProcAddress))

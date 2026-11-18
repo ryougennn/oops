@@ -116,6 +116,18 @@ public sealed unsafe class EglDisplay : IDisposable
 
     public bool HasExtension(string name) => extensions.Contains(name);
 
+    /// <summary>
+    /// Makes the shared context current without a surface (EGL_KHR_surfaceless_context), e.g. to let a GL
+    /// binding library load functions before any window has its first frame.
+    /// </summary>
+    public void MakeCurrentWithoutSurface()
+    {
+        if (!HasExtension("EGL_KHR_surfaceless_context"))
+            throw new NotSupportedException("EGL lacks EGL_KHR_surfaceless_context.");
+        if (eglMakeCurrent(Handle, 0, 0, Context) == EGL_FALSE)
+            throw Error("eglMakeCurrent");
+    }
+
     /// <summary>Raised before the display is terminated (e.g. so a GPU drawing library can drop its context).</summary>
     public event Action? Disposing;
 
