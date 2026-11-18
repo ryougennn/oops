@@ -9,6 +9,9 @@ public sealed class Region(params Rectangle[] rectangles)
     /// <summary>A region containing nothing (e.g. an input region for a click-through surface).</summary>
     public static readonly Region Empty = new();
 
+    /// <summary>Everything: the compositor clips it to the surface (e.g. a blur region for a whole surface).</summary>
+    public static readonly Region All = new(new Rectangle(0, 0, int.MaxValue, int.MaxValue));
+
     public IReadOnlyList<Rectangle> Rectangles { get; } = rectangles.ToArray();
 
     internal WlRegion Create(WlCompositor compositor)

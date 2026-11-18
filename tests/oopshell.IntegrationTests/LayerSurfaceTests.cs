@@ -34,6 +34,22 @@ public class LayerSurfaceTests(SwayFixture sway)
     }
 
     [Fact]
+    public void Blur_requests_are_ignored_where_the_compositor_cannot_blur()
+    {
+        // sway has no ext-background-effect: a shell asks anyway and keeps working.
+        using var app = sway.Connect();
+        Assert.False(app.CanBlurBehind);
+        using var bar = CreateBar(app, app.Outputs[0], 30);
+        bar.BlurRegion = Region.All;
+        var frames = Draw.SolidColor(bar, 0x80102030);
+        app.RunUntil(() => frames() >= 1, what: "bar frame");
+        bar.BlurRegion = null;
+        bar.Invalidate();
+        app.RunUntil(() => frames() >= 2, what: "second frame");
+        app.Display.Roundtrip(); // a protocol error would surface here
+    }
+
+    [Fact]
     public void ForEachOutput_follows_hotplug()
     {
         using var app = sway.Connect();

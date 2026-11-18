@@ -48,6 +48,7 @@ public sealed partial class OopsApp : IDisposable, IEventSource
         Shm = Get<WlShm>();
         foreach (var global in globals.ToList())
             BindKnownGlobal(global);
+        BindBackgroundEffects(); // its capabilities arrive in the next roundtrip
         Display.Roundtrip(); // initial output/seat state
         Display.Roundtrip(); // events triggered by objects bound in the previous roundtrip (xdg_output, keymaps)
         Initializing = false;

@@ -39,6 +39,11 @@ sizes, tiles and positions the window by its geometry (`GeometrySize`, `PopupOpt
 include the margins, so draw the window inset by them and set `InputRegion` to the geometry so clicks on
 the shadow fall through. Popup anchors are in the parent's geometry coordinates.
 
+Frosted glass: set `BlurRegion` on any surface (`Region.All` for all of it, null for none) and draw
+translucent content over it; the compositor blurs what is behind (ext-background-effect, e.g. niri).
+`app.CanBlurBehind` (and `CanBlurBehindChanged`) say whether it currently can, so a shell can fall back
+to a more opaque look; where it can't, the request is simply ignored.
+
 Open menus from the input handler that should own the grab: `Grab(seat)` records the seat's serial at that
 moment. Grabs are only dismissed by clicks on *other* clients, so close your menus yourself when another of
 your own surfaces is clicked. On niri, a layer surface's grabbing popup does not get the keyboard itself:

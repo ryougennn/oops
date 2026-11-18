@@ -202,6 +202,7 @@ public abstract partial class Surface : IDisposable
             using (var opaque = opaqueRegion?.Create(App.Compositor))
                 Proxy.SetOpaqueRegion(opaque);
         }
+        ApplyBlurRegion();
     }
 
     void OnFrameDone(uint time)
@@ -379,6 +380,7 @@ public abstract partial class Surface : IDisposable
         App.RemoveSurface(this);
         DestroyRole();
         frameCallback?.Dispose();
+        backgroundEffect?.Dispose();
         fractionalScale?.Dispose();
         viewport?.Dispose();
         Proxy.Dispose();
