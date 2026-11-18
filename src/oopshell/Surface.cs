@@ -218,9 +218,12 @@ public abstract partial class Surface : IDisposable
         if (needsInitialCommit)
         {
             needsInitialCommit = false;
-            BeforeInitialCommit();
-            Proxy.Commit();
-            return;
+            if (CommitsBeforeConfigure)
+            {
+                BeforeInitialCommit();
+                Proxy.Commit();
+                return;
+            }
         }
         if (!IsConfigured || !dirty || (frameCallback is not null && !renderNow) || BufferSize.IsEmpty)
             return;
@@ -245,6 +248,9 @@ public abstract partial class Surface : IDisposable
     }
 
     internal bool IsRendering => inRender;
+
+    /// <summary>False for roles that are configured without an initial commit (and must not commit before acking).</summary>
+    private protected virtual bool CommitsBeforeConfigure => true;
 
     /// <summary>Last chance for a role to send state before the initial commit (e.g. a popup grab).</summary>
     private protected virtual void BeforeInitialCommit() { }
