@@ -68,6 +68,34 @@ public sealed class DesktopTests : IDisposable
     }
 
     [Fact]
+    public void Windows_are_matched_to_their_applications_by_app_id()
+    {
+        DesktopEntry Make(string id, string body) => DesktopEntry.Parse(id, id, "[Desktop Entry]\n" + body)!;
+        var entries = new[]
+        {
+            Make("org.kde.konsole.desktop", "Name=Konsole\nExec=konsole"),
+            Make("org.mozilla.firefox.desktop", "Name=Firefox\nExec=/usr/lib/firefox/firefox %u"),
+            Make("code.desktop", "Name=Visual Studio Code\nExec=env FOO=1 /usr/bin/code-oss %F\nStartupWMClass=Code"),
+            Make("steam-game.desktop", "Name=A Game\nExec=steam steam://rungameid/1\nStartupWMClass=steam_app_1"),
+            Make("gimp-helper.desktop", "Name=GIMP helper\nExec=gimp\nNoDisplay=true"),
+            Make("gimp-2.desktop", "Name=GNU Image Manipulation Program\nExec=gimp %U"),
+            Make("calc.desktop", "Name=Calculator\nExec=gnome-calculator"),
+        };
+        Assert.Equal("org.kde.konsole.desktop", DesktopEntries.FindByAppId(entries, "org.kde.konsole")?.Id);  // desktop file id
+        Assert.Equal("code.desktop", DesktopEntries.FindByAppId(entries, "code")?.Id);                        // id beats StartupWMClass
+        Assert.Equal("code.desktop", DesktopEntries.FindByAppId(entries, "CODE")?.Id);
+        Assert.Equal("code.desktop", DesktopEntries.FindByAppId(entries, "code-oss")?.Id);                  // Exec behind env
+        Assert.Equal("steam-game.desktop", DesktopEntries.FindByAppId(entries, "steam_app_1")?.Id);         // StartupWMClass
+        Assert.Equal("org.mozilla.firefox.desktop", DesktopEntries.FindByAppId(entries, "firefox")?.Id);     // reverse-DNS tail
+        Assert.Equal("org.kde.konsole.desktop", DesktopEntries.FindByAppId(entries, "konsole")?.Id);
+        Assert.Equal("gimp-2.desktop", DesktopEntries.FindByAppId(entries, "gimp")?.Id);                    // Exec; the visible entry wins
+        Assert.Equal("calc.desktop", DesktopEntries.FindByAppId(entries, "gnome-calculator")?.Id);
+        Assert.Equal("calc.desktop", DesktopEntries.FindByAppId(entries, "calculator")?.Id);                // Name
+        Assert.Null(DesktopEntries.FindByAppId(entries, "unknown"));
+        Assert.Null(DesktopEntries.FindByAppId(entries, ""));
+    }
+
+    [Fact]
     public void LoadAll_prefers_earlier_data_dirs_and_builds_ids_from_subdirectories()
     {
         Write("home/applications/editor.desktop", "[Desktop Entry]\nName=My Editor\nExec=myedit\n");

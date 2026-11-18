@@ -31,7 +31,10 @@ public sealed class Toplevel : Surface
 {
     readonly ZxdgToplevelDecorationV1? decoration;
     Size pendingSize;
+    Size geometrySize;
     ToplevelStates pendingStates;
+    Margins shadowMargins;
+    bool geometrySent;
     string title = "";
     string appId = "";
     Size minSize;
@@ -44,7 +47,8 @@ public sealed class Toplevel : Surface
         {
             XdgSurface.AckConfigure(e.Serial);
             States = pendingStates;
-            ApplyConfigure(pendingSize.Width > 0 && pendingSize.Height > 0 ? pendingSize : LogicalSize.IsEmpty ? DefaultSize : LogicalSize);
+            geometrySize = pendingSize.Width > 0 && pendingSize.Height > 0 ? pendingSize : geometrySize.IsEmpty ? DefaultSize : geometrySize;
+            ApplyGeometry();
         };
         Role = XdgSurface.GetToplevel();
         Role.Configure += e =>
@@ -67,6 +71,31 @@ public sealed class Toplevel : Surface
 
     /// <summary>The raw <c>xdg_toplevel</c> (escape hatch).</summary>
     public XdgToplevel Role { get; }
+
+    /// <summary>
+    /// Surface space outside the window geometry: client-side shadows or resize borders. The compositor sizes,
+    /// places and tiles the window by its geometry only; <see cref="Surface.LogicalSize"/> and render frames
+    /// include the margins, so draw the window itself inset by them. Can change at any time.
+    /// </summary>
+    public Margins ShadowMargins
+    {
+        get => shadowMargins;
+        set
+        {
+            shadowMargins = value;
+            if (IsConfigured)
+                ApplyGeometry();
+        }
+    }
+
+    /// <summary>The window's size without <see cref="ShadowMargins"/>, as the compositor configured it.</summary>
+    public Size GeometrySize => geometrySize;
+
+    void ApplyGeometry()
+    {
+        SendWindowGeometry(XdgSurface, shadowMargins, geometrySize, ref geometrySent);
+        ApplyConfigure(GrowBy(geometrySize, shadowMargins));
+    }
 
     /// <summary>Size to use when the compositor lets the client choose (configure with 0×0).</summary>
     public Size DefaultSize { get; set; } = new(640, 480);

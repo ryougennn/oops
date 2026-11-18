@@ -50,7 +50,10 @@ public sealed class Popup : Surface
 {
     readonly Surface parent;
     Seat? grabSeat;
+    uint grabSerial;
     uint repositionToken;
+    Margins shadowMargins;
+    bool geometrySent;
 
     public Popup(Surface parent, PopupOptions options) : base(parent.App)
     {
@@ -61,7 +64,7 @@ public sealed class Popup : Surface
         XdgSurface.Configure += e =>
         {
             XdgSurface.AckConfigure(e.Serial);
-            ApplyConfigure(Geometry.Size);
+            ApplyGeometry();
         };
 
         using (var positioner = options.Create(wmBase))
@@ -103,18 +106,44 @@ public sealed class Popup : Surface
     /// <summary>Where the compositor placed the popup, relative to the parent's window geometry.</summary>
     public Rectangle Geometry { get; private set; }
 
+    /// <summary>
+    /// Surface space outside the popup's geometry (a client-side shadow). Positioning uses the geometry
+    /// (<see cref="PopupOptions.Size"/>); <see cref="Surface.LogicalSize"/> and render frames include the
+    /// margins, so draw the popup itself inset by them. Child popups anchor in this popup's geometry
+    /// coordinates, i.e. surface coordinates minus the left/top margin.
+    /// </summary>
+    public Margins ShadowMargins
+    {
+        get => shadowMargins;
+        set
+        {
+            shadowMargins = value;
+            if (IsConfigured)
+                ApplyGeometry();
+        }
+    }
+
+    void ApplyGeometry()
+    {
+        SendWindowGeometry(XdgSurface, shadowMargins, Geometry.Size, ref geometrySent);
+        ApplyConfigure(GrowBy(Geometry.Size, shadowMargins));
+    }
+
     /// <summary>The compositor dismissed the popup (outside click, parent closed…). Dispose it.</summary>
     public event Action? Dismissed;
 
     /// <summary>
     /// Takes an explicit grab, so keyboard input goes here and a click outside dismisses the popup. Must be
-    /// called before the popup is first committed (right after construction); uses the seat's latest serial.
+    /// called before the popup is first committed (right after construction), from the input handler that
+    /// opens it: the grab uses the seat's latest serial as of this call. (A later serial, such as the button
+    /// release that often arrives before the popup is committed, can cost the keyboard grab.)
     /// </summary>
     public void Grab(Seat seat)
     {
         if (IsConfigured)
             throw new InvalidOperationException("Grab must be called before the popup is shown.");
         grabSeat = seat;
+        grabSerial = seat.LastSerial;
     }
 
     /// <summary>Moves or resizes the popup. Needs xdg_popup v3; otherwise recreate the popup instead.</summary>
@@ -130,7 +159,7 @@ public sealed class Popup : Surface
     private protected override void BeforeInitialCommit()
     {
         if (grabSeat is not null)
-            Role.Grab(grabSeat.Proxy, grabSeat.LastSerial);
+            Role.Grab(grabSeat.Proxy, grabSerial);
     }
 
     private protected override int InitialScaleHint => (int)Math.Ceiling(parent.Scale);

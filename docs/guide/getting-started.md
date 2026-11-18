@@ -32,6 +32,17 @@ app.WatchFd(fd, FdEvents.Readable, events => ReadMore());
 | `Popup` | menus and tooltips from any of the above; `Grab(seat)` for menus; `Reposition` |
 | `LockSurface` | created for you by `app.LockAsync(...)` |
 
+Client-side decorations with a shadow: set `ShadowMargins` on a `Toplevel` or `Popup`. The compositor
+sizes, tiles and positions the window by its geometry (`GeometrySize`, `PopupOptions.Size`); render frames
+include the margins, so draw the window inset by them and set `InputRegion` to the geometry so clicks on
+the shadow fall through. Popup anchors are in the parent's geometry coordinates.
+
+Open menus from the input handler that should own the grab: `Grab(seat)` records the seat's serial at that
+moment. Grabs are only dismissed by clicks on *other* clients, so close your menus yourself when another of
+your own surfaces is clicked. On niri, a layer surface's grabbing popup does not get the keyboard itself:
+give the layer surface `KeyboardInteractivity.OnDemand` while the menu is open and forward its `KeyDown`
+events to the menu (OopsOSX's menu bar does this).
+
 You never handle configure serials: subscribe to `Configured` (sizes) and `Render` (draw). Call
 `surface.Invalidate()` (or `Invalidate(rect)`) when something changed; with no invalidation there are no
 frames and no CPU use.
@@ -50,7 +61,8 @@ returned `IDisposable` is disposed when that output goes away.
 
 ## Desktop integration
 
-`app.Toplevels` (other apps' windows for a taskbar), `app.LockAsync`, `app.Idle.Watch`,
+`app.Toplevels` (other apps' windows for a taskbar; `DesktopEntries.FindByAppId` in
+`oopshell.Services.Desktop` maps a window's app id to its application for names and icons), `app.LockAsync`, `app.Idle.Watch`,
 `app.LaunchAsync` (starts a detached process with an activation token).
 
 ## Escape hatches

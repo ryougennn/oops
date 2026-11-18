@@ -76,3 +76,14 @@ Short ADR-style log. Newest at the bottom.
 - Mailbox (else immediate, else FIFO) present mode: with FIFO, Mesa waits for its own frame callbacks and blocks the event loop while a surface is hidden.
 - Device choice: first device in loader order (Mesa's device-select layer puts the display GPU first) whose graphics queue can present to the display; CPU devices (lavapipe) only as a fallback.
 - `SkiaBackend.Auto` stays EGL: GL has buffer-age partial repaints and longer field use; Vulkan measured equal on steady frames and memory.
+
+### D21. `ShadowMargins` on `Toplevel` and `Popup` (added for OopsOSX)
+- Client-side shadows need a surface larger than the window geometry. Before, oopshell sized buffers from the configure size, so this was impossible even with the raw `xdg_surface` escape hatch. Now the role grows the surface by the margins and sends `set_window_geometry`; `LogicalSize`/render frames include the margins, `Toplevel.GeometrySize` is the configured size. Margins can change at any time (zero margins send the full-surface geometry once, then nothing).
+- A property per role, not a general "window geometry" API: margins are what toolkits actually vary, and a free-form geometry rectangle would let the surface and geometry disagree about size.
+
+### D22. `DesktopEntries.FindByAppId` and `DesktopEntry.StartupWMClass` (added for OopsOSX)
+- Docks and taskbars must map a window's app_id to an application (name, icon, "is this pinned app running"). oops95 had no way to do it (generic task icons); OopsOSX needs it everywhere. Quickshell has the same helper (`DesktopEntries.heuristicLookup`).
+- Rules in order: exact desktop id, case-insensitive id, `StartupWMClass`, last part of a reverse-DNS id, the program in `Exec` (skipping `env` and assignments), `Name`. Non-`NoDisplay` entries win ties. Unit-tested rule by rule.
+
+### D23. `Popup.Grab` records the serial when it is called
+- It used to read `seat.LastSerial` at the popup's first commit, which comes after the button *release* when press and release arrive together (fast clicks, scripted input). niri then grants the pointer grab but not the keyboard grab, so menus ignored arrow keys and Escape. Found with OopsOSX on niri; regression test checks the serial on the wire.

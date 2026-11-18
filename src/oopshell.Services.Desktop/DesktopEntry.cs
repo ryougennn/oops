@@ -25,6 +25,8 @@ public sealed class DesktopEntry
     public bool NoDisplay { get; init; }
     public bool Hidden { get; init; }
     public bool Terminal { get; init; }
+    /// <summary>The window class (Wayland app_id) the application's windows use, if the file says.</summary>
+    public string? StartupWMClass { get; init; }
 
     /// <summary>Parses a desktop file; returns null if it has no [Desktop Entry] group or no Name.</summary>
     public static DesktopEntry? Parse(string id, string path, string text, string? locale = null)
@@ -51,6 +53,7 @@ public sealed class DesktopEntry
             NoDisplay = file.GetBool(Group, "NoDisplay"),
             Hidden = file.GetBool(Group, "Hidden"),
             Terminal = file.GetBool(Group, "Terminal"),
+            StartupWMClass = file.Get(Group, "StartupWMClass"),
         };
     }
 
@@ -199,6 +202,40 @@ public static class DesktopEntries
             }
         }
         return byId.Values.OrderBy(e => e.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+    }
+
+    /// <summary>
+    /// The application a window belongs to, from its Wayland app_id (what docks and taskbars need for names
+    /// and icons). Tries, in order: the desktop file id, <c>StartupWMClass</c>, the last part of a reverse-DNS
+    /// id (<c>org.mozilla.firefox</c> ↔ <c>firefox</c>), the program in Exec, then the Name; case-insensitive
+    /// after the exact id. Entries that are not NoDisplay win ties. Null if nothing matches.
+    /// </summary>
+    public static DesktopEntry? FindByAppId(IEnumerable<DesktopEntry> entries, string appId)
+    {
+        if (string.IsNullOrEmpty(appId))
+            return null;
+        var list = entries as IReadOnlyList<DesktopEntry> ?? entries.ToList();
+        static string Stem(DesktopEntry e) => e.Id.EndsWith(".desktop", StringComparison.Ordinal) ? e.Id[..^8] : e.Id;
+        static string LastPart(string s) => s[(s.LastIndexOf('.') + 1)..];
+        static string? Program(DesktopEntry e) =>
+            e.Exec?.Split(' ', StringSplitOptions.RemoveEmptyEntries).SkipWhile(t => t == "env" || t.Contains('=')).FirstOrDefault() is { } p ? System.IO.Path.GetFileName(p.Trim('"')) : null;
+
+        Func<DesktopEntry, bool>[] rules =
+        [
+            e => Stem(e) == appId,
+            e => Stem(e).Equals(appId, StringComparison.OrdinalIgnoreCase),
+            e => e.StartupWMClass?.Equals(appId, StringComparison.OrdinalIgnoreCase) == true,
+            e => LastPart(Stem(e)).Equals(LastPart(appId), StringComparison.OrdinalIgnoreCase),
+            e => Program(e)?.Equals(LastPart(appId), StringComparison.OrdinalIgnoreCase) == true,
+            e => e.Name.Equals(appId, StringComparison.OrdinalIgnoreCase),
+        ];
+        foreach (var rule in rules)
+        {
+            var matches = list.Where(rule).ToList();
+            if (matches.Count > 0)
+                return matches.FirstOrDefault(e => !e.NoDisplay) ?? matches[0];
+        }
+        return null;
     }
 
     /// <summary><c>$XDG_DATA_HOME</c> (default <c>~/.local/share</c>) followed by <c>$XDG_DATA_DIRS</c> (default <c>/usr/local/share:/usr/share</c>).</summary>

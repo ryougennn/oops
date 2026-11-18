@@ -315,6 +315,18 @@ public abstract partial class Surface : IDisposable
             OnScaleMaybeChanged();
     }
 
+    private protected static Size GrowBy(Size size, Margins m) =>
+        new(size.Width + m.Left + m.Right, size.Height + m.Top + m.Bottom);
+
+    /// <summary>Sends xdg_surface.set_window_geometry for margins (applied with the next commit); once set it is kept up to date.</summary>
+    private protected static void SendWindowGeometry(XdgSurface xdg, Margins m, Size geometry, ref bool sent)
+    {
+        if (m == default && !sent)
+            return;
+        xdg.SetWindowGeometry(m.Left, m.Top, Math.Max(1, geometry.Width), Math.Max(1, geometry.Height));
+        sent = true;
+    }
+
     internal static Size ScaleSize(Size logical, double scale) =>
         new((int)Math.Round(logical.Width * scale), (int)Math.Round(logical.Height * scale));
 
