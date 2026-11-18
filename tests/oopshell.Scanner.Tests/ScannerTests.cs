@@ -112,19 +112,20 @@ public class ScannerTests
             .Append(MetadataReference.CreateFromFile(protocolAssembly.Location))
             .Append(MetadataReference.CreateFromFile(typeof(oopshell.Native.WlArgument).Assembly.Location));
         var compilation = CSharpCompilation.Create("UserProtocols",
-            [CSharpSyntaxTree.ParseText("namespace User; public static class Anchor { }")],
+            [CSharpSyntaxTree.ParseText("namespace User; public static class Anchor { }", cancellationToken: TestContext.Current.CancellationToken)],
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true, nullableContextOptions: NullableContextOptions.Enable));
 
         var driver = CSharpGeneratorDriver.Create([new WaylandScanner().AsSourceGenerator()],
             additionalTexts: [new InMemoryText("effects.xml", xml)],
             optionsProvider: new TestOptions("User.Protocols"));
-        driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var generatorDiagnostics);
+        var ct = TestContext.Current.CancellationToken;
+        driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var generatorDiagnostics, ct);
 
         Assert.Empty(generatorDiagnostics);
-        var errors = output.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error).ToList();
+        var errors = output.GetDiagnostics(ct).Where(d => d.Severity == DiagnosticSeverity.Error).ToList();
         Assert.True(errors.Count == 0, string.Join("\n", errors));
-        var generated = string.Join("\n", output.SyntaxTrees.Select(t => t.ToString()));
+        var generated = string.Join("\n", output.SyntaxTrees.Select(t => t.GetText(ct).ToString()));
         Assert.Contains("global::oopshell.Protocol.WlSurface.NativeInterface", generated);
         Assert.Contains("global::oopshell.Protocol.WlOutputTransform transform", generated);
     }

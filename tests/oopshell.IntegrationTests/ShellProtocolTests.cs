@@ -45,7 +45,7 @@ public class ShellProtocolTests(SwayFixture sway)
     }
 
     [Fact]
-    public void Session_lock_covers_outputs_and_unlocks()
+    public async Task Session_lock_covers_outputs_and_unlocks()
     {
         using var app = sway.Connect();
         var configured = new List<LockSurface>();
@@ -55,7 +55,7 @@ public class ShellProtocolTests(SwayFixture sway)
             Draw.SolidColor(surface, 0xFF000080);
         });
         app.RunUntil(() => lockTask.IsCompleted, what: "locked");
-        var session = lockTask.Result;
+        var session = await lockTask;
         Assert.True(session.IsLocked);
         Assert.Single(configured);
         app.RunUntil(() => configured[0].IsConfigured, what: "lock surface configure");

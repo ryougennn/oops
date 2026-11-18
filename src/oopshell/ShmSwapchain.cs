@@ -187,6 +187,13 @@ public sealed unsafe class ShmBuffer : IDisposable
             throw new InvalidOperationException("This buffer was already presented or returned.");
         leased = false;
         var surface = chain.Surface;
+        var flash = surface.App.ReloadFlashRect(Size, surface.Scale);
+        if (!flash.IsEmpty)
+        {
+            for (int y = flash.Top; y < flash.Bottom; y++)
+                Pixels.Slice(y * Size.Width + flash.Left, flash.Width).Fill(0xFFFF00FF);
+            damage = Rectangle.Union(damage, flash);
+        }
         surface.PrepareCommit();
         var wl = surface.Proxy;
         wl.Attach(proxy, 0, 0);

@@ -10,5 +10,6 @@
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />
+    <Compile Include="$(MSBuildThisFileDirectory)TestAssemblyInfo.cs" Link="TestAssemblyInfo.cs" />
   </ItemGroup>
 </Project>

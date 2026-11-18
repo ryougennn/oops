@@ -208,6 +208,12 @@ public sealed unsafe class EglWindow : IDisposable
     /// <summary>Presents the frame, reporting <paramref name="damage"/> (buffer pixels, top-left origin) when supported.</summary>
     public void SwapBuffers(Rectangle damage)
     {
+        var flash = surface.App.ReloadFlashRect(size, surface.Scale);
+        if (!flash.IsEmpty)
+        {
+            DrawFlash(flash);
+            damage = Rectangle.Union(damage, flash);
+        }
         surface.PrepareCommit();
         int result;
         if (Display.HasSwapBuffersWithDamage && !damage.IsEmpty)
@@ -225,6 +231,22 @@ public sealed unsafe class EglWindow : IDisposable
     }
 
     public void SwapBuffers() => SwapBuffers(new Rectangle(Point.Empty, size));
+
+    // The DevOverlay "reloaded" marker: a scissored clear, so it needs no shaders.
+    void DrawFlash(Rectangle rect)
+    {
+        const int GL_SCISSOR_TEST = 0x0C11, GL_COLOR_BUFFER_BIT = 0x4000;
+        var enable = (delegate* unmanaged[Cdecl]<int, void>)GetProcAddress("glEnable");
+        var disable = (delegate* unmanaged[Cdecl]<int, void>)GetProcAddress("glDisable");
+        var scissor = (delegate* unmanaged[Cdecl]<int, int, int, int, void>)GetProcAddress("glScissor");
+        var clearColor = (delegate* unmanaged[Cdecl]<float, float, float, float, void>)GetProcAddress("glClearColor");
+        var clear = (delegate* unmanaged[Cdecl]<int, void>)GetProcAddress("glClear");
+        enable(GL_SCISSOR_TEST);
+        scissor(rect.X, size.Height - rect.Bottom, rect.Width, rect.Height);
+        clearColor(1, 0, 1, 1);
+        clear(GL_COLOR_BUFFER_BIT);
+        disable(GL_SCISSOR_TEST);
+    }
 
     public void Dispose()
     {

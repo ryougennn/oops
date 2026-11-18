@@ -51,3 +51,12 @@ Short ADR-style log. Newest at the bottom.
 ### D14. One GL context per app, one GRContext per EGLDisplay
 - Every `EglWindow` of an app uses the same `EGLContext` (made current with its own `EGLSurface`), so resources are shared without share-lists, and `SkiaSurface` keeps one `GRContext` per `EglDisplay`.
 - `EglDisplay` is terminated when its `OopsApp` is disposed (`OopsApp.Disposing`): Mesa caches EGLDisplays by `wl_display*` address and a new connection can reuse the address, which otherwise produced `invalid object` protocol errors.
+
+### D15. `PublishAot` only in Release
+- `PublishAot=true` sets `MetadataUpdater.IsSupported=false` and `StartupHookProvider.IsSupported=false` in every build's runtimeconfig, so `dotnet watch` hot reload never connects. Samples and the demo set it under `Configuration == Release`; the spec's `-p:PublishAot=true` command still works.
+
+### D16. Grab/activation serial = latest button, key or touch serial
+- `Seat.LastSerial` ignores enter/leave/modifiers serials. Compositors validate grab serials against input events; a click that changes keyboard focus produces a `wl_keyboard.enter` right after the button press, and using that serial got popups dismissed immediately.
+
+### D17. Lock surfaces skip the initial bufferless commit
+- ext-session-lock configures lock surfaces without an initial commit and makes committing before the first ack a protocol error (`commit_before_first_ack`). Roles can opt out via `CommitsBeforeConfigure`.

@@ -5,7 +5,8 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <IsPackable>false</IsPackable>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <PublishAot>true</PublishAot>
+    <!-- Release only: PublishAot also turns off hot reload (MetadataUpdater, startup hooks) in Debug builds. -->
+    <PublishAot Condition="'$(Configuration)' == 'Release'">true</PublishAot>
     <PublishDocumentationFiles>false</PublishDocumentationFiles>
     <PublishReferencesDocumentationFiles>false</PublishReferencesDocumentationFiles>
   </PropertyGroup>

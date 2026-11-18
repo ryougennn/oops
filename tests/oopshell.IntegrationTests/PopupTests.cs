@@ -111,13 +111,13 @@ public class PopupTests(SwayFixture sway)
     }
 
     [Fact]
-    public void Launched_process_receives_an_activation_token()
+    public async Task Launched_process_receives_an_activation_token()
     {
         using var app = sway.Connect();
         string file = Path.Combine(sway.RuntimeDir, $"token-{Guid.NewGuid():N}");
         var launch = app.LaunchAsync("/bin/sh", ["-c", $"printf '%s|%s' \"$XDG_ACTIVATION_TOKEN\" \"$DESKTOP_STARTUP_ID\" > {file}"]);
         app.RunUntil(() => launch.IsCompleted && File.Exists(file) && File.ReadAllText(file).Length > 1, what: "child output");
-        launch.GetAwaiter().GetResult();
+        await launch;
 
         var parts = File.ReadAllText(file).Split('|');
         Assert.NotEmpty(parts[0]);
