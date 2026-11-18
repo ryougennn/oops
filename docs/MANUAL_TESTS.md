@@ -35,6 +35,9 @@ Record results (date, compositor + version, GPU) at the bottom.
   wrong one `AuthenticationFailed` after PAM's delay. (Checked 2026-11-18 with a test account.) The automated
   tests use a private PAM config (`pam_start_confdir`) instead.
 
+## Crossbar (sway kiosk)
+- [ ] `sway -c demo/crossbar/config/sway.conf` on a TV or monitor from the couch: labels are readable, the waves and glass animate smoothly, ticks play on every move without lag, Super+Escape brings the bar over a fullscreen game or video and Escape returns to it, closing the last app comes home, the Running list switches between several apps.
+
 ## Launcher on other distributions
 - [ ] On Debian/Ubuntu (Snap apps), Arch, NixOS and a Flatpak-heavy system: the OopsOSX search finds installed apps by name, by their English name in another locale, and their actions; Snap and Flatpak apps launch; a Terminal=true app opens in the system's terminal; Computer/Home in the Go menu open the default file manager; installing an app makes it searchable without restarting.
 
