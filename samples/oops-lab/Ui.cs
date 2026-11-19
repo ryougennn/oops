@@ -146,6 +146,7 @@ sealed class Prompt
 
     public void Draw(SKCanvas c, Ui ui, float width, float height)
     {
+        ui.Begin(c, 0, 0, width); // the prompt is drawn last, so this does not disturb a page's layout
         Ui.Fill(c, SKRect.Create(0, 0, width, height), new SKColor(0, 0, 0, 0x99));
         var box = SKRect.Create((width - 460) / 2, (height - 220) / 2, 460, 220);
         Ui.Fill(c, box, Ui.Panel, 10);
