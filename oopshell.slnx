@@ -12,6 +12,7 @@
     <Project Path="src/oopshell.Protocol/oopshell.Protocol.csproj" />
     <Project Path="src/oopshell.Scanner/oopshell.Scanner.csproj" />
     <Project Path="src/oopshell.Services.Audio/oopshell.Services.Audio.csproj" />
+    <Project Path="src/oopshell.Services.Bluetooth/oopshell.Services.Bluetooth.csproj" />
     <Project Path="src/oopshell.Services.DBus/oopshell.Services.DBus.csproj" />
     <Project Path="src/oopshell.Services.Desktop/oopshell.Services.Desktop.csproj" />
     <Project Path="src/oopshell.Services.Launcher/oopshell.Services.Launcher.csproj" />

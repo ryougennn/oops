@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>oopshell.Services.Bluetooth</RootNamespace>
+    <Description>Bluetooth for oopshell shells, from BlueZ: adapters, devices with battery levels, discovery, pairing, connecting.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../oopshell.Services.DBus/oopshell.Services.DBus.csproj" />
+  </ItemGroup>
+</Project>
