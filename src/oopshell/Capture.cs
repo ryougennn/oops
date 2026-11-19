@@ -68,6 +68,12 @@ public sealed class ScreenCapture : IDisposable
         session.Stopped += () =>
         {
             IsStopped = true;
+            if (inFlightFrame is { } pending)
+            {
+                inFlightFrame = null;
+                pending.Frame.Dispose();
+                pending.Fail(new InvalidOperationException("The capture source went away."));
+            }
             var failed = waiting.ToList();
             waiting.Clear();
             foreach (var (_, fail) in failed)
@@ -168,11 +174,20 @@ public sealed class ScreenCapture : IDisposable
             bufferFormat = format;
         }
 
+        if (size.Width is <= 0 or > ShmPool.MaxSide || size.Height is <= 0 or > ShmPool.MaxSide)
+        {
+            fail(new InvalidOperationException($"The compositor asked for an unusable buffer size {size.Width}x{size.Height}."));
+            return;
+        }
         var frameSize = size;
         int version = constraintsVersion;
         var frame = session.CreateFrame();
+        inFlightFrame = (frame, fail);
         frame.Ready += () =>
         {
+            inFlightFrame = null;
+            if (disposed)
+                return;
             int stride = frameSize.Width * 4;
             var pixels = new byte[stride * frameSize.Height];
             Marshal.Copy(pool.SlotPointer(0), pixels, 0, pixels.Length);
@@ -188,7 +203,10 @@ public sealed class ScreenCapture : IDisposable
         };
         frame.Failed += e =>
         {
+            inFlightFrame = null;
             frame.Dispose();
+            if (disposed)
+                return;
             if (e.Reason == ExtImageCopyCaptureFrameV1FailureReason.BufferConstraints)
             {
                 // New constraints may already have arrived; if not, wait for them.
@@ -204,11 +222,24 @@ public sealed class ScreenCapture : IDisposable
         frame.Capture();
     }
 
+    (ExtImageCopyCaptureFrameV1 Frame, Action<Exception> Fail)? inFlightFrame;
+
     public void Dispose()
     {
         if (disposed)
             return;
         disposed = true;
+        // The frame outlives the session in the protocol: destroy it before unmapping the memory it writes to.
+        if (inFlightFrame is { } pending)
+        {
+            inFlightFrame = null;
+            pending.Frame.Dispose();
+            pending.Fail(new ObjectDisposedException(nameof(ScreenCapture)));
+        }
+        var waitingNow = waiting.ToList();
+        waiting.Clear();
+        foreach (var (_, fail) in waitingNow)
+            fail(new ObjectDisposedException(nameof(ScreenCapture)));
         session.Dispose();
         source.Dispose();
         buffer?.Dispose();

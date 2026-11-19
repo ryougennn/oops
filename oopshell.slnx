@@ -31,6 +31,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/oopshell.IntegrationTests/oopshell.IntegrationTests.csproj" />
+    <Project Path="tests/oopshell.Fuzz/oopshell.Fuzz.csproj" />
     <Project Path="tests/oopshell.Scanner.Tests/oopshell.Scanner.Tests.csproj" />
     <Project Path="tests/oopshell.Services.Tests/oopshell.Services.Tests.csproj" />
     <Project Path="tests/oopshell.Tests/oopshell.Tests.csproj" />

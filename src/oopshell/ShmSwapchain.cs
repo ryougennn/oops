@@ -235,7 +235,7 @@ internal sealed unsafe class ShmPool : IDisposable
     {
         BufferSize = bufferSize;
         this.format = format;
-        slotBytes = bufferSize.Width * bufferSize.Height * 4;
+        slotBytes = SlotBytes(bufferSize);
         using (var name = new NativeUtf8("oopshell-shm"))
             fd = LibC.memfd_create(name.Pointer, LibC.MFD_CLOEXEC | LibC.MFD_ALLOW_SEALING);
         if (fd < 0)
@@ -245,6 +245,15 @@ internal sealed unsafe class ShmPool : IDisposable
     }
 
     public Size BufferSize { get; }
+
+    /// <summary>Largest buffer side accepted: sizes come from the compositor, and w*h*4 must not overflow.</summary>
+    public const int MaxSide = 16384;
+
+    /// <summary>Bytes for one buffer of <paramref name="size"/>; throws for empty or oversized buffers instead of wrapping.</summary>
+    public static int SlotBytes(Size size) =>
+        size.Width is > 0 and <= MaxSide && size.Height is > 0 and <= MaxSide
+            ? size.Width * size.Height * 4
+            : throw new ArgumentOutOfRangeException(nameof(size), $"Buffer size {size.Width}x{size.Height} is outside 1..{MaxSide}.");
 
     public int AddSlot()
     {

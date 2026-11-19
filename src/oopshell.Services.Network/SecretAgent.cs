@@ -78,14 +78,15 @@ public sealed class NetworkSecretRequest
 }
 
 /// <summary>The secret agent object NetworkManager calls (org.freedesktop.NetworkManager.SecretAgent).</summary>
-sealed class SecretAgent(OopsApp app, NetworkService service) : ExportedObject(app, "/org/freedesktop/NetworkManager/SecretAgent")
+sealed class SecretAgent(OopsApp app, NetworkService service, string? networkManager) : ExportedObject(app, "/org/freedesktop/NetworkManager/SecretAgent")
 {
     const string Interface = "org.freedesktop.NetworkManager.SecretAgent";
     readonly List<NetworkSecretRequest> pending = new();
 
     protected override void HandleMethod(MethodContext context)
     {
-        if (context.Request.InterfaceAsString != Interface)
+        // Only NetworkManager itself: anyone else asking would be collecting the password the user types.
+        if (context.Request.InterfaceAsString != Interface || RefuseUnlessFrom(context, networkManager))
             return;
         var reader = context.Request.GetBodyReader();
         switch (context.Request.MemberAsString)
@@ -121,10 +122,10 @@ sealed class SecretAgent(OopsApp app, NetworkService service) : ExportedObject(a
             ReplyError(context, "org.freedesktop.NetworkManager.SecretAgent.NoSecrets", "No secrets available.");
             return;
         }
-        string keyManagement = settings.TryGetValue(settingName, out var security) && security.TryGetValue("key-mgmt", out var k) ? k.GetString() : "wpa-psk";
+        string keyManagement = settings.TryGetValue(settingName, out var security) && security.TryGetValue("key-mgmt", out var k) ? k.AsString() ?? "wpa-psk" : "wpa-psk";
         string key = keyManagement == "none" ? "wep-key0" : "psk";
-        string name = settings.TryGetValue("connection", out var c) && c.TryGetValue("id", out var id) ? id.GetString() : "";
-        string? ssid = settings.TryGetValue("802-11-wireless", out var w) && w.TryGetValue("ssid", out var s) ? Encoding.UTF8.GetString(s.GetArray<byte>()) : null;
+        string name = settings.TryGetValue("connection", out var c) && c.TryGetValue("id", out var id) ? id.AsString() ?? "" : "";
+        string? ssid = settings.TryGetValue("802-11-wireless", out var w) && w.TryGetValue("ssid", out var s) && s.AsBytes() is { } ssidBytes ? Encoding.UTF8.GetString(ssidBytes) : null;
         Defer(context);
         var request = new NetworkSecretRequest(context, name, ssid, settingName, key, (flags & RequestNew) != 0) { ConnectionPath = path };
         pending.Add(request);

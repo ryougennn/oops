@@ -4,6 +4,7 @@ using Tmds.DBus.Protocol;
 namespace oopshell.Services.Tray;
 
 /// <summary>An ARGB32 icon image from a tray item (network byte order, as the spec sends it).</summary>
+/// <summary>An icon image from the item: always 1..512 pixels per side, with exactly Width × Height × 4 bytes (ARGB32, network byte order).</summary>
 public sealed record TrayPixmap(int Width, int Height, byte[] Argb);
 
 /// <summary>A tray icon (<c>org.kde.StatusNotifierItem</c>). Properties refresh when the item signals changes.</summary>
@@ -91,24 +92,30 @@ public sealed class TrayItem
         IconThemePath = Str("IconThemePath") is { Length: > 0 } themePath ? themePath : null;
         AttentionIconName = Str("AttentionIconName") is { Length: > 0 } attention ? attention : null;
         IconPixmaps = p.TryGetValue("IconPixmap", out var pixmaps) ? ReadPixmaps(pixmaps) : [];
-        if (p.TryGetValue("ToolTip", out var tip) && tip.Type == VariantValueType.Struct && tip.Count >= 4)
+        if (p.TryGetValue("ToolTip", out var tip))
         {
-            ToolTipTitle = tip.GetItem(2).GetString();
-            ToolTipText = tip.GetItem(3).GetString();
+            ToolTipTitle = tip.Field(2)?.AsString()?.Clip(1024) ?? "";
+            ToolTipText = tip.Field(3)?.AsString()?.Clip(4096) ?? "";
         }
         MenuPath = p.TryGetValue("Menu", out var menu) && menu.Type == VariantValueType.ObjectPath ? menu.GetObjectPathAsString() : null;
         ItemIsMenu = p.TryGetValue("ItemIsMenu", out var isMenu) && isMenu.Type == VariantValueType.Bool && isMenu.GetBool();
     }
 
+    /// <summary>Largest tray pixmap accepted, per side.</summary>
+    public const int MaxPixmapSide = 512;
+
+    /// <summary>The a(iiay) icon list; entries that are malformed, oversized or whose data does not match width × height × 4 are dropped.</summary>
     static List<TrayPixmap> ReadPixmaps(VariantValue value)
     {
         var result = new List<TrayPixmap>();
         if (value.Type != VariantValueType.Array)
             return result;
-        for (int i = 0; i < value.Count; i++)
+        for (int i = 0; i < Math.Min(value.Count, 16); i++)
         {
             var item = value.GetItem(i);
-            result.Add(new TrayPixmap(item.GetItem(0).GetInt32(), item.GetItem(1).GetInt32(), item.GetItem(2).GetArray<byte>()));
+            if (item.Field(0)?.AsInt32() is int w and > 0 and <= MaxPixmapSide && item.Field(1)?.AsInt32() is int h and > 0 and <= MaxPixmapSide
+                && item.Field(2)?.AsBytes() is { } argb && argb.Length == w * h * 4)
+                result.Add(new TrayPixmap(w, h, argb));
         }
         return result;
     }

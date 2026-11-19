@@ -137,7 +137,7 @@ public sealed class NetworkService : IDisposable
     {
         if (secretAgent is not null)
             return;
-        var agent = new SecretAgent(app, this);
+        var agent = new SecretAgent(app, this, await connection.GetNameOwnerAsync(BusName));
         connection.AddMethodHandler(agent);
         try
         {
@@ -200,10 +200,10 @@ public sealed class NetworkService : IDisposable
             (primaryName, primaryType) = await ActiveConnectionAsync(primary);
 
         var read = new List<(NetworkDevice Device, Dictionary<string, VariantValue> Props, string? Name, List<AccessPoint> AccessPoints)>();
-        foreach (var path in manager.TryGetValue("Devices", out var list) ? list.GetArray<ObjectPath>().Select(p => p.ToString()) : [])
+        foreach (var path in manager.TryGetValue("Devices", out var list) ? list.AsObjectPaths() ?? [] : [])
         {
             var props = await connection.GetAllPropertiesAsync(BusName, path, DeviceInterface);
-            var type = DeviceType(props.TryGetValue("DeviceType", out var t) ? t.GetUInt32() : 0);
+            var type = DeviceType(props.TryGetValue("DeviceType", out var t) ? t.AsUInt32() ?? 0 : 0);
             if (type == NetworkDeviceType.Loopback)
                 continue;
             string? name = Path(props, "ActiveConnection") is { } active ? (await ActiveConnectionAsync(active)).Name : null;
@@ -212,7 +212,7 @@ public sealed class NetworkService : IDisposable
         }
 
         // Apply in one step on the UI thread (we are on it: continuations resume there).
-        Connectivity = manager.TryGetValue("Connectivity", out var c) ? (NetworkConnectivity)Math.Min(c.GetUInt32(), 4) : NetworkConnectivity.Unknown;
+        Connectivity = manager.TryGetValue("Connectivity", out var c) ? (NetworkConnectivity)Math.Min(c.AsUInt32() ?? 0, 4) : NetworkConnectivity.Unknown;
         NetworkingEnabled = Bool(manager, "NetworkingEnabled");
         WifiEnabled = Bool(manager, "WirelessEnabled");
         WifiHardwareEnabled = Bool(manager, "WirelessHardwareEnabled");
@@ -220,9 +220,9 @@ public sealed class NetworkService : IDisposable
         PrimaryConnectionType = primaryType;
         foreach (var (device, props, name, accessPoints) in read)
         {
-            device.Interface = props.TryGetValue("Interface", out var i) ? i.GetString() : "";
-            device.Type = DeviceType(props["DeviceType"].GetUInt32());
-            device.State = DeviceState(props.TryGetValue("State", out var s) ? s.GetUInt32() : 0);
+            device.Interface = props.TryGetValue("Interface", out var i) ? i.AsString() ?? "" : "";
+            device.Type = DeviceType(props.TryGetValue("DeviceType", out var dt) ? dt.AsUInt32() ?? 0 : 0);
+            device.State = DeviceState(props.TryGetValue("State", out var s) ? s.AsUInt32() ?? 0 : 0);
             device.ConnectionName = name;
             device.AccessPoints = accessPoints;
         }
@@ -242,8 +242,8 @@ public sealed class NetworkService : IDisposable
     async Task<(string? Name, NetworkDeviceType Type)> ActiveConnectionAsync(string path)
     {
         var props = await connection.GetAllPropertiesAsync(BusName, path, ActiveInterface);
-        string? id = props.TryGetValue("Id", out var v) ? v.GetString() : null;
-        var type = (props.TryGetValue("Type", out var t) ? t.GetString() : "") switch
+        string? id = props.TryGetValue("Id", out var v) ? v.AsString() : null;
+        var type = (props.TryGetValue("Type", out var t) ? t.AsString() : "") switch
         {
             "802-11-wireless" => NetworkDeviceType.Wifi,
             "802-3-ethernet" => NetworkDeviceType.Ethernet,
@@ -261,17 +261,17 @@ public sealed class NetworkService : IDisposable
         var wireless = await connection.GetAllPropertiesAsync(BusName, devicePath, WirelessInterface);
         string? active = Path(wireless, "ActiveAccessPoint");
         var all = new List<AccessPoint>();
-        foreach (var path in wireless.TryGetValue("AccessPoints", out var list) ? list.GetArray<ObjectPath>().Select(p => p.ToString()) : [])
+        foreach (var path in wireless.TryGetValue("AccessPoints", out var list) ? list.AsObjectPaths() ?? [] : [])
         {
             var p = await connection.GetAllPropertiesAsync(BusName, path, AccessPointInterface);
-            string ssid = p.TryGetValue("Ssid", out var s) ? Encoding.UTF8.GetString(s.GetArray<byte>()) : "";
+            string ssid = p.TryGetValue("Ssid", out var s) && s.AsBytes() is { } ssidBytes ? Encoding.UTF8.GetString(ssidBytes) : "";
             if (ssid.Length == 0)
                 continue; // hidden network
-            bool secured = (p.TryGetValue("Flags", out var f) ? f.GetUInt32() & 1 : 0) != 0 // privacy
-                || (p.TryGetValue("WpaFlags", out var wpa) ? wpa.GetUInt32() : 0) != 0
-                || (p.TryGetValue("RsnFlags", out var rsn) ? rsn.GetUInt32() : 0) != 0;
-            all.Add(new AccessPoint(path, ssid, p.TryGetValue("Strength", out var st) ? st.GetByte() : 0, secured,
-                p.TryGetValue("Frequency", out var fr) ? fr.GetUInt32() : 0, path == active));
+            bool secured = (p.TryGetValue("Flags", out var f) ? (f.AsUInt32() ?? 0) & 1 : 0) != 0 // privacy
+                || (p.TryGetValue("WpaFlags", out var wpa) ? wpa.AsUInt32() ?? 0 : 0) != 0
+                || (p.TryGetValue("RsnFlags", out var rsn) ? rsn.AsUInt32() ?? 0 : 0) != 0;
+            all.Add(new AccessPoint(path, ssid, p.TryGetValue("Strength", out var st) ? (int)Math.Clamp(st.AsInt64() ?? 0, 0, 100) : 0, secured,
+                p.TryGetValue("Frequency", out var fr) ? fr.AsUInt32() ?? 0 : 0, path == active));
         }
         // One entry per network name: the one in use, else the strongest.
         return all.GroupBy(a => a.Ssid)
@@ -280,9 +280,9 @@ public sealed class NetworkService : IDisposable
     }
 
     static string? Path(Dictionary<string, VariantValue> props, string name) =>
-        props.TryGetValue(name, out var v) && v.GetObjectPathAsString() is { } p && p != "/" ? p : null;
+        props.TryGetValue(name, out var v) && v.AsString() is { } p && p != "/" ? p : null;
 
-    static bool Bool(Dictionary<string, VariantValue> props, string name) => props.TryGetValue(name, out var v) && v.GetBool();
+    static bool Bool(Dictionary<string, VariantValue> props, string name) => props.TryGetValue(name, out var v) && v.AsBool() == true;
 
     static NetworkDeviceType DeviceType(uint nm) => nm switch
     {
@@ -383,7 +383,7 @@ public sealed class NetworkService : IDisposable
                 return result;
             });
             if (settings.TryGetValue("802-11-wireless", out var wireless) && wireless.TryGetValue("ssid", out var bytes)
-                && Encoding.UTF8.GetString(bytes.GetArray<byte>()) == ssid)
+                && bytes.AsBytes() is { } saved && Encoding.UTF8.GetString(saved) == ssid)
                 return path;
         }
         return null;

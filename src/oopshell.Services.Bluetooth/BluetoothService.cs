@@ -127,7 +127,7 @@ public sealed class BluetoothService : IDisposable
     {
         if (agent is not null)
             return;
-        var created = new PairingAgent(app, this);
+        var created = new PairingAgent(app, this, await connection.GetNameOwnerAsync(BusName));
         connection.AddMethodHandler(created);
         try
         {
@@ -224,9 +224,9 @@ public sealed class BluetoothService : IDisposable
                 device.Paired = Bool(d, "Paired");
                 device.Trusted = Bool(d, "Trusted");
                 device.Connected = Bool(d, "Connected");
-                device.Rssi = d.TryGetValue("RSSI", out var rssi) ? rssi.GetInt16() : null;
-                device.AdapterPath = d.TryGetValue("Adapter", out var ad) ? ad.GetObjectPathAsString() : "";
-                device.Battery = interfaces.TryGetValue(BatteryInterface, out var b) && b.TryGetValue("Percentage", out var p) ? p.GetByte() : null;
+                device.Rssi = d.TryGetValue("RSSI", out var rssi) ? rssi.AsInt32() : null;
+                device.AdapterPath = d.TryGetValue("Adapter", out var ad) ? ad.AsString() ?? "" : "";
+                device.Battery = interfaces.TryGetValue(BatteryInterface, out var b) && b.TryGetValue("Percentage", out var p) && p.AsInt64() is long pct and >= 0 and <= 100 ? (int)pct : null;
                 seenDevices.Add(device);
             }
         }
@@ -255,9 +255,9 @@ public sealed class BluetoothService : IDisposable
     }
 
     static string? Str(Dictionary<string, VariantValue> props, string name) =>
-        props.TryGetValue(name, out var v) && v.GetString() is { Length: > 0 } s ? s : null;
+        props.TryGetValue(name, out var v) && v.AsString() is { Length: > 0 } s ? s.Clip(256) : null;
 
-    static bool Bool(Dictionary<string, VariantValue> props, string name) => props.TryGetValue(name, out var v) && v.GetBool();
+    static bool Bool(Dictionary<string, VariantValue> props, string name) => props.TryGetValue(name, out var v) && v.AsBool() == true;
 
     Task SetAsync(string path, string iface, string property, bool value) =>
         connection.CallAsync(BusName, path, "org.freedesktop.DBus.Properties", "Set", (ref MessageWriter w) =>

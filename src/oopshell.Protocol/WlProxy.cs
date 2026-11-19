@@ -126,6 +126,12 @@ public abstract unsafe class WlProxy : IDisposable
     protected static void CloseFd(int fd) => LibC.close(fd);
 
     /// <summary>Rethrows the first exception an event handler threw during the last dispatch, if any.</summary>
+    /// <summary>
+    /// Called with an exception an event handler threw (on the dispatching thread); return true to have it ignored,
+    /// false to have it rethrown once dispatching ends. Set by the app (<c>OopsApp.UnhandledException</c>).
+    /// </summary>
+    public static Func<Exception, bool>? UnhandledException { get; set; }
+
     public static void ThrowPendingException()
     {
         var pending = pendingException;
@@ -142,7 +148,7 @@ public abstract unsafe class WlProxy : IDisposable
             if (GCHandle.FromIntPtr((nint)implementation).Target is WlProxy target && !target.IsDisposed)
                 target.Dispatch(opcode, args);
         }
-        catch (Exception e)
+        catch (Exception e) when (UnhandledException?.Invoke(e) != true)
         {
             pendingException ??= ExceptionDispatchInfo.Capture(e);
         }

@@ -27,7 +27,22 @@ internal sealed unsafe class EventLoop : IDisposable
     readonly ConcurrentQueue<Action> posted = new();
     readonly Dictionary<int, Action<FdEvents>> watches = new();
     readonly int ownerThread = Environment.CurrentManagedThreadId;
+    readonly HashSet<int> removedThisBatch = new();
     bool running;
+
+    /// <summary>Called with an exception a callback threw; true means it was dealt with and the loop goes on.</summary>
+    public Func<Exception, bool>? ErrorHandler { get; set; }
+
+    void Guard(Action action)
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception e) when (ErrorHandler?.Invoke(e) == true)
+        {
+        }
+    }
 
     public EventLoop()
     {
@@ -59,7 +74,10 @@ internal sealed unsafe class EventLoop : IDisposable
         return new Disposer(() =>
         {
             if (watches.Remove(fd))
+            {
                 EpollCtl(epoll, EPOLL_CTL_DEL, fd, 0, 0);
+                removedThisBatch.Add(fd); // the number may be reused before this batch's events are delivered
+            }
         });
     }
 
@@ -161,7 +179,7 @@ internal sealed unsafe class EventLoop : IDisposable
             RunPosted();
             if (!running)
                 break;
-            source.BeforeWait();
+            Guard(source.BeforeWait);
             int timeout = posted.IsEmpty ? -1 : 0;
             int count = EpollWait(epoll, events, timeout);
             if (count < 0)
@@ -179,8 +197,9 @@ internal sealed unsafe class EventLoop : IDisposable
                 if ((int)events[i].Data == source.Fd)
                     sourceEvents = (FdEvents)events[i].Events;
             }
-            source.AfterWait(sourceEvents);
+            Guard(() => source.AfterWait(sourceEvents));
 
+            removedThisBatch.Clear();
             for (int i = 0; i < count; i++)
             {
                 int fd = (int)events[i].Data;
@@ -189,9 +208,10 @@ internal sealed unsafe class EventLoop : IDisposable
                     ulong value;
                     read(wakeFd, &value, sizeof(ulong));
                 }
-                else if (fd != source.Fd && watches.TryGetValue(fd, out var callback))
+                else if (fd != source.Fd && !removedThisBatch.Contains(fd) && watches.TryGetValue(fd, out var callback))
                 {
-                    callback((FdEvents)events[i].Events);
+                    var happened = (FdEvents)events[i].Events;
+                    Guard(() => callback(happened));
                 }
             }
         }
@@ -211,7 +231,7 @@ internal sealed unsafe class EventLoop : IDisposable
         // Only run what was queued before we started, so work that re-posts itself cannot starve the loop.
         int count = posted.Count;
         for (int i = 0; i < count && posted.TryDequeue(out var action); i++)
-            action();
+            Guard(action);
     }
 
     void Add(int fd, uint events)

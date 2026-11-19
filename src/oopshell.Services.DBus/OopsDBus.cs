@@ -95,16 +95,32 @@ public static class OopsDBus
         }, app.SynchronizationContext, ObserverFlags.None, null);
     }
 
-    /// <summary>Emits a signal.</summary>
-    public static void EmitSignal(this DBusConnection connection, string path, string iface, string member, string? signature = null, BodyWriter? writeArgs = null)
+    /// <summary>The unique name currently owning <paramref name="busName"/>, or null if nobody does.</summary>
+    public static async Task<string?> GetNameOwnerAsync(this DBusConnection connection, string busName)
+    {
+        try
+        {
+            return await connection.CallAsync("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "GetNameOwner",
+                (m, _) => m.GetBodyReader().ReadString(), (ref MessageWriter w) => w.WriteString(busName), "s");
+        }
+        catch (DBusErrorReplyException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Emits a signal. False if the connection is gone (the bus restarted, or the session ends): signals are
+    /// notifications, and a shell should not stop because nobody can hear one.
+    /// </summary>
+    public static bool EmitSignal(this DBusConnection connection, string path, string iface, string member, string? signature = null, BodyWriter? writeArgs = null)
     {
         var writer = connection.GetMessageWriter();
         try
         {
             writer.WriteSignalHeader(null, path, iface, member, signature);
             writeArgs?.Invoke(ref writer);
-            if (!connection.TrySendMessage(writer.CreateMessage()))
-                throw new InvalidOperationException($"Could not send signal {iface}.{member}: not connected.");
+            return connection.TrySendMessage(writer.CreateMessage());
         }
         finally
         {
@@ -131,14 +147,41 @@ public abstract class ExportedObject(OopsApp app, string path) : IPathMethodHand
     {
         await App.InvokeAsync(() =>
         {
-            if (context.IsDBusIntrospectRequest)
-                context.ReplyIntrospectXml([System.Text.Encoding.UTF8.GetBytes(IntrospectionXml)]);
-            else
-                HandleMethod(context);
-            if (!context.ReplySent && !context.NoReplyExpected && !deferred.Remove(context))
-                ReplyError(context, "org.freedesktop.DBus.Error.UnknownMethod", $"No such method {context.Request.InterfaceAsString}.{context.Request.MemberAsString}.");
+            try
+            {
+                if (context.IsDBusIntrospectRequest)
+                    context.ReplyIntrospectXml([System.Text.Encoding.UTF8.GetBytes(IntrospectionXml)]);
+                else
+                    HandleMethod(context);
+                if (!context.ReplySent && !context.NoReplyExpected && !deferred.Remove(context))
+                    ReplyError(context, "org.freedesktop.DBus.Error.UnknownMethod", $"No such method {context.Request.InterfaceAsString}.{context.Request.MemberAsString}.");
+            }
+            catch (Exception e)
+            {
+                // Bad input from a peer (wrong types, malformed body) or a bug in a handler: the caller gets an
+                // error, the shell carries on, and a deferred call is not left dangling.
+                bool wasDeferred = deferred.Remove(context);
+                if (!context.ReplySent && !context.NoReplyExpected)
+                    ReplyError(context, "org.freedesktop.DBus.Error.Failed", e is InvalidOperationException or IndexOutOfRangeException or FormatException
+                        ? "Invalid arguments." : e.Message);
+                if (wasDeferred)
+                    context.Dispose();
+            }
             return Task.CompletedTask;
         });
+    }
+
+    /// <summary>
+    /// Refuses a call that does not come from <paramref name="trustedSender"/> (the unique name of the service an
+    /// agent registered with), so a stray process on the bus cannot pose as polkitd, NetworkManager or BlueZ.
+    /// True if refused (the caller got AccessDenied).
+    /// </summary>
+    protected static bool RefuseUnlessFrom(MethodContext context, string? trustedSender)
+    {
+        if (trustedSender is not null && context.Request.SenderAsString == trustedSender)
+            return false;
+        ReplyError(context, "org.freedesktop.DBus.Error.AccessDenied", "Only the service this agent is registered with may call it.");
+        return true;
     }
 
     readonly HashSet<MethodContext> deferred = new();

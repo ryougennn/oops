@@ -38,6 +38,8 @@ public sealed partial class OopsApp : IDisposable, IEventSource
     {
         Options = options;
         SynchronizationContext = new LoopSynchronizationContext(loop);
+        loop.ErrorHandler = HandleUnhandled;
+        WlProxy.UnhandledException = e => Current?.HandleUnhandled(e) == true;
         Display = WlDisplay.Connect(options.Display);
         registry = Display.GetRegistry();
         registry.Global += e => OnGlobal(new GlobalInfo(e.Name, e.Interface, e.Version));
@@ -67,6 +69,23 @@ public sealed partial class OopsApp : IDisposable, IEventSource
 
     /// <summary>Posts to this app's UI thread. Installed as the current context while <see cref="Run"/> runs; hand it to libraries that call back on other threads.</summary>
     public SynchronizationContext SynchronizationContext { get; }
+
+    /// <summary>
+    /// An exception escaped one of your handlers: rendering, input, a timer, posted work, an awaited continuation,
+    /// a service event. By default it ends <see cref="Run"/> (the process usually exits), so bugs are not hidden.
+    /// Set <see cref="LoopExceptionEventArgs.Handled"/> to log it and keep the shell running instead; one
+    /// broken widget then does not take the desktop down. Connection loss always ends <see cref="Run"/>.
+    /// </summary>
+    public event Action<LoopExceptionEventArgs>? UnhandledException;
+
+    bool HandleUnhandled(Exception e)
+    {
+        if (e is WaylandConnectionException or WaylandProtocolException || UnhandledException is null)
+            return false;
+        var args = new LoopExceptionEventArgs(e);
+        UnhandledException.Invoke(args);
+        return args.Handled;
+    }
 
     /// <summary>The raw connection (escape hatch).</summary>
     public WlDisplay Display { get; }
@@ -288,4 +307,13 @@ public sealed partial class OopsApp : IDisposable, IEventSource
         Display.Dispose();
         loop.Dispose();
     }
+}
+
+/// <summary>An exception that escaped a handler (<see cref="OopsApp.UnhandledException"/>).</summary>
+public sealed class LoopExceptionEventArgs(Exception exception) : EventArgs
+{
+    public Exception Exception { get; } = exception;
+
+    /// <summary>Set to keep the event loop running.</summary>
+    public bool Handled { get; set; }
 }

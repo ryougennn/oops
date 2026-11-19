@@ -121,31 +121,48 @@ public sealed class NotificationServer : ExportedObject, IDisposable
         }
     }
 
+    /// <summary>The next id; 0 means "new" in the protocol, so it is skipped when the counter wraps.</summary>
+    uint NextId()
+    {
+        if (nextId == 0)
+            nextId = 1;
+        return nextId++;
+    }
+
+    /// <summary>At most this many notifications are kept; beyond it the oldest expires (one app could flood the shell).</summary>
+    public int MaxNotifications { get; set; } = 200;
+
     uint Notify(Reader reader)
     {
-        string appName = reader.ReadString();
+        // Everything comes from another app: read into locals with type checks, then apply all at once, so a
+        // malformed notification is refused without half-changing the one it replaces.
+        string appName = reader.ReadString().Clip(256);
         uint replacesId = reader.ReadUInt32();
-        string appIcon = reader.ReadString();
-        string summary = reader.ReadString();
-        string body = reader.ReadString();
+        string appIcon = reader.ReadString().Clip(4096);
+        string summary = reader.ReadString().Clip(1024);
+        string body = reader.ReadString().Clip(16384);
         var actionStrings = reader.ReadArrayOfString();
         var hints = reader.ReadDictionaryOfStringToVariantValue();
         int expireMs = reader.ReadInt32();
+        var actions = Enumerable.Range(0, Math.Min(actionStrings.Length / 2, 32))
+            .Select(i => new NotificationAction(actionStrings[2 * i].Clip(256), actionStrings[2 * i + 1].Clip(256))).ToList();
+        var parsed = Hints.Parse(hints);
 
         var existing = replacesId == 0 ? null : notifications.FirstOrDefault(n => n.Id == replacesId);
-        var notification = existing ?? new Notification(nextId++);
+        var notification = existing ?? new Notification(NextId());
         notification.AppName = appName;
         notification.AppIcon = appIcon;
         notification.Summary = summary;
         notification.Body = body;
-        notification.Actions = Enumerable.Range(0, actionStrings.Length / 2)
-            .Select(i => new NotificationAction(actionStrings[2 * i], actionStrings[2 * i + 1])).ToList();
+        notification.Actions = actions;
         notification.ExpireTimeout = expireMs < 0 ? null : TimeSpan.FromMilliseconds(expireMs);
-        ApplyHints(notification, hints);
+        parsed.ApplyTo(notification);
 
         if (existing is null)
         {
             notifications.Add(notification);
+            while (notifications.Count > Math.Max(1, MaxNotifications))
+                Close(notifications[0].Id, CloseReason.Expired);
             Added?.Invoke(notification);
         }
         else
@@ -156,34 +173,61 @@ public sealed class NotificationServer : ExportedObject, IDisposable
         return notification.Id;
     }
 
-    static void ApplyHints(Notification n, Dictionary<string, VariantValue> hints)
+    /// <summary>The hints oopshell understands, read with type checks (a wrong type is ignored, not fatal).</summary>
+    readonly record struct Hints(Urgency Urgency, string? Category, string? DesktopEntry, bool Resident, bool Transient, string? ImagePath, NotificationImage? Image)
     {
-        if (hints.TryGetValue("urgency", out var urgency))
-            n.Urgency = (Urgency)urgency.GetByte();
-        n.Category = hints.TryGetValue("category", out var category) ? category.GetString() : null;
-        n.DesktopEntry = hints.TryGetValue("desktop-entry", out var entry) ? entry.GetString() : null;
-        n.Resident = hints.TryGetValue("resident", out var resident) && resident.GetBool();
-        n.Transient = hints.TryGetValue("transient", out var transient) && transient.GetBool();
-        n.ImagePath = hints.TryGetValue("image-path", out var path) || hints.TryGetValue("image_path", out path) ? path.GetString() : null;
-        n.Image = hints.TryGetValue("image-data", out var image) || hints.TryGetValue("image_data", out image) || hints.TryGetValue("icon_data", out image)
-            ? ReadImage(image)
-            : null;
+        public static Hints Parse(Dictionary<string, VariantValue> hints)
+        {
+            VariantValue? Get(params string[] names)
+            {
+                foreach (var name in names)
+                {
+                    if (hints.TryGetValue(name, out var v))
+                        return v;
+                }
+                return null;
+            }
+            long urgency = Get("urgency")?.AsInt64() ?? 1;
+            return new Hints(
+                (Urgency)Math.Clamp(urgency, 0, 2),
+                Get("category")?.AsString()?.Clip(256),
+                Get("desktop-entry")?.AsString()?.Clip(256),
+                Get("resident")?.AsBool() ?? false,
+                Get("transient")?.AsBool() ?? false,
+                Get("image-path", "image_path")?.AsString()?.Clip(4096),
+                Get("image-data", "image_data", "icon_data") is { } image ? ReadImage(image) : null);
+        }
+
+        public void ApplyTo(Notification n)
+        {
+            n.Urgency = Urgency;
+            n.Category = Category;
+            n.DesktopEntry = DesktopEntry;
+            n.Resident = Resident;
+            n.Transient = Transient;
+            n.ImagePath = ImagePath;
+            n.Image = Image;
+        }
     }
 
-    /// <summary>Decodes the <c>(iiibiiay)</c> image struct.</summary>
+    /// <summary>Largest image accepted, per side (an icon or a thumbnail, never a screenful).</summary>
+    public const int MaxImageSide = 1024;
+
+    /// <summary>
+    /// Decodes the <c>(iiibiiay)</c> image struct. Null unless it is consistent: 1..1024 pixels per side, 8 bits
+    /// per sample, 3 or 4 channels matching HasAlpha, a row stride that fits a row, and enough data for every row.
+    /// </summary>
     static NotificationImage? ReadImage(VariantValue value)
     {
-        try
-        {
-            return new NotificationImage(
-                value.GetItem(0).GetInt32(), value.GetItem(1).GetInt32(), value.GetItem(2).GetInt32(),
-                value.GetItem(3).GetBool(), value.GetItem(4).GetInt32(), value.GetItem(5).GetInt32(),
-                value.GetItem(6).GetArray<byte>());
-        }
-        catch (InvalidOperationException)
-        {
-            return null; // malformed hint: ignore it rather than fail the notification
-        }
+        if (value.Field(0)?.AsInt32() is not int width || value.Field(1)?.AsInt32() is not int height
+            || value.Field(2)?.AsInt32() is not int stride || value.Field(3)?.AsBool() is not bool alpha
+            || value.Field(4)?.AsInt32() is not int bits || value.Field(5)?.AsInt32() is not int channels
+            || value.Field(6)?.AsBytes() is not { } data)
+            return null;
+        if (width is < 1 or > MaxImageSide || height is < 1 or > MaxImageSide || bits != 8 || channels != (alpha ? 4 : 3)
+            || stride < width * channels || stride > width * channels + 64 || data.Length < (long)(height - 1) * stride + width * channels)
+            return null;
+        return new NotificationImage(width, height, stride, alpha, bits, channels, data);
     }
 
     void ScheduleExpiry(Notification notification)

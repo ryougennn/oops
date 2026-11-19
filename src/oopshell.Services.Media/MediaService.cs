@@ -103,17 +103,19 @@ public sealed class MediaPlayer
             {
                 var entry = dict.GetDictionaryEntry(i);
                 var value = Unwrap(entry.Value);
-                switch (entry.Key.GetString())
+                // Any player can put anything here: check every type, clip strings, bound the length.
+                switch (entry.Key.AsString())
                 {
-                    case "xesam:title" when value.Type == VariantValueType.String: Title = value.GetString(); break;
-                    case "xesam:album" when value.Type == VariantValueType.String: Album = value.GetString(); break;
-                    case "mpris:artUrl" when value.Type == VariantValueType.String: ArtUrl = value.GetString(); break;
-                    case "xesam:artist" when value.Type == VariantValueType.Array:
-                        Artist = string.Join(", ", Enumerable.Range(0, value.Count).Select(j => Unwrap(value.GetItem(j))).Where(v => v.Type == VariantValueType.String).Select(v => v.GetString()));
+                    case "xesam:title": Title = value.AsString()?.Clip(1024) ?? Title; break;
+                    case "xesam:album": Album = value.AsString()?.Clip(1024) ?? Album; break;
+                    case "mpris:artUrl": ArtUrl = value.AsString()?.Clip(4096); break;
+                    case "xesam:artist":
+                        // A list of artists, or (some players) one string.
+                        Artist = (value.AsStrings() is { } artists ? string.Join(", ", artists.Take(16)) : value.AsString() ?? Artist).Clip(1024);
                         break;
-                    case "xesam:artist" when value.Type == VariantValueType.String: Artist = value.GetString(); break; // some players send one string
-                    case "mpris:length" when value.Type is VariantValueType.Int64: Length = TimeSpan.FromMicroseconds(value.GetInt64()); break;
-                    case "mpris:length" when value.Type is VariantValueType.UInt64: Length = TimeSpan.FromMicroseconds(value.GetUInt64()); break;
+                    case "mpris:length":
+                        Length = value.AsInt64() is long us and > 0 and < TimeSpan.TicksPerDay * 365 / 10 ? TimeSpan.FromMicroseconds(us) : null;
+                        break;
                 }
             }
         }
@@ -192,8 +194,7 @@ public sealed class MediaService : IDisposable
             sender => _ = RefreshFromAsync(sender)));
         var names = await connection.CallAsync("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "ListNames",
             (message, _) => message.GetBodyReader().ReadArrayOfString());
-        foreach (var name in names.Where(n => n.StartsWith(BusNamePrefix, StringComparison.Ordinal)))
-            await AddAsync(name);
+        await Task.WhenAll(names.Where(n => n.StartsWith(BusNamePrefix, StringComparison.Ordinal)).Select(AddAsync));
     }
 
     async Task AddAsync(string busName)
@@ -211,8 +212,15 @@ public sealed class MediaService : IDisposable
         {
             return; // quit meanwhile
         }
-        if (!await player.RefreshAsync(app))
-            return;
+        try
+        {
+            if (!await player.RefreshAsync(app).WaitAsync(TimeSpan.FromSeconds(3)))
+                return;
+        }
+        catch (Exception)
+        {
+            return; // a player that hangs or answers nonsense is left out; the others still show
+        }
         await app.InvokeAsync(() =>
         {
             if (players.All(p => p.BusName != busName))

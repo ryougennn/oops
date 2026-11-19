@@ -107,14 +107,14 @@ public sealed class BluetoothPairingRequest
 }
 
 /// <summary>The org.bluez.Agent1 object BlueZ calls while pairing.</summary>
-sealed class PairingAgent(OopsApp app, BluetoothService service) : ExportedObject(app, "/org/oopshell/bluez/agent")
+sealed class PairingAgent(OopsApp app, BluetoothService service, string? bluez) : ExportedObject(app, "/org/oopshell/bluez/agent")
 {
     const string Interface = "org.bluez.Agent1";
     readonly List<BluetoothPairingRequest> pending = new();
 
     protected override void HandleMethod(MethodContext context)
     {
-        if (context.Request.InterfaceAsString != Interface)
+        if (context.Request.InterfaceAsString != Interface || RefuseUnlessFrom(context, bluez))
             return;
         var reader = context.Request.GetBodyReader();
         string member = context.Request.MemberAsString ?? "";

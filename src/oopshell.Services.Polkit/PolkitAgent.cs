@@ -48,6 +48,7 @@ public sealed class PolkitAgent : ExportedObject, IDisposable
     readonly PolkitAgentOptions options;
     readonly Dictionary<string, PolkitRequest> requests = new(); // by cookie
     (string Kind, Dictionary<string, VariantValue> Details) subject;
+    string? polkitd;
     bool disposed;
 
     PolkitAgent(OopsApp app, DBusConnection connection, PolkitAgentOptions options) : base(app, options.ObjectPath)
@@ -64,6 +65,7 @@ public sealed class PolkitAgent : ExportedObject, IDisposable
     {
         var agent = new PolkitAgent(app, systemBus, options ?? new PolkitAgentOptions());
         agent.subject = await agent.SubjectAsync();
+        agent.polkitd = await systemBus.GetNameOwnerAsync(AuthorityName);
         systemBus.AddMethodHandler(agent);
         try
         {
@@ -121,7 +123,7 @@ public sealed class PolkitAgent : ExportedObject, IDisposable
 
     protected override void HandleMethod(MethodContext context)
     {
-        if (context.Request.InterfaceAsString != AgentInterface)
+        if (context.Request.InterfaceAsString != AgentInterface || RefuseUnlessFrom(context, polkitd))
             return;
         switch (context.Request.MemberAsString)
         {
@@ -162,6 +164,8 @@ public sealed class PolkitAgent : ExportedObject, IDisposable
         users = users.DistinctBy(u => u.Uid).OrderBy(u => u.Name == Environment.UserName ? 0 : 1).ToList();
 
         Defer(context);
+        if (requests.TryGetValue(cookie, out var previous))
+            previous.Finish(cancelledByPolkit: true); // polkitd started over with the same cookie: answer the old call
         var request = new PolkitRequest(this, context, actionId, message, icon, details, cookie, users);
         requests[cookie] = request;
         if (users.Count == 0)

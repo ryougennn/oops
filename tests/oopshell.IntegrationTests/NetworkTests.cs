@@ -190,6 +190,14 @@ public class NetworkTests(SwayFixture sway)
                 w.WriteUInt32(flags);
             }, "a{sa{sv}}osasu");
 
+        // Someone other than NetworkManager asking for the password is refused before the user sees anything.
+        var impostor = app.Complete(OopsDBus.ConnectAsync(app, bus.Address));
+        var stolen = impostor.CallAsync(shellBus.UniqueName!, "/org/freedesktop/NetworkManager/SecretAgent", "org.freedesktop.NetworkManager.SecretAgent",
+            "CancelGetSecrets", (ref MessageWriter w) => { w.WriteObjectPath($"{Root}/Settings/1"); w.WriteString("x"); }, "os");
+        var denied = Assert.IsType<DBusErrorReplyException>(app.Complete(stolen.ContinueWith(t => t.Exception?.InnerException)));
+        Assert.Equal("org.freedesktop.DBus.Error.AccessDenied", denied.ErrorName);
+        Assert.Empty(requests);
+
         var first = GetSecrets(0x1);
         app.RunUntil(() => requests.Count == 1, what: "secret request");
         Assert.Equal(("Home", "Home", false), (requests[0].ConnectionName, requests[0].Ssid, requests[0].IsRetry));
