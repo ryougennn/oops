@@ -1,6 +1,6 @@
 # oops
 
-oopshell (*Object Oriented Programming Shell*) is a little .NET library for building your own Wayland desktop
+`oops` is a little .NET library for building your own Wayland desktop
 shell in plain C#. Builds on NativeAOT.
 
 I wanted something like Quickshell but in C#, without a QML layer in the middle, so here we are.
