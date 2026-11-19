@@ -13,7 +13,7 @@ dotnet publish -c Release -r linux-x64      # or linux-arm64
 
 Needs `clang` and `lld` on the build machine. The result is a single executable (plus
 `libSkiaSharp.so` if you use Skia). Every oopshell package is trimmable and AOT-clean; a sample with
-zero warnings is about 1.7–2.2 MB, the full oops95 shell about 5.4 MB.
+zero warnings is about 1.7–2.2 MB, a full desktop shell about 5.4 MB.
 
 **Keep `PublishAot` Release-only.** Set unconditionally, it also disables hot reload in Debug builds
 (see [hot-reload.md](hot-reload.md)).

@@ -18,21 +18,5 @@ for s in oops-info HelloWindow HelloBar HelloSkia oops-stress oops-lab QuickBar;
         exit 1
     fi
 done
-demo/oops95/build.sh publish
-# OopsOSX uses the packages oops95's build just packed.
-rm -rf demo/oopsosx/.packages/oopshell*
-out=$(dotnet publish demo/oopsosx/src/oopsosx -c Release -r linux-x64 -p:PublishAot=true -o demo/oopsosx/out 2>&1) || { echo "$out"; exit 1; }
-if echo "$out" | grep -qE "warning (IL|AOT)[0-9]+"; then
-    echo "$out" | grep -E "warning (IL|AOT)[0-9]+"
-    echo "AOT/trim warnings in oopsosx" >&2
-    exit 1
-fi
-# Crossbar uses the same packages.
-rm -rf demo/crossbar/.packages/oopshell*
-out=$(dotnet publish demo/crossbar/src/crossbar -c Release -r linux-x64 -p:PublishAot=true -o demo/crossbar/out 2>&1) || { echo "$out"; exit 1; }
-if echo "$out" | grep -qE "warning (IL|AOT)[0-9]+"; then
-    echo "$out" | grep -E "warning (IL|AOT)[0-9]+"
-    echo "AOT/trim warnings in crossbar" >&2
-    exit 1
-fi
+tools/pack.sh
 echo "ci: ok"

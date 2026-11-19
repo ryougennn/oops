@@ -76,6 +76,6 @@ starts. Two things deserve care:
 - **Session lock**: if the shell is *locked* when it restarts, the compositor keeps the session locked
   (by design, see `SessionLock`). Don't hot-reload a locker while locked; test lock screens in a nested
   or headless compositor.
-- **Single-instance sockets** (like `oops95`'s control socket): delete a stale socket file at startup.
+- **Single-instance sockets** (like an `IpcServer` socket): delete a stale socket file at startup.
 
 Hot reload does not exist under NativeAOT; the handler is inert there and produces no trim warnings.

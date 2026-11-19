@@ -64,7 +64,7 @@ Open menus from the input handler that should own the grab: `Grab(seat)` records
 moment. Grabs are only dismissed by clicks on *other* clients, so close your menus yourself when another of
 your own surfaces is clicked. On niri, a layer surface's grabbing popup does not get the keyboard itself:
 give the layer surface `KeyboardInteractivity.OnDemand` while the menu is open and forward its `KeyDown`
-events to the menu (OopsOSX's menu bar does this).
+events to the menu.
 
 You never handle configure serials: subscribe to `Configured` (sizes) and `Render` (draw). Call
 `surface.Invalidate()` (or `Invalidate(rect)`) when something changed; with no invalidation there are no

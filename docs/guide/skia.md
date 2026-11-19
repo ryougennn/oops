@@ -24,7 +24,7 @@ All GPU surfaces of an app share one GL context (or one Vulkan device) and one `
 Vulkan vs GL: both draw the same pixels (tested against the same golden). Vulkan always repaints the
 whole buffer (no buffer age), GL repaints only the damaged area. Measured on an RX 7900 XT (RADV / radeonsi):
 steady frames cost the same (~0.5 ms for a busy scene); the first frame is 24 ms on Vulkan vs 30 ms on GL;
-memory is the same (~42 MB PSS for oops95).
+memory is the same (~42 MB PSS for a full desktop shell).
 
 Shader caching: SkiaSharp does not expose Skia's persistent program cache (`GRContextOptions` has no
 `PersistentCache`, `libSkiaSharp.so` exports no hook), so Skia regenerates its shaders once per process.

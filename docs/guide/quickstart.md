@@ -201,5 +201,4 @@ and start it from your compositor: niri `spawn-at-startup "quickbar"`, sway `exe
 - [Getting started](getting-started.md) explains the app, the loop, surfaces, input and the services in more depth.
 - [Rendering](rendering.md) and [Skia](skia.md) cover drawing without Skia, GPU rendering and damage.
 - The API reference lists everything, with the details in each member's documentation.
-- Full desktops built on oopshell: `demo/oops95`, `demo/oopsosx` and `demo/crossbar`. `samples/oops-lab`
-  exercises every service.
+- `samples/oops-lab` exercises every service.

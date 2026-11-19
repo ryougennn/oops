@@ -15,4 +15,4 @@ First release.
 - **Services**: D-Bus helpers; desktop entries, icon themes and SVG; an app catalog with search, launching
   and default apps; a notification server; a StatusNotifierItem tray; UPower; PulseAudio/PipeWire volume;
   MPRIS; PAM; a polkit agent; NetworkManager with a secret agent; BlueZ with a pairing agent; greetd.
-- **Demos**: oops95, OopsOSX and Crossbar shells; `samples/oops-lab` for the manual checks.
+- **Samples**: `samples/QuickBar` (the quick start) and `samples/oops-lab` for the manual checks.
