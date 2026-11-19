@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>oopshell.Services.Network</RootNamespace>
+    <Description>Network status and Wi-Fi for oopshell shells, from NetworkManager: devices, connectivity, access points, connecting and disconnecting.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../oopshell.Services.DBus/oopshell.Services.DBus.csproj" />
+  </ItemGroup>
+</Project>
