@@ -6,7 +6,11 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!-- Generated protocol docs and interop structs are not all documented; CS1591 stays a warning-free hint. -->
     <NoWarn>$(NoWarn);CS1591</NoWarn>
-    <!-- Package metadata shared by every oopshell package. RepositoryUrl/Source Link: add once the GitHub repository exists. -->
+    <!-- Package metadata shared by every oopshell package. The SDK's built-in Source Link maps the PDBs to GitHub. -->
+    <PackageProjectUrl>https://github.com/ryougennn/oops</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/ryougennn/oops.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <Copyright>Copyright (c) oopshell contributors</Copyright>
     <PackageTags>wayland;desktop;shell;layer-shell;panel;bar;dock;launcher;lock-screen;nativeaot;linux</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
