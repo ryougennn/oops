@@ -109,7 +109,7 @@ public sealed class PowerDevice
             ? TimeSpan.FromSeconds(v.GetInt64()) : null;
     }
 
-    (DeviceKind, string, string, string, bool, bool, bool, BatteryState, double, BatteryLevel, WarningLevel, string, TimeSpan?, TimeSpan?) Snapshot() =>
+    private (DeviceKind, string, string, string, bool, bool, bool, BatteryState, double, BatteryLevel, WarningLevel, string, TimeSpan?, TimeSpan?) Snapshot() =>
         (Kind, Model, Vendor, NativePath, PowerSupply, IsPresent, IsRechargeable, State, Percentage, Level, WarningLevel, IconName, TimeToEmpty, TimeToFull);
 
     public override string ToString() => $"{Kind} {Model} {Describe()} {State}";

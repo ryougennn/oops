@@ -5,7 +5,7 @@ namespace oopshell.Native;
 /// <summary>The handful of libc calls oopshell needs. All set errno (read it with <see cref="Marshal.GetLastPInvokeError"/>).</summary>
 public static unsafe partial class LibC
 {
-    const string Lib = "libc";
+    private const string Lib = "libc";
 
     public const int EINTR = 4;
     public const int EAGAIN = 11;
@@ -62,9 +62,9 @@ public static unsafe partial class LibC
     [LibraryImport(Lib, SetLastError = true)] public static partial int pipe2(int* fds, int flags);
 
     // struct epoll_event is packed on x86-64 (12 bytes) but naturally aligned elsewhere (16 bytes).
-    static readonly bool EpollPacked = RuntimeInformation.ProcessArchitecture is Architecture.X64 or Architecture.X86;
-    static int EpollEventSize => EpollPacked ? 12 : 16;
-    static int EpollDataOffset => EpollPacked ? 4 : 8;
+    private static readonly bool s_epollPacked = RuntimeInformation.ProcessArchitecture is Architecture.X64 or Architecture.X86;
+    private static int EpollEventSize => s_epollPacked ? 12 : 16;
+    private static int EpollDataOffset => s_epollPacked ? 4 : 8;
 
     public static int EpollCtl(int epfd, int op, int fd, uint events, ulong data)
     {

@@ -11,12 +11,12 @@ namespace oopshell.IntegrationTests;
 public class AudioTests(SwayFixture sway)
 {
     // The sway fixture has its own runtime dir; the sound server lives in the real one.
-    static readonly string Server = $"unix:{Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR")}/pulse/native";
+    private static readonly string s_server = $"unix:{Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR")}/pulse/native";
 
-    static string Pactl(params string[] args)
+    private static string Pactl(params string[] args)
     {
         var start = new ProcessStartInfo("pactl", args) { RedirectStandardOutput = true, RedirectStandardError = true };
-        start.Environment["PULSE_SERVER"] = Server;
+        start.Environment["PULSE_SERVER"] = s_server;
         start.Environment["LANG"] = "C";
         using var p = Process.Start(start)!;
         string output = p.StandardOutput.ReadToEnd();
@@ -29,13 +29,13 @@ public class AudioTests(SwayFixture sway)
     [Fact]
     public void Volume_and_mute_are_read_set_and_followed()
     {
-        Assert.SkipUnless(File.Exists("/usr/bin/pactl") && File.Exists(Server[5..]), "No pactl or sound server.");
+        Assert.SkipUnless(File.Exists("/usr/bin/pactl") && File.Exists(s_server[5..]), "No pactl or sound server.");
         using var app = sway.Connect();
         string name = $"oopshell_test_{Environment.ProcessId}";
         string module = Pactl("load-module", "module-null-sink", $"sink_name={name}", "channels=2");
         try
         {
-            using var audio = app.Complete(AudioService.StartAsync(app, Server));
+            using var audio = app.Complete(AudioService.StartAsync(app, s_server));
             app.RunUntil(() => audio.Sinks.Any(s => s.Name == name), what: "test sink listed");
             var sink = audio.Sinks.First(s => s.Name == name);
             Assert.Equal(2, sink.Channels);

@@ -8,7 +8,7 @@ namespace oopshell.IntegrationTests;
 public class TrayTests(SwayFixture sway)
 {
     /// <summary>A minimal tray app: a StatusNotifierItem with a two-entry dbusmenu.</summary>
-    sealed class FakeItem(OopsApp app) : ExportedObject(app, "/StatusNotifierItem")
+    private sealed class FakeItem(OopsApp app) : ExportedObject(app, "/StatusNotifierItem")
     {
         public int Activations;
         public string Title = "Fake app";
@@ -23,40 +23,40 @@ public class TrayTests(SwayFixture sway)
                     ReplyEmpty(context);
                     break;
                 case ("org.freedesktop.DBus.Properties", "GetAll"):
-                {
-                    var writer = context.CreateReplyWriter("a{sv}");
-                    try
                     {
-                        var dict = writer.WriteDictionaryStart();
-                        Entry(ref writer, "Id", "fake");
-                        Entry(ref writer, "Title", Title);
-                        Entry(ref writer, "Status", "Active");
-                        Entry(ref writer, "IconName", "dialog-information");
-                        writer.WriteDictionaryEntryStart();
-                        writer.WriteString("Menu");
-                        writer.WriteVariantObjectPath("/Menu");
-                        writer.WriteDictionaryEntryStart();
-                        writer.WriteString("IconPixmap");
-                        writer.WriteSignature("a(iiay)");
-                        var pixmaps = writer.WriteArrayStart(DBusType.Struct);
-                        writer.WriteStructureStart();
-                        writer.WriteInt32(2);
-                        writer.WriteInt32(2);
-                        writer.WriteArray(new byte[16]);
-                        writer.WriteArrayEnd(pixmaps);
-                        writer.WriteDictionaryEnd(dict);
-                        context.Reply(writer.CreateMessage());
+                        var writer = context.CreateReplyWriter("a{sv}");
+                        try
+                        {
+                            var dict = writer.WriteDictionaryStart();
+                            Entry(ref writer, "Id", "fake");
+                            Entry(ref writer, "Title", Title);
+                            Entry(ref writer, "Status", "Active");
+                            Entry(ref writer, "IconName", "dialog-information");
+                            writer.WriteDictionaryEntryStart();
+                            writer.WriteString("Menu");
+                            writer.WriteVariantObjectPath("/Menu");
+                            writer.WriteDictionaryEntryStart();
+                            writer.WriteString("IconPixmap");
+                            writer.WriteSignature("a(iiay)");
+                            var pixmaps = writer.WriteArrayStart(DBusType.Struct);
+                            writer.WriteStructureStart();
+                            writer.WriteInt32(2);
+                            writer.WriteInt32(2);
+                            writer.WriteArray(new byte[16]);
+                            writer.WriteArrayEnd(pixmaps);
+                            writer.WriteDictionaryEnd(dict);
+                            context.Reply(writer.CreateMessage());
+                        }
+                        finally
+                        {
+                            writer.Dispose();
+                        }
+                        break;
                     }
-                    finally
-                    {
-                        writer.Dispose();
-                    }
-                    break;
-                }
             }
         }
 
-        static void Entry(ref MessageWriter writer, string key, string value)
+        private static void Entry(ref MessageWriter writer, string key, string value)
         {
             writer.WriteDictionaryEntryStart();
             writer.WriteString(key);
@@ -64,7 +64,7 @@ public class TrayTests(SwayFixture sway)
         }
     }
 
-    sealed class FakeMenu(OopsApp app) : ExportedObject(app, "/Menu")
+    private sealed class FakeMenu(OopsApp app) : ExportedObject(app, "/Menu")
     {
         public readonly List<int> Clicked = new();
 
@@ -73,20 +73,20 @@ public class TrayTests(SwayFixture sway)
             switch (context.Request.MemberAsString)
             {
                 case "GetLayout":
-                {
-                    var writer = context.CreateReplyWriter("u(ia{sv}av)");
-                    try
                     {
-                        writer.WriteUInt32(1);
-                        WriteNode(ref writer, 0, ("children-display", "submenu"), [(1, "_Open window", null), (2, null, "separator"), (3, "_Quit", null)]);
-                        context.Reply(writer.CreateMessage());
+                        var writer = context.CreateReplyWriter("u(ia{sv}av)");
+                        try
+                        {
+                            writer.WriteUInt32(1);
+                            WriteNode(ref writer, 0, ("children-display", "submenu"), [(1, "_Open window", null), (2, null, "separator"), (3, "_Quit", null)]);
+                            context.Reply(writer.CreateMessage());
+                        }
+                        finally
+                        {
+                            writer.Dispose();
+                        }
+                        break;
                     }
-                    finally
-                    {
-                        writer.Dispose();
-                    }
-                    break;
-                }
                 case "Event":
                     Clicked.Add(context.Request.GetBodyReader().ReadInt32());
                     ReplyEmpty(context);
@@ -95,7 +95,7 @@ public class TrayTests(SwayFixture sway)
         }
 
         /// <summary>Writes an (ia{sv}av) node whose children are leaves with a label or a type.</summary>
-        static void WriteNode(ref MessageWriter writer, int id, (string Key, string Value) property, (int Id, string? Label, string? Type)[] children)
+        private static void WriteNode(ref MessageWriter writer, int id, (string Key, string Value) property, (int Id, string? Label, string? Type)[] children)
         {
             writer.WriteStructureStart();
             writer.WriteInt32(id);

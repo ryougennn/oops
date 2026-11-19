@@ -10,27 +10,27 @@ namespace oopshell.IntegrationTests;
 public class GreetdTests(SwayFixture sway)
 {
     /// <summary>greetd's side: answers like greetd with PAM asking for a password ("correct-horse" is right).</summary>
-    sealed class FakeGreetd : IDisposable
+    private sealed class FakeGreetd : IDisposable
     {
-        readonly Socket listener = new(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
-        readonly Thread thread;
+        private readonly Socket _listener = new(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+        private readonly Thread _thread;
         public readonly List<string> Received = new();
         public string Path { get; }
 
         public FakeGreetd(string dir)
         {
             Path = System.IO.Path.Combine(dir, "greetd.sock");
-            listener.Bind(new UnixDomainSocketEndPoint(Path));
-            listener.Listen(1);
-            thread = new Thread(Serve) { IsBackground = true };
-            thread.Start();
+            _listener.Bind(new UnixDomainSocketEndPoint(Path));
+            _listener.Listen(1);
+            _thread = new Thread(Serve) { IsBackground = true };
+            _thread.Start();
         }
 
-        void Serve()
+        private void Serve()
         {
             try
             {
-                using var client = listener.Accept();
+                using var client = _listener.Accept();
                 string? user = null;
                 while (Read(client) is { } request)
                 {
@@ -58,7 +58,7 @@ public class GreetdTests(SwayFixture sway)
             }
         }
 
-        static JsonDocument? Read(Socket s)
+        private static JsonDocument? Read(Socket s)
         {
             var header = new byte[4];
             if (!Fill(s, header))
@@ -67,7 +67,7 @@ public class GreetdTests(SwayFixture sway)
             return Fill(s, body) ? JsonDocument.Parse(body) : null;
         }
 
-        static bool Fill(Socket s, byte[] buffer)
+        private static bool Fill(Socket s, byte[] buffer)
         {
             for (int read = 0; read < buffer.Length;)
             {
@@ -79,7 +79,7 @@ public class GreetdTests(SwayFixture sway)
             return true;
         }
 
-        static void Write(Socket s, string json)
+        private static void Write(Socket s, string json)
         {
             var body = Encoding.UTF8.GetBytes(json);
             var frame = new byte[4 + body.Length];
@@ -88,7 +88,7 @@ public class GreetdTests(SwayFixture sway)
             s.Send(frame);
         }
 
-        public void Dispose() => listener.Dispose();
+        public void Dispose() => _listener.Dispose();
     }
 
     [Fact]

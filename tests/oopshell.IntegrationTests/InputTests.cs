@@ -6,7 +6,7 @@ namespace oopshell.IntegrationTests;
 [Collection("sway")]
 public class InputTests(SwayFixture sway)
 {
-    static (OopsApp App, VirtualInput Input, Toplevel Window) Start(SwayFixture sway)
+    private static (OopsApp App, VirtualInput Input, Toplevel Window) Start(SwayFixture sway)
     {
         // The compose table comes from the locale; pin it so the test does not depend on the machine.
         Environment.SetEnvironmentVariable("LC_ALL", "en_US.UTF-8");

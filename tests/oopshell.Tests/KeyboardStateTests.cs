@@ -5,9 +5,9 @@ namespace oopshell.Tests;
 public class KeyboardStateTests
 {
     // evdev codes from linux/input-event-codes.h
-    const uint KEY_A = 30, KEY_E = 18, KEY_LEFTSHIFT = 42, KEY_APOSTROPHE = 40, KEY_ENTER = 28, KEY_RIGHTALT = 100;
+    private const uint KEY_A = 30, KEY_E = 18, KEY_LEFTSHIFT = 42, KEY_APOSTROPHE = 40, KEY_ENTER = 28, KEY_RIGHTALT = 100;
 
-    static KeyboardState Create()
+    private static KeyboardState Create()
     {
         var state = new KeyboardState();
         string keymap = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "fixtures/us-compose-ralt.xkb"));

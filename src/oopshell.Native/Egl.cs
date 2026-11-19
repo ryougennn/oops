@@ -8,8 +8,8 @@ namespace oopshell.Native;
 /// </summary>
 public static unsafe partial class Egl
 {
-    const string Lib = "libEGL.so.1";
-    const string WaylandEglLib = "libwayland-egl.so.1";
+    private const string Lib = "libEGL.so.1";
+    private const string WaylandEglLib = "libwayland-egl.so.1";
 
     public const int EGL_FALSE = 0;
     public const int EGL_TRUE = 1;

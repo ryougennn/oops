@@ -4,11 +4,11 @@ namespace oopshell.Services.Tests;
 
 public sealed class SvgTests : IDisposable
 {
-    readonly string dir = Directory.CreateTempSubdirectory("oopssvg.").FullName;
+    private readonly string _dir = Directory.CreateTempSubdirectory("oopssvg.").FullName;
 
-    public void Dispose() => Directory.Delete(dir, recursive: true);
+    public void Dispose() => Directory.Delete(_dir, recursive: true);
 
-    static (byte B, byte G, byte R, byte A) Pixel(byte[] bgra, int width, int x, int y)
+    private static (byte B, byte G, byte R, byte A) Pixel(byte[] bgra, int width, int x, int y)
     {
         int i = (y * width + x) * 4;
         return (bgra[i], bgra[i + 1], bgra[i + 2], bgra[i + 3]);
@@ -18,7 +18,7 @@ public sealed class SvgTests : IDisposable
     public void Renders_an_svg_fitted_and_centered_as_premultiplied_bgra()
     {
         Assert.SkipUnless(SvgRenderer.IsAvailable, "librsvg/cairo not installed");
-        string path = Path.Combine(dir, "wide.svg");
+        string path = Path.Combine(_dir, "wide.svg");
         // Twice as wide as tall: red left half, blue right half.
         File.WriteAllText(path, """
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10" width="20" height="10">
@@ -39,10 +39,10 @@ public sealed class SvgTests : IDisposable
     public void Broken_or_missing_files_give_null()
     {
         Assert.SkipUnless(SvgRenderer.IsAvailable, "librsvg/cairo not installed");
-        string broken = Path.Combine(dir, "broken.svg");
+        string broken = Path.Combine(_dir, "broken.svg");
         File.WriteAllText(broken, "<svg this is not xml");
         Assert.Null(SvgRenderer.Render(broken, 16, 16));
-        Assert.Null(SvgRenderer.Render(Path.Combine(dir, "missing.svg"), 16, 16));
+        Assert.Null(SvgRenderer.Render(Path.Combine(_dir, "missing.svg"), 16, 16));
         Assert.Null(SvgRenderer.Render(broken, 0, 16));
     }
 }

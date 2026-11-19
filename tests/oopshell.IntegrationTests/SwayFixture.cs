@@ -10,7 +10,7 @@ namespace oopshell.IntegrationTests;
 public sealed class SwayFixture : IDisposable
 {
     public static readonly string RepoRoot = FindRepoRoot();
-    readonly Process? sway;
+    private readonly Process? _sway;
 
     public SwayFixture()
     {
@@ -34,11 +34,11 @@ public sealed class SwayFixture : IDisposable
         start.Environment["WLR_BACKENDS"] = "headless";
         start.Environment["WLR_LIBINPUT_NO_DEVICES"] = "1";
         start.Environment["WLR_RENDERER"] = "pixman";
-        sway = Process.Start(start)!;
-        sway.OutputDataReceived += (_, e) => Log.Add(e.Data ?? "");
-        sway.ErrorDataReceived += (_, e) => Log.Add(e.Data ?? "");
-        sway.BeginOutputReadLine();
-        sway.BeginErrorReadLine();
+        _sway = Process.Start(start)!;
+        _sway.OutputDataReceived += (_, e) => Log.Add(e.Data ?? "");
+        _sway.ErrorDataReceived += (_, e) => Log.Add(e.Data ?? "");
+        _sway.BeginOutputReadLine();
+        _sway.BeginErrorReadLine();
 
         var deadline = DateTime.UtcNow.AddSeconds(10);
         while (DateTime.UtcNow < deadline && SwaySock is null)
@@ -79,7 +79,7 @@ public sealed class SwayFixture : IDisposable
             rect.GetProperty("width").GetInt32(), rect.GetProperty("height").GetInt32());
     }
 
-    static System.Text.Json.JsonElement? FindNode(System.Text.Json.JsonElement node, string appId)
+    private static System.Text.Json.JsonElement? FindNode(System.Text.Json.JsonElement node, string appId)
     {
         if (node.TryGetProperty("app_id", out var id) && id.ValueKind == System.Text.Json.JsonValueKind.String && id.GetString() == appId)
             return node;
@@ -122,20 +122,20 @@ public sealed class SwayFixture : IDisposable
 
     public void Dispose()
     {
-        if (sway is { HasExited: false })
+        if (_sway is { HasExited: false })
         {
             try { Swaymsg("exit"); } catch { /* already gone */ }
-            if (!sway.WaitForExit(3000))
-                sway.Kill();
+            if (!_sway.WaitForExit(3000))
+                _sway.Kill();
         }
         if (RuntimeDir.Length > 0)
             Directory.Delete(RuntimeDir, recursive: true);
     }
 
-    static bool OnPath(string tool) =>
+    private static bool OnPath(string tool) =>
         (Environment.GetEnvironmentVariable("PATH") ?? "").Split(':').Any(dir => File.Exists(Path.Combine(dir, tool)));
 
-    static string FindRepoRoot([CallerFilePath] string path = "")
+    private static string FindRepoRoot([CallerFilePath] string path = "")
     {
         var dir = Path.GetDirectoryName(path);
         while (dir is not null && !File.Exists(Path.Combine(dir, "SPEC.md")))

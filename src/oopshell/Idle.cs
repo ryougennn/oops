@@ -5,12 +5,12 @@ namespace oopshell;
 /// <summary>User idle detection (<c>ext-idle-notify-v1</c>). Get it from <see cref="OopsApp.Idle"/>.</summary>
 public sealed class IdleMonitor
 {
-    readonly OopsApp app;
+    private readonly OopsApp _app;
 
-    internal IdleMonitor(OopsApp app) => this.app = app;
+    internal IdleMonitor(OopsApp app) => _app = app;
 
     /// <summary>True if the compositor supports idle notifications.</summary>
-    public bool IsSupported => app.Has<ExtIdleNotifierV1>();
+    public bool IsSupported => _app.Has<ExtIdleNotifierV1>();
 
     /// <summary>
     /// Calls <paramref name="onIdle"/> after <paramref name="timeout"/> without user input, and
@@ -19,8 +19,8 @@ public sealed class IdleMonitor
     /// </summary>
     public IDisposable Watch(TimeSpan timeout, Action onIdle, Action? onResumed = null, Seat? seat = null, bool ignoreInhibitors = false)
     {
-        var notifier = app.Get<ExtIdleNotifierV1>();
-        var wlSeat = (seat ?? app.DefaultSeat ?? throw new InvalidOperationException("No seat to watch.")).Proxy;
+        var notifier = _app.Get<ExtIdleNotifierV1>();
+        var wlSeat = (seat ?? _app.DefaultSeat ?? throw new InvalidOperationException("No seat to watch.")).Proxy;
         uint ms = (uint)Math.Clamp(timeout.TotalMilliseconds, 1, uint.MaxValue);
         var notification = ignoreInhibitors && notifier.BoundVersion >= 2
             ? notifier.GetInputIdleNotification(ms, wlSeat)
@@ -34,8 +34,8 @@ public sealed class IdleMonitor
 
 public sealed partial class OopsApp
 {
-    IdleMonitor? idle;
+    private IdleMonitor? _idle;
 
     /// <summary>Idle detection.</summary>
-    public IdleMonitor Idle => idle ??= new IdleMonitor(this);
+    public IdleMonitor Idle => _idle ??= new IdleMonitor(this);
 }

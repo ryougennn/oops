@@ -7,7 +7,7 @@ namespace oopshell.IntegrationTests;
 [Collection("sway")]
 public class PopupTests(SwayFixture sway)
 {
-    static PopupOptions MenuAt(int x, int y) => new()
+    private static PopupOptions MenuAt(int x, int y) => new()
     {
         Size = new Size(120, 80),
         AnchorRect = new Rectangle(x, y, 1, 1),

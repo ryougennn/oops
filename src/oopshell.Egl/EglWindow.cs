@@ -33,10 +33,10 @@ public sealed record EglOptions
 /// </summary>
 public sealed unsafe class EglDisplay : IDisposable
 {
-    static readonly Dictionary<OopsApp, EglDisplay> Displays = new();
-    readonly HashSet<string> extensions;
+    private static readonly Dictionary<OopsApp, EglDisplay> s_displays = new();
+    private readonly HashSet<string> _extensions;
 
-    EglDisplay(OopsApp app, EglOptions options)
+    private EglDisplay(OopsApp app, EglOptions options)
     {
         if (!IsAvailable)
             throw new NotSupportedException("libEGL.so.1 or libwayland-egl.so.1 is not installed.");
@@ -50,7 +50,7 @@ public sealed unsafe class EglDisplay : IDisposable
         int major, minor;
         if (Handle == 0 || eglInitialize(Handle, &major, &minor) == EGL_FALSE)
             throw Error("eglInitialize");
-        extensions = (Marshal.PtrToStringUTF8((nint)eglQueryString(Handle, EGL_EXTENSIONS)) ?? "").Split(' ').ToHashSet();
+        _extensions = (Marshal.PtrToStringUTF8((nint)eglQueryString(Handle, EGL_EXTENSIONS)) ?? "").Split(' ').ToHashSet();
 
         if (eglBindAPI(options.Api == GlApi.GLES ? EGL_OPENGL_ES_API : EGL_OPENGL_API) == EGL_FALSE)
             throw Error("eglBindAPI");
@@ -82,7 +82,7 @@ public sealed unsafe class EglDisplay : IDisposable
         if (Context == 0)
             throw Error("eglCreateContext");
 
-        HasBufferAge = extensions.Contains("EGL_EXT_buffer_age");
+        HasBufferAge = _extensions.Contains("EGL_EXT_buffer_age");
         var swapWithDamage = GetProcAddress("eglSwapBuffersWithDamageKHR");
         if (swapWithDamage == 0)
             swapWithDamage = GetProcAddress("eglSwapBuffersWithDamageEXT");
@@ -92,9 +92,9 @@ public sealed unsafe class EglDisplay : IDisposable
     /// <summary>The app's EGL display, created with <paramref name="options"/> on first use.</summary>
     public static EglDisplay Get(OopsApp app, EglOptions? options = null)
     {
-        if (!Displays.TryGetValue(app, out var display))
+        if (!s_displays.TryGetValue(app, out var display))
         {
-            Displays[app] = display = new EglDisplay(app, options ?? EglOptions.Default);
+            s_displays[app] = display = new EglDisplay(app, options ?? EglOptions.Default);
             // Mesa caches EGLDisplays by wl_display address, which a later connection may reuse:
             // terminate before the connection goes away so no stale display survives.
             app.Disposing += display.Dispose;
@@ -114,7 +114,7 @@ public sealed unsafe class EglDisplay : IDisposable
     public bool HasSwapBuffersWithDamage => SwapBuffersWithDamage != null;
     internal delegate* unmanaged[Cdecl]<nint, nint, int*, int, int> SwapBuffersWithDamage { get; }
 
-    public bool HasExtension(string name) => extensions.Contains(name);
+    public bool HasExtension(string name) => _extensions.Contains(name);
 
     /// <summary>
     /// Makes the shared context current without a surface (EGL_KHR_surfaceless_context), e.g. to let a GL
@@ -131,7 +131,7 @@ public sealed unsafe class EglDisplay : IDisposable
     /// <summary>Raised before the display is terminated (e.g. so a GPU drawing library can drop its context).</summary>
     public event Action? Disposing;
 
-    bool disposed;
+    private bool _disposed;
 
     /// <summary>Looks up a GL or EGL function, for GL binding libraries (Silk.NET, OpenTK, Skia's GRGlInterface).</summary>
     public static nint GetProcAddress(string name) => Native.Egl.GetProcAddress(name);
@@ -140,12 +140,12 @@ public sealed unsafe class EglDisplay : IDisposable
 
     public void Dispose()
     {
-        if (disposed)
+        if (_disposed)
             return;
-        disposed = true;
+        _disposed = true;
         Disposing?.Invoke();
         App.Disposing -= Dispose;
-        Displays.Remove(App);
+        s_displays.Remove(App);
         eglMakeCurrent(Handle, 0, 0, 0);
         eglDestroyContext(Handle, Context);
         eglTerminate(Handle);
@@ -158,36 +158,36 @@ public sealed unsafe class EglDisplay : IDisposable
 /// </summary>
 public sealed unsafe class EglWindow : IDisposable
 {
-    readonly Surface surface;
-    nint window;
-    nint eglSurface;
-    Size size;
-    bool disposed;
+    private readonly Surface _surface;
+    private nint _window;
+    private nint _eglSurface;
+    private Size _size;
+    private bool _disposed;
 
-    EglWindow(Surface surface, EglDisplay display)
+    private EglWindow(Surface surface, EglDisplay display)
     {
-        this.surface = surface;
+        _surface = surface;
         Display = display;
-        size = surface.BufferSize;
+        _size = surface.BufferSize;
     }
 
     /// <summary>
     /// Creates the wl_egl_window and EGLSurface on first use, at the real size. Created any earlier (before the
     /// first configure, at a placeholder size), Mesa may present its first frame from a buffer of the old size.
     /// </summary>
-    void EnsureCreated()
+    private void EnsureCreated()
     {
-        if (eglSurface != 0)
+        if (_eglSurface != 0)
             return;
-        if (size.IsEmpty)
-            size = surface.BufferSize.IsEmpty ? new Size(1, 1) : surface.BufferSize;
-        window = wl_egl_window_create(surface.NativeSurface, size.Width, size.Height);
-        if (window == 0)
+        if (_size.IsEmpty)
+            _size = _surface.BufferSize.IsEmpty ? new Size(1, 1) : _surface.BufferSize;
+        _window = wl_egl_window_create(_surface.NativeSurface, _size.Width, _size.Height);
+        if (_window == 0)
             throw new InvalidOperationException("wl_egl_window_create failed.");
-        eglSurface = eglCreateWindowSurface(Display.Handle, Display.Config, window, null);
-        if (eglSurface == 0)
+        _eglSurface = eglCreateWindowSurface(Display.Handle, Display.Config, _window, null);
+        if (_eglSurface == 0)
             throw EglDisplay.Error("eglCreateWindowSurface");
-        if (eglMakeCurrent(Display.Handle, eglSurface, eglSurface, Display.Context) == EGL_FALSE)
+        if (eglMakeCurrent(Display.Handle, _eglSurface, _eglSurface, Display.Context) == EGL_FALSE)
             throw EglDisplay.Error("eglMakeCurrent");
         eglSwapInterval(Display.Handle, 0);
     }
@@ -198,26 +198,26 @@ public sealed unsafe class EglWindow : IDisposable
     public EglDisplay Display { get; }
 
     /// <summary><c>EGLSurface</c> (created by the first <see cref="MakeCurrent"/>).</summary>
-    public nint Handle => eglSurface;
+    public nint Handle => _eglSurface;
 
-    public Size Size => size;
+    public Size Size => _size;
 
     public void MakeCurrent()
     {
-        ObjectDisposedException.ThrowIf(disposed, this);
+        ObjectDisposedException.ThrowIf(_disposed, this);
         EnsureCreated();
-        if (eglMakeCurrent(Display.Handle, eglSurface, eglSurface, Display.Context) == EGL_FALSE)
+        if (eglMakeCurrent(Display.Handle, _eglSurface, _eglSurface, Display.Context) == EGL_FALSE)
             throw EglDisplay.Error("eglMakeCurrent");
     }
 
     /// <summary>Resizes the underlying window (takes effect on the next swap). Cheap when unchanged.</summary>
     public void Resize(Size bufferSize)
     {
-        if (bufferSize == size || bufferSize.IsEmpty)
+        if (bufferSize == _size || bufferSize.IsEmpty)
             return;
-        size = bufferSize;
-        if (window != 0)
-            wl_egl_window_resize(window, size.Width, size.Height, 0, 0);
+        _size = bufferSize;
+        if (_window != 0)
+            wl_egl_window_resize(_window, _size.Width, _size.Height, 0, 0);
     }
 
     /// <summary>Age of the back buffer (EGL_EXT_buffer_age): 0 = undefined contents. Call after <see cref="MakeCurrent"/>.</summary>
@@ -228,39 +228,39 @@ public sealed unsafe class EglWindow : IDisposable
             if (!Display.HasBufferAge)
                 return 0;
             int age;
-            return eglQuerySurface(Display.Handle, eglSurface, EGL_BUFFER_AGE_EXT, &age) == EGL_FALSE ? 0 : age;
+            return eglQuerySurface(Display.Handle, _eglSurface, EGL_BUFFER_AGE_EXT, &age) == EGL_FALSE ? 0 : age;
         }
     }
 
     /// <summary>Presents the frame, reporting <paramref name="damage"/> (buffer pixels, top-left origin) when supported.</summary>
     public void SwapBuffers(Rectangle damage)
     {
-        var flash = surface.App.ReloadFlashRect(size, surface.Scale);
+        var flash = _surface.App.ReloadFlashRect(_size, _surface.Scale);
         if (!flash.IsEmpty)
         {
             DrawFlash(flash);
             damage = Rectangle.Union(damage, flash);
         }
-        surface.PrepareCommit();
+        _surface.PrepareCommit();
         int result;
         if (Display.HasSwapBuffersWithDamage && !damage.IsEmpty)
         {
             // EGL damage rectangles have a bottom-left origin.
-            int* rect = stackalloc int[] { damage.X, size.Height - damage.Bottom, damage.Width, damage.Height };
-            result = Display.SwapBuffersWithDamage(Display.Handle, eglSurface, rect, 1);
+            int* rect = stackalloc int[] { damage.X, _size.Height - damage.Bottom, damage.Width, damage.Height };
+            result = Display.SwapBuffersWithDamage(Display.Handle, _eglSurface, rect, 1);
         }
         else
         {
-            result = eglSwapBuffers(Display.Handle, eglSurface);
+            result = eglSwapBuffers(Display.Handle, _eglSurface);
         }
         if (result == EGL_FALSE)
             throw EglDisplay.Error("eglSwapBuffers");
     }
 
-    public void SwapBuffers() => SwapBuffers(new Rectangle(Point.Empty, size));
+    public void SwapBuffers() => SwapBuffers(new Rectangle(Point.Empty, _size));
 
     // The DevOverlay "reloaded" marker: a scissored clear, so it needs no shaders.
-    void DrawFlash(Rectangle rect)
+    private void DrawFlash(Rectangle rect)
     {
         const int GL_SCISSOR_TEST = 0x0C11, GL_COLOR_BUFFER_BIT = 0x4000;
         var enable = (delegate* unmanaged[Cdecl]<int, void>)GetProcAddress("glEnable");
@@ -269,7 +269,7 @@ public sealed unsafe class EglWindow : IDisposable
         var clearColor = (delegate* unmanaged[Cdecl]<float, float, float, float, void>)GetProcAddress("glClearColor");
         var clear = (delegate* unmanaged[Cdecl]<int, void>)GetProcAddress("glClear");
         enable(GL_SCISSOR_TEST);
-        scissor(rect.X, size.Height - rect.Bottom, rect.Width, rect.Height);
+        scissor(rect.X, _size.Height - rect.Bottom, rect.Width, rect.Height);
         clearColor(1, 0, 1, 1);
         clear(GL_COLOR_BUFFER_BIT);
         disable(GL_SCISSOR_TEST);
@@ -277,14 +277,14 @@ public sealed unsafe class EglWindow : IDisposable
 
     public void Dispose()
     {
-        if (disposed)
+        if (_disposed)
             return;
-        disposed = true;
-        if (eglSurface == 0)
+        _disposed = true;
+        if (_eglSurface == 0)
             return;
         eglMakeCurrent(Display.Handle, 0, 0, 0);
-        eglDestroySurface(Display.Handle, eglSurface);
-        wl_egl_window_destroy(window);
-        eglSurface = window = 0;
+        eglDestroySurface(Display.Handle, _eglSurface);
+        wl_egl_window_destroy(_window);
+        _eglSurface = _window = 0;
     }
 }

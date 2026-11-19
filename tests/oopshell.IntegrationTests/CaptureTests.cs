@@ -10,48 +10,48 @@ namespace oopshell.IntegrationTests;
 /// </summary>
 public sealed class CaptureTests
 {
-    static readonly string Binary = Path.Combine(SwayFixture.RepoRoot, "tests/fixtures/capturewl/capturewl");
+    private static readonly string s_binary = Path.Combine(SwayFixture.RepoRoot, "tests/fixtures/capturewl/capturewl");
 
     /// <summary>A capturewl instance in its own runtime dir.</summary>
-    sealed class Compositor : IDisposable
+    private sealed class Compositor : IDisposable
     {
-        readonly Process process;
-        readonly string runtimeDir = Directory.CreateTempSubdirectory("oopscap.").FullName;
+        private readonly Process _process;
+        private readonly string _runtimeDir = Directory.CreateTempSubdirectory("oopscap.").FullName;
 
         public Compositor(bool withWlrToplevels, string? renderer = null)
         {
-            Assert.SkipUnless(File.Exists(Binary), "capturewl is not built (tests/fixtures/capturewl/build.sh).");
-            var start = new ProcessStartInfo(Binary, withWlrToplevels ? ["-w"] : []) { RedirectStandardError = true, RedirectStandardOutput = true };
-            start.Environment["XDG_RUNTIME_DIR"] = runtimeDir;
+            Assert.SkipUnless(File.Exists(s_binary), "capturewl is not built (tests/fixtures/capturewl/build.sh).");
+            var start = new ProcessStartInfo(s_binary, withWlrToplevels ? ["-w"] : []) { RedirectStandardError = true, RedirectStandardOutput = true };
+            start.Environment["XDG_RUNTIME_DIR"] = _runtimeDir;
             start.Environment["WLR_RENDERER"] = renderer ?? "pixman";
             start.Environment.Remove("WAYLAND_DISPLAY");
-            process = Process.Start(start)!;
-            process.ErrorDataReceived += (_, _) => { };
-            process.BeginErrorReadLine();
-            process.BeginOutputReadLine();
+            _process = Process.Start(start)!;
+            _process.ErrorDataReceived += (_, _) => { };
+            _process.BeginErrorReadLine();
+            _process.BeginOutputReadLine();
             var deadline = DateTime.UtcNow.AddSeconds(10);
-            while (DateTime.UtcNow < deadline && !File.Exists(Path.Combine(runtimeDir, "wayland-0")) && !process.HasExited)
+            while (DateTime.UtcNow < deadline && !File.Exists(Path.Combine(_runtimeDir, "wayland-0")) && !_process.HasExited)
                 Thread.Sleep(20);
-            Assert.SkipWhen(process.HasExited, $"capturewl did not start (renderer {renderer ?? "pixman"}).");
+            Assert.SkipWhen(_process.HasExited, $"capturewl did not start (renderer {renderer ?? "pixman"}).");
         }
 
-        public OopsApp Connect() => OopsApp.Connect(new OopsOptions { Display = Path.Combine(runtimeDir, "wayland-0") });
+        public OopsApp Connect() => OopsApp.Connect(new OopsOptions { Display = Path.Combine(_runtimeDir, "wayland-0") });
 
         public void Dispose()
         {
-            process.Kill();
-            process.WaitForExit();
-            Directory.Delete(runtimeDir, recursive: true);
+            _process.Kill();
+            _process.WaitForExit();
+            Directory.Delete(_runtimeDir, recursive: true);
         }
     }
 
-    static (byte B, byte G, byte R) Pixel(CapturedImage image, int x, int y)
+    private static (byte B, byte G, byte R) Pixel(CapturedImage image, int x, int y)
     {
         int i = y * image.Stride + x * 4;
         return (image.Pixels[i], image.Pixels[i + 1], image.Pixels[i + 2]);
     }
 
-    static Toplevel Window(OopsApp app, string title, uint argb, out Func<int> frames)
+    private static Toplevel Window(OopsApp app, string title, uint argb, out Func<int> frames)
     {
         var window = new Toplevel(app) { Title = title, AppId = "oopshell.capture-test", DefaultSize = new Size(320, 200) };
         frames = Draw.SolidColor(window, argb);

@@ -78,7 +78,7 @@ public sealed unsafe partial class WlDisplay
             ThrowError();
     }
 
-    void ThrowError()
+    private void ThrowError()
     {
         int error = wl_display_get_error(Handle);
         if (error == 0)

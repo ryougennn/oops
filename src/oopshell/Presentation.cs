@@ -12,7 +12,7 @@ public readonly record struct PresentationInfo(bool Discarded, TimeSpan Timestam
 
 public abstract partial class Surface
 {
-    Action<PresentationInfo>? presented;
+    private Action<PresentationInfo>? _presented;
 
     /// <summary>
     /// Frame timing from presentation-time, one per presented frame. Subscribing makes every commit request
@@ -20,26 +20,26 @@ public abstract partial class Surface
     /// </summary>
     public event Action<PresentationInfo>? Presented
     {
-        add => presented += value;
-        remove => presented -= value;
+        add => _presented += value;
+        remove => _presented -= value;
     }
 
-    void RequestPresentationFeedback()
+    private void RequestPresentationFeedback()
     {
-        if (presented is null || App.TryGet<WpPresentation>() is not { } presentation)
+        if (_presented is null || App.TryGet<WpPresentation>() is not { } presentation)
             return;
         var feedback = presentation.Feedback(Proxy);
         feedback.Presented += e =>
         {
             ulong seconds = ((ulong)e.TvSecHi << 32) | e.TvSecLo;
             var timestamp = TimeSpan.FromSeconds(seconds) + TimeSpan.FromTicks(e.TvNsec / 100);
-            presented?.Invoke(new PresentationInfo(false, timestamp, TimeSpan.FromTicks(e.Refresh / 100),
+            _presented?.Invoke(new PresentationInfo(false, timestamp, TimeSpan.FromTicks(e.Refresh / 100),
                 ((ulong)e.SeqHi << 32) | e.SeqLo, e.Flags));
             feedback.Dispose();
         };
         feedback.Discarded += () =>
         {
-            presented?.Invoke(new PresentationInfo(true, default, default, 0, default));
+            _presented?.Invoke(new PresentationInfo(true, default, default, 0, default));
             feedback.Dispose();
         };
     }

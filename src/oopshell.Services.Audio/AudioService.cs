@@ -23,12 +23,12 @@ public sealed record AudioSink(string Name, string Description, double Volume, b
 /// </summary>
 public sealed unsafe partial class AudioService : IDisposable
 {
-    const string Lib = "libpulse.so.0";
-    const int PA_CONTEXT_READY = 4, PA_CONTEXT_FAILED = 5, PA_CONTEXT_TERMINATED = 6;
-    const int PA_SUBSCRIPTION_MASK_SINK = 1, PA_SUBSCRIPTION_MASK_SERVER = 128;
-    const uint PA_VOLUME_NORM = 0x10000;
+    private const string Lib = "libpulse.so.0";
+    private const int PA_CONTEXT_READY = 4, PA_CONTEXT_FAILED = 5, PA_CONTEXT_TERMINATED = 6;
+    private const int PA_SUBSCRIPTION_MASK_SINK = 1, PA_SUBSCRIPTION_MASK_SERVER = 128;
+    private const uint PA_VOLUME_NORM = 0x10000;
     // Field offsets on x86_64/aarch64 (LP64), checked against <pulse/introspect.h> with offsetof.
-    const int SinkName = 0, SinkDescription = 16, SinkVolume = 172, SinkMute = 304, ServerDefaultSink = 48;
+    private const int SinkName = 0, SinkDescription = 16, SinkVolume = 172, SinkMute = 304, ServerDefaultSink = 48;
 
     [LibraryImport(Lib)] private static partial nint pa_threaded_mainloop_new();
     [LibraryImport(Lib)] private static partial nint pa_threaded_mainloop_get_api(nint m);
@@ -52,29 +52,29 @@ public sealed unsafe partial class AudioService : IDisposable
     [LibraryImport(Lib)] private static partial byte* pa_cvolume_set(byte* volume, uint channels, uint v);
     [LibraryImport(Lib)] private static partial void pa_operation_unref(nint o);
 
-    readonly OopsApp app;
-    readonly nint mainloop;
-    readonly nint context;
-    GCHandle self;
-    readonly TaskCompletionSource ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly OopsApp _app;
+    private readonly nint _mainloop;
+    private readonly nint _context;
+    private GCHandle _self;
+    private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     // Filled on the libpulse thread while a sink list is being reported, handed to the UI thread at the end.
-    List<AudioSink> incoming = new();
-    string? defaultName;
-    bool disposed;
+    private List<AudioSink> _incoming = new();
+    private string? _defaultName;
+    private bool _disposed;
 
-    AudioService(OopsApp app, string? server)
+    private AudioService(OopsApp app, string? server)
     {
-        this.app = app;
-        self = GCHandle.Alloc(this);
-        mainloop = pa_threaded_mainloop_new();
-        if (mainloop == 0)
+        _app = app;
+        _self = GCHandle.Alloc(this);
+        _mainloop = pa_threaded_mainloop_new();
+        if (_mainloop == 0)
             throw new InvalidOperationException("libpulse could not create a main loop.");
-        context = pa_context_new(pa_threaded_mainloop_get_api(mainloop), "oopshell");
-        nint userdata = GCHandle.ToIntPtr(self);
-        pa_context_set_state_callback(context, &OnState, userdata);
-        pa_context_set_subscribe_callback(context, &OnEvent, userdata);
-        if (pa_context_connect(context, server, 0, 0) < 0 || pa_threaded_mainloop_start(mainloop) < 0)
-            ready.TrySetException(new InvalidOperationException("Could not connect to the sound server."));
+        _context = pa_context_new(pa_threaded_mainloop_get_api(_mainloop), "oopshell");
+        nint userdata = GCHandle.ToIntPtr(_self);
+        pa_context_set_state_callback(_context, &OnState, userdata);
+        pa_context_set_subscribe_callback(_context, &OnEvent, userdata);
+        if (pa_context_connect(_context, server, 0, 0) < 0 || pa_threaded_mainloop_start(_mainloop) < 0)
+            _ready.TrySetException(new InvalidOperationException("Could not connect to the sound server."));
     }
 
     /// <summary>Every output device.</summary>
@@ -92,18 +92,18 @@ public sealed unsafe partial class AudioService : IDisposable
         uint raw = (uint)(Math.Clamp(volume, 0, 1.5) * PA_VOLUME_NORM);
         var cvolume = stackalloc byte[132]; // pa_cvolume: channels, then 32 values
         pa_cvolume_set(cvolume, (uint)Math.Max(1, sink.Channels), raw);
-        Locked(() => pa_context_set_sink_volume_by_name(context, sink.Name, cvolume, 0, 0));
+        Locked(() => pa_context_set_sink_volume_by_name(_context, sink.Name, cvolume, 0, 0));
     }
 
-    public void SetMuted(AudioSink sink, bool muted) => Locked(() => pa_context_set_sink_mute_by_name(context, sink.Name, muted ? 1 : 0, 0, 0));
+    public void SetMuted(AudioSink sink, bool muted) => Locked(() => pa_context_set_sink_mute_by_name(_context, sink.Name, muted ? 1 : 0, 0, 0));
 
-    delegate nint Operation();
+    private delegate nint Operation();
 
-    void Locked(Operation operation)
+    private void Locked(Operation operation)
     {
-        if (disposed)
+        if (_disposed)
             return;
-        pa_threaded_mainloop_lock(mainloop);
+        pa_threaded_mainloop_lock(_mainloop);
         try
         {
             if (operation() is var op and not 0)
@@ -111,24 +111,24 @@ public sealed unsafe partial class AudioService : IDisposable
         }
         finally
         {
-            pa_threaded_mainloop_unlock(mainloop);
+            pa_threaded_mainloop_unlock(_mainloop);
         }
     }
 
-    static AudioService? From(nint userdata) => GCHandle.FromIntPtr(userdata).Target as AudioService;
+    private static AudioService? From(nint userdata) => GCHandle.FromIntPtr(userdata).Target as AudioService;
 
     /// <summary>Asks for the default sink and the sink list (libpulse thread, main loop locked).</summary>
-    void Refresh()
+    private void Refresh()
     {
-        nint userdata = GCHandle.ToIntPtr(self);
-        if (pa_context_get_server_info(context, &OnServerInfo, userdata) is var a and not 0)
+        nint userdata = GCHandle.ToIntPtr(_self);
+        if (pa_context_get_server_info(_context, &OnServerInfo, userdata) is var a and not 0)
             pa_operation_unref(a);
-        if (pa_context_get_sink_info_list(context, &OnSink, userdata) is var b and not 0)
+        if (pa_context_get_sink_info_list(_context, &OnSink, userdata) is var b and not 0)
             pa_operation_unref(b);
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    static void OnState(nint context, nint userdata)
+    private static void OnState(nint context, nint userdata)
     {
         if (From(userdata) is not { } service)
             return;
@@ -140,29 +140,29 @@ public sealed unsafe partial class AudioService : IDisposable
                 service.Refresh();
                 break;
             case PA_CONTEXT_FAILED or PA_CONTEXT_TERMINATED:
-                service.ready.TrySetException(new InvalidOperationException("Could not connect to the sound server."));
+                service._ready.TrySetException(new InvalidOperationException("Could not connect to the sound server."));
                 break;
         }
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    static void OnEvent(nint context, int type, uint index, nint userdata) => From(userdata)?.Refresh();
+    private static void OnEvent(nint context, int type, uint index, nint userdata) => From(userdata)?.Refresh();
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    static void OnServerInfo(nint context, byte* info, nint userdata)
+    private static void OnServerInfo(nint context, byte* info, nint userdata)
     {
         if (From(userdata) is not { } service || info == null)
             return;
         string? name = Marshal.PtrToStringUTF8(*(nint*)(info + ServerDefaultSink));
-        service.app.Post(() =>
+        service._app.Post(() =>
         {
-            service.defaultName = name;
+            service._defaultName = name;
             service.Publish();
         });
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    static void OnSink(nint context, byte* info, int eol, nint userdata)
+    private static void OnSink(nint context, byte* info, int eol, nint userdata)
     {
         if (From(userdata) is not { } service)
             return;
@@ -173,7 +173,7 @@ public sealed unsafe partial class AudioService : IDisposable
             double sum = 0;
             for (int i = 0; i < channels; i++)
                 sum += values[i];
-            service.incoming.Add(new AudioSink(
+            service._incoming.Add(new AudioSink(
                 Marshal.PtrToStringUTF8(*(nint*)(info + SinkName)) ?? "",
                 Marshal.PtrToStringUTF8(*(nint*)(info + SinkDescription)) ?? "",
                 channels == 0 ? 0 : sum / channels / PA_VOLUME_NORM,
@@ -181,37 +181,37 @@ public sealed unsafe partial class AudioService : IDisposable
                 channels));
             return;
         }
-        var sinks = service.incoming;
-        service.incoming = new List<AudioSink>();
-        service.app.Post(() =>
+        var sinks = service._incoming;
+        service._incoming = new List<AudioSink>();
+        service._app.Post(() =>
         {
             service.Sinks = sinks;
             service.Publish();
-            service.ready.TrySetResult();
+            service._ready.TrySetResult();
         });
     }
 
-    void Publish()
+    private void Publish()
     {
-        DefaultSink = Sinks.FirstOrDefault(s => s.Name == defaultName) ?? Sinks.FirstOrDefault();
+        DefaultSink = Sinks.FirstOrDefault(s => s.Name == _defaultName) ?? Sinks.FirstOrDefault();
         Changed?.Invoke();
     }
 
     public void Dispose()
     {
-        if (disposed)
+        if (_disposed)
             return;
-        disposed = true;
-        if (mainloop != 0)
+        _disposed = true;
+        if (_mainloop != 0)
         {
-            pa_threaded_mainloop_lock(mainloop);
-            pa_context_disconnect(context);
-            pa_context_unref(context);
-            pa_threaded_mainloop_unlock(mainloop);
-            pa_threaded_mainloop_stop(mainloop);
-            pa_threaded_mainloop_free(mainloop);
+            pa_threaded_mainloop_lock(_mainloop);
+            pa_context_disconnect(_context);
+            pa_context_unref(_context);
+            pa_threaded_mainloop_unlock(_mainloop);
+            pa_threaded_mainloop_stop(_mainloop);
+            pa_threaded_mainloop_free(_mainloop);
         }
-        self.Free();
+        _self.Free();
     }
 }
 
@@ -235,7 +235,7 @@ public sealed partial class AudioService
         }
         try
         {
-            await service.ready.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await service._ready.Task.WaitAsync(TimeSpan.FromSeconds(5));
         }
         catch (Exception e)
         {

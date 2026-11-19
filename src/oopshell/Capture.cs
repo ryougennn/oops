@@ -28,54 +28,54 @@ public sealed record CapturedImage(int Width, int Height, int Stride, WlShmForma
 /// </summary>
 public sealed class ScreenCapture : IDisposable
 {
-    readonly OopsApp app;
-    readonly ExtImageCaptureSourceV1 source;
-    readonly ExtImageCopyCaptureSessionV1 session;
-    readonly List<WlShmFormat> formats = new();
-    Size size;
-    Size pendingSize;
-    List<WlShmFormat> pendingFormats = new();
-    bool constraintsKnown;
-    int constraintsVersion; // bumped by every session.done
-    readonly List<(Action Then, Action<Exception> Fail)> waiting = new();
-    Task<CapturedImage>? inFlight;
-    ShmPool? pool;
-    WlBuffer? buffer;
-    WlShmFormat bufferFormat;
-    bool disposed;
+    private readonly OopsApp _app;
+    private readonly ExtImageCaptureSourceV1 _source;
+    private readonly ExtImageCopyCaptureSessionV1 _session;
+    private readonly List<WlShmFormat> _formats = new();
+    private Size _size;
+    private Size _pendingSize;
+    private List<WlShmFormat> _pendingFormats = new();
+    private bool _constraintsKnown;
+    private int _constraintsVersion; // bumped by every session.done
+    private readonly List<(Action Then, Action<Exception> Fail)> _waiting = new();
+    private Task<CapturedImage>? _inFlight;
+    private ShmPool? _pool;
+    private WlBuffer? _buffer;
+    private WlShmFormat _bufferFormat;
+    private bool _disposed;
 
-    ScreenCapture(OopsApp app, ExtImageCaptureSourceV1 source, bool cursor)
+    private ScreenCapture(OopsApp app, ExtImageCaptureSourceV1 source, bool cursor)
     {
-        this.app = app;
-        this.source = source;
-        session = app.Get<ExtImageCopyCaptureManagerV1>().CreateSession(source,
+        _app = app;
+        _source = source;
+        _session = app.Get<ExtImageCopyCaptureManagerV1>().CreateSession(source,
             cursor ? ExtImageCopyCaptureManagerV1Options.PaintCursors : 0);
-        session.BufferSize += e => pendingSize = new Size((int)e.Width, (int)e.Height);
-        session.ShmFormat += e => pendingFormats.Add(e.Format);
-        session.Done += () =>
+        _session.BufferSize += e => _pendingSize = new Size((int)e.Width, (int)e.Height);
+        _session.ShmFormat += e => _pendingFormats.Add(e.Format);
+        _session.Done += () =>
         {
-            size = pendingSize;
-            formats.Clear();
-            formats.AddRange(pendingFormats);
-            pendingFormats = new List<WlShmFormat>();
-            constraintsVersion++;
-            constraintsKnown = true;
-            var ready = waiting.ToList();
-            waiting.Clear();
+            _size = _pendingSize;
+            _formats.Clear();
+            _formats.AddRange(_pendingFormats);
+            _pendingFormats = new List<WlShmFormat>();
+            _constraintsVersion++;
+            _constraintsKnown = true;
+            var ready = _waiting.ToList();
+            _waiting.Clear();
             foreach (var (then, _) in ready)
                 then();
         };
-        session.Stopped += () =>
+        _session.Stopped += () =>
         {
             IsStopped = true;
-            if (inFlightFrame is { } pending)
+            if (_inFlightFrame is { } pending)
             {
-                inFlightFrame = null;
+                _inFlightFrame = null;
                 pending.Frame.Dispose();
                 pending.Fail(new InvalidOperationException("The capture source went away."));
             }
-            var failed = waiting.ToList();
-            waiting.Clear();
+            var failed = _waiting.ToList();
+            _waiting.Clear();
             foreach (var (_, fail) in failed)
                 fail(new InvalidOperationException("The capture source went away."));
             Stopped?.Invoke();
@@ -120,17 +120,17 @@ public sealed class ScreenCapture : IDisposable
     /// </summary>
     public Task<CapturedImage> CaptureAsync()
     {
-        ObjectDisposedException.ThrowIf(disposed, this);
-        if (inFlight is { IsCompleted: false })
-            return inFlight;
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_inFlight is { IsCompleted: false })
+            return _inFlight;
         var result = new TaskCompletionSource<CapturedImage>(TaskCreationOptions.RunContinuationsAsynchronously);
         Attempt(result, retry: true);
-        return inFlight = result.Task;
+        return _inFlight = result.Task;
     }
 
     // Driven by callbacks from Wayland events, not awaits: the session and buffers belong to the UI thread, and
     // continuations of awaits inside a library could resume elsewhere.
-    void Attempt(TaskCompletionSource<CapturedImage> result, bool retry) => WhenConstraintsKnown(() => CaptureFrame(image =>
+    private void Attempt(TaskCompletionSource<CapturedImage> result, bool retry) => WhenConstraintsKnown(() => CaptureFrame(image =>
     {
         if (image is not null)
             result.TrySetResult(image);
@@ -140,57 +140,57 @@ public sealed class ScreenCapture : IDisposable
             result.TrySetException(new InvalidOperationException("The capture source kept changing size."));
     }, error => result.TrySetException(error)), error => result.TrySetException(error));
 
-    void WhenConstraintsKnown(Action then, Action<Exception> fail)
+    private void WhenConstraintsKnown(Action then, Action<Exception> fail)
     {
         if (IsStopped)
             fail(new InvalidOperationException("The capture source went away."));
-        else if (constraintsKnown)
+        else if (_constraintsKnown)
             then();
         else
-            waiting.Add((then, fail));
+            _waiting.Add((then, fail));
     }
 
     /// <summary>Captures one frame; <paramref name="done"/> gets null if the buffer no longer matches the constraints.</summary>
-    void CaptureFrame(Action<CapturedImage?> done, Action<Exception> fail)
+    private void CaptureFrame(Action<CapturedImage?> done, Action<Exception> fail)
     {
-        if (size.Width <= 0 || size.Height <= 0)
+        if (_size.Width <= 0 || _size.Height <= 0)
         {
             fail(new InvalidOperationException("The capture source has no size."));
             return;
         }
         // GPU renderers often offer only the R/B-swapped formats; those are converted when copying out.
         WlShmFormat[] preferred = [WlShmFormat.Argb8888, WlShmFormat.Xrgb8888, WlShmFormat.Abgr8888, WlShmFormat.Xbgr8888];
-        if (preferred.FirstOrDefault(f => formats.Contains(f), (WlShmFormat)uint.MaxValue) is var format && format == (WlShmFormat)uint.MaxValue)
+        if (preferred.FirstOrDefault(f => _formats.Contains(f), (WlShmFormat)uint.MaxValue) is var format && format == (WlShmFormat)uint.MaxValue)
         {
-            fail(new InvalidOperationException($"The compositor offers no usable shared-memory format for capture (offered: {(formats.Count == 0 ? "none" : string.Join(", ", formats))})."));
+            fail(new InvalidOperationException($"The compositor offers no usable shared-memory format for capture (offered: {(_formats.Count == 0 ? "none" : string.Join(", ", _formats))})."));
             return;
         }
-        if (pool is null || pool.BufferSize != size || bufferFormat != format)
+        if (_pool is null || _pool.BufferSize != _size || _bufferFormat != format)
         {
-            buffer?.Dispose();
-            pool?.Dispose();
-            pool = new ShmPool(app.Shm, size, format);
-            buffer = pool.CreateBuffer(pool.AddSlot());
-            bufferFormat = format;
+            _buffer?.Dispose();
+            _pool?.Dispose();
+            _pool = new ShmPool(_app.Shm, _size, format);
+            _buffer = _pool.CreateBuffer(_pool.AddSlot());
+            _bufferFormat = format;
         }
 
-        if (size.Width is <= 0 or > ShmPool.MaxSide || size.Height is <= 0 or > ShmPool.MaxSide)
+        if (_size.Width is <= 0 or > ShmPool.MaxSide || _size.Height is <= 0 or > ShmPool.MaxSide)
         {
-            fail(new InvalidOperationException($"The compositor asked for an unusable buffer size {size.Width}x{size.Height}."));
+            fail(new InvalidOperationException($"The compositor asked for an unusable buffer size {_size.Width}x{_size.Height}."));
             return;
         }
-        var frameSize = size;
-        int version = constraintsVersion;
-        var frame = session.CreateFrame();
-        inFlightFrame = (frame, fail);
+        var frameSize = _size;
+        int version = _constraintsVersion;
+        var frame = _session.CreateFrame();
+        _inFlightFrame = (frame, fail);
         frame.Ready += () =>
         {
-            inFlightFrame = null;
-            if (disposed)
+            _inFlightFrame = null;
+            if (_disposed)
                 return;
             int stride = frameSize.Width * 4;
             var pixels = new byte[stride * frameSize.Height];
-            Marshal.Copy(pool.SlotPointer(0), pixels, 0, pixels.Length);
+            Marshal.Copy(_pool.SlotPointer(0), pixels, 0, pixels.Length);
             frame.Dispose();
             bool swapped = format is WlShmFormat.Abgr8888 or WlShmFormat.Xbgr8888;
             if (swapped)
@@ -203,46 +203,46 @@ public sealed class ScreenCapture : IDisposable
         };
         frame.Failed += e =>
         {
-            inFlightFrame = null;
+            _inFlightFrame = null;
             frame.Dispose();
-            if (disposed)
+            if (_disposed)
                 return;
             if (e.Reason == ExtImageCopyCaptureFrameV1FailureReason.BufferConstraints)
             {
                 // New constraints may already have arrived; if not, wait for them.
-                if (constraintsVersion == version)
-                    constraintsKnown = false;
+                if (_constraintsVersion == version)
+                    _constraintsKnown = false;
                 done(null);
             }
             else
                 fail(new InvalidOperationException($"Capture failed: {e.Reason}."));
         };
-        frame.AttachBuffer(buffer!);
+        frame.AttachBuffer(_buffer!);
         frame.DamageBuffer(0, 0, frameSize.Width, frameSize.Height);
         frame.Capture();
     }
 
-    (ExtImageCopyCaptureFrameV1 Frame, Action<Exception> Fail)? inFlightFrame;
+    private (ExtImageCopyCaptureFrameV1 Frame, Action<Exception> Fail)? _inFlightFrame;
 
     public void Dispose()
     {
-        if (disposed)
+        if (_disposed)
             return;
-        disposed = true;
+        _disposed = true;
         // The frame outlives the session in the protocol: destroy it before unmapping the memory it writes to.
-        if (inFlightFrame is { } pending)
+        if (_inFlightFrame is { } pending)
         {
-            inFlightFrame = null;
+            _inFlightFrame = null;
             pending.Frame.Dispose();
             pending.Fail(new ObjectDisposedException(nameof(ScreenCapture)));
         }
-        var waitingNow = waiting.ToList();
-        waiting.Clear();
+        var waitingNow = _waiting.ToList();
+        _waiting.Clear();
         foreach (var (_, fail) in waitingNow)
             fail(new ObjectDisposedException(nameof(ScreenCapture)));
-        session.Dispose();
-        source.Dispose();
-        buffer?.Dispose();
-        pool?.Dispose();
+        _session.Dispose();
+        _source.Dispose();
+        _buffer?.Dispose();
+        _pool?.Dispose();
     }
 }

@@ -8,7 +8,7 @@ namespace oopshell.IntegrationTests;
 [Trait("Requires", "GPU")]
 public unsafe class EglTests(SwayFixture sway)
 {
-    const int GL_COLOR_BUFFER_BIT = 0x4000;
+    private const int GL_COLOR_BUFFER_BIT = 0x4000;
 
     [Fact]
     public void Gl_clear_reaches_the_screen()

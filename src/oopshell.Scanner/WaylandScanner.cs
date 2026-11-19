@@ -17,7 +17,7 @@ public sealed class WaylandScanner : IIncrementalGenerator
     public static readonly DiagnosticDescriptor UnknownReference = new(
         "OOPS002", "Unknown protocol reference", "'{0}' is referenced but not defined by any protocol in this project or its references; add its XML as a WaylandProtocol item", "oopshell.Scanner", DiagnosticSeverity.Error, true);
 
-    const string AttributeName = "oopshell.Protocol.WaylandProtocolsAttribute";
+    private const string AttributeName = "oopshell.Protocol.WaylandProtocolsAttribute";
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
@@ -82,7 +82,7 @@ public sealed class WaylandScanner : IIncrementalGenerator
         return result;
     }
 
-    static Dictionary<string, string> ParseExternal(string text)
+    private static Dictionary<string, string> ParseExternal(string text)
     {
         var map = new Dictionary<string, string>();
         foreach (var line in text.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries))

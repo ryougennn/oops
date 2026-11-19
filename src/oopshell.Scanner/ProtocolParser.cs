@@ -27,7 +27,7 @@ public static class ProtocolParser
         return protocol;
     }
 
-    static Interface ParseInterface(XElement element)
+    private static Interface ParseInterface(XElement element)
     {
         var iface = new Interface
         {
@@ -47,7 +47,7 @@ public static class ProtocolParser
         return iface;
     }
 
-    static Message ParseMessage(XElement element)
+    private static Message ParseMessage(XElement element)
     {
         var message = new Message
         {
@@ -71,7 +71,7 @@ public static class ProtocolParser
         return message;
     }
 
-    static EnumDef ParseEnum(XElement element)
+    private static EnumDef ParseEnum(XElement element)
     {
         var def = new EnumDef
         {
@@ -91,7 +91,7 @@ public static class ProtocolParser
         return def;
     }
 
-    static Description? ParseDescription(XElement element)
+    private static Description? ParseDescription(XElement element)
     {
         var description = element.Element("description");
         if (description is null)
@@ -99,7 +99,7 @@ public static class ProtocolParser
         return new Description { Summary = (string?)description.Attribute("summary"), Text = description.Value };
     }
 
-    static ArgType ParseArgType(string type, XElement element) => type switch
+    private static ArgType ParseArgType(string type, XElement element) => type switch
     {
         "int" => ArgType.Int,
         "uint" => ArgType.Uint,
@@ -112,14 +112,14 @@ public static class ProtocolParser
         _ => throw new ProtocolFormatException($"unknown arg type '{type}'{Where(element)}"),
     };
 
-    static string Required(XElement element, string attribute) =>
+    private static string Required(XElement element, string attribute) =>
         (string?)element.Attribute(attribute)
         ?? throw new ProtocolFormatException($"<{element.Name.LocalName}> is missing the '{attribute}' attribute{Where(element)}");
 
-    static int ParseInt(string text, XElement element) =>
+    private static int ParseInt(string text, XElement element) =>
         int.TryParse(text, out int value) ? value : throw new ProtocolFormatException($"'{text}' is not a number{Where(element)}");
 
-    static string Where(XElement element) =>
+    private static string Where(XElement element) =>
         element is IXmlLineInfo info && info.HasLineInfo() ? $" (line {info.LineNumber})" : "";
 }
 

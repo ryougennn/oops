@@ -9,7 +9,7 @@ namespace oopshell.Vulkan;
 /// </summary>
 public sealed unsafe class VulkanDevice : IDisposable
 {
-    static readonly Dictionary<OopsApp, VulkanDevice> Devices = new();
+    private static readonly Dictionary<OopsApp, VulkanDevice> s_devices = new();
 
     /// <summary>Instance extensions that are enabled (pass them on to e.g. Skia's <c>GRVkExtensions</c>).</summary>
     public static readonly string[] InstanceExtensions = ["VK_KHR_surface", "VK_KHR_wayland_surface"];
@@ -17,10 +17,10 @@ public sealed unsafe class VulkanDevice : IDisposable
     public static readonly string[] DeviceExtensions = ["VK_KHR_swapchain"];
 
     // An all-false VkPhysicalDeviceFeatures: no optional features are enabled, and libraries asking which are get this.
-    readonly nint features = (nint)NativeMemory.AllocZeroed(PhysicalDeviceFeaturesSize);
-    bool disposed;
+    private readonly nint _features = (nint)NativeMemory.AllocZeroed(PhysicalDeviceFeaturesSize);
+    private bool _disposed;
 
-    VulkanDevice(OopsApp app)
+    private VulkanDevice(OopsApp app)
     {
         if (!IsAvailable)
             throw new NotSupportedException("libvulkan.so.1 is not installed.");
@@ -32,7 +32,7 @@ public sealed unsafe class VulkanDevice : IDisposable
         {
             (PhysicalDevice, QueueFamily, DeviceName, uint deviceApi) = PickPhysicalDevice(Instance, app.Display.Handle);
             ApiVersion = Math.Min(ApiVersion, deviceApi);
-            Device = CreateDevice(PhysicalDevice, QueueFamily, (void*)features);
+            Device = CreateDevice(PhysicalDevice, QueueFamily, (void*)_features);
             nint queue;
             vkGetDeviceQueue(Device, QueueFamily, 0, &queue);
             Queue = queue;
@@ -40,7 +40,7 @@ public sealed unsafe class VulkanDevice : IDisposable
         catch
         {
             vkDestroyInstance(Instance, 0);
-            NativeMemory.Free((void*)features);
+            NativeMemory.Free((void*)_features);
             throw;
         }
     }
@@ -48,9 +48,9 @@ public sealed unsafe class VulkanDevice : IDisposable
     /// <summary>The app's Vulkan device, created on first use. Throws <see cref="NotSupportedException"/> without Vulkan.</summary>
     public static VulkanDevice Get(OopsApp app)
     {
-        if (!Devices.TryGetValue(app, out var device))
+        if (!s_devices.TryGetValue(app, out var device))
         {
-            Devices[app] = device = new VulkanDevice(app);
+            s_devices[app] = device = new VulkanDevice(app);
             app.Disposing += device.Dispose;
         }
         return device;
@@ -66,7 +66,7 @@ public sealed unsafe class VulkanDevice : IDisposable
     public uint QueueFamily { get; }
     public string DeviceName { get; }
     /// <summary>A <c>VkPhysicalDeviceFeatures*</c> describing the enabled features (none).</summary>
-    public nint EnabledFeatures => features;
+    public nint EnabledFeatures => _features;
 
     /// <summary>Raised before the device is destroyed (e.g. so a GPU drawing library can drop its context).</summary>
     public event Action? Disposing;
@@ -81,7 +81,7 @@ public sealed unsafe class VulkanDevice : IDisposable
             throw new InvalidOperationException($"{call} failed (VkResult {result}).");
     }
 
-    static nint CreateInstance(uint apiVersion)
+    private static nint CreateInstance(uint apiVersion)
     {
         var names = new Utf8Strings(InstanceExtensions);
         try
@@ -108,7 +108,7 @@ public sealed unsafe class VulkanDevice : IDisposable
     /// The first device in the loader's order (Mesa's device-select layer puts the GPU driving the display first)
     /// with a graphics queue that can present to this Wayland display. CPU devices (lavapipe) only as a last resort.
     /// </summary>
-    static (nint Device, uint Family, string Name, uint ApiVersion) PickPhysicalDevice(nint instance, nint wlDisplay)
+    private static (nint Device, uint Family, string Name, uint ApiVersion) PickPhysicalDevice(nint instance, nint wlDisplay)
     {
         uint count;
         Check(vkEnumeratePhysicalDevices(instance, &count, null), "vkEnumeratePhysicalDevices");
@@ -133,7 +133,7 @@ public sealed unsafe class VulkanDevice : IDisposable
         return cpuFallback ?? throw new NotSupportedException("No Vulkan device can present to this Wayland display.");
     }
 
-    static uint? FindQueueFamily(nint device, nint wlDisplay)
+    private static uint? FindQueueFamily(nint device, nint wlDisplay)
     {
         uint count;
         vkGetPhysicalDeviceQueueFamilyProperties(device, &count, null);
@@ -148,7 +148,7 @@ public sealed unsafe class VulkanDevice : IDisposable
         return null;
     }
 
-    static nint CreateDevice(nint physicalDevice, uint family, void* features)
+    private static nint CreateDevice(nint physicalDevice, uint family, void* features)
     {
         var names = new Utf8Strings(DeviceExtensions);
         try
@@ -182,24 +182,24 @@ public sealed unsafe class VulkanDevice : IDisposable
 
     public void Dispose()
     {
-        if (disposed)
+        if (_disposed)
             return;
-        disposed = true;
+        _disposed = true;
         Disposing?.Invoke();
         App.Disposing -= Dispose;
-        Devices.Remove(App);
+        s_devices.Remove(App);
         vkDeviceWaitIdle(Device);
         vkDestroyDevice(Device, 0);
         vkDestroyInstance(Instance, 0);
-        NativeMemory.Free((void*)features);
+        NativeMemory.Free((void*)_features);
     }
 
     /// <summary>A native array of NUL-terminated UTF-8 strings, for <c>ppEnabledExtensionNames</c>.</summary>
-    readonly struct Utf8Strings(string[] strings)
+    private readonly struct Utf8Strings(string[] strings)
     {
         public byte** Pointers { get; } = Allocate(strings);
 
-        static byte** Allocate(string[] strings)
+        private static byte** Allocate(string[] strings)
         {
             var array = (byte**)NativeMemory.Alloc((nuint)strings.Length, (nuint)sizeof(byte*));
             for (int i = 0; i < strings.Length; i++)

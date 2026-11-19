@@ -148,27 +148,27 @@ static string Unescape(string s) => (string)typeof(oopshell.Services.Polkit.Polk
 
 namespace oopshell.Fuzz
 {
-    static class Encodings
+    internal static class Encodings
     {
         /// <summary>Writes lone surrogates as U+FFFD instead of throwing (mutations produce them).</summary>
         public static readonly Encoding Lenient = new UTF8Encoding(false, false);
     }
 
-    static class Repo
+    internal static class Repo
     {
         public static readonly string Root = Find(AppContext.BaseDirectory);
 
-        static string Find(string dir) => File.Exists(Path.Combine(dir, "oopshell.slnx")) ? dir : Find(Path.GetDirectoryName(dir)!);
+        private static string Find(string dir) => File.Exists(Path.Combine(dir, "oopshell.slnx")) ? dir : Find(Path.GetDirectoryName(dir)!);
     }
 
     /// <summary>Distinct failures (exception type + first oopshell frame), each saved once with its input.</summary>
-    sealed class Findings(string dir)
+    internal sealed class Findings(string dir)
     {
-        readonly Dictionary<string, (string Target, Exception Error, int Hits)> seen = new();
+        private readonly Dictionary<string, (string Target, Exception Error, int Hits)> _seen = new();
         public string Input = "";
 
-        public int Total => seen.Count;
-        public int Count(string target) => seen.Values.Count(v => v.Target == target);
+        public int Total => _seen.Count;
+        public int Count(string target) => _seen.Values.Count(v => v.Target == target);
 
         public void Add(string target, Exception e)
         {
@@ -176,21 +176,21 @@ namespace oopshell.Fuzz
                 e = inner;
             string frame = e.StackTrace?.Split('\n').FirstOrDefault(l => l.Contains(" oopshell.") && !l.Contains("oopshell.Fuzz"))?.Trim() ?? "";
             string key = $"{target}|{e.GetType().Name}|{frame}";
-            if (seen.TryGetValue(key, out var existing))
+            if (_seen.TryGetValue(key, out var existing))
             {
-                seen[key] = existing with { Hits = existing.Hits + 1 };
+                _seen[key] = existing with { Hits = existing.Hits + 1 };
                 return;
             }
-            seen[key] = (target, e, 1);
-            File.WriteAllText(Path.Combine(dir, $"{target}-{seen.Count}.txt"), $"{e}\n\n--- input ---\n{Input}", new UTF8Encoding(false, throwOnInvalidBytes: false));
+            _seen[key] = (target, e, 1);
+            File.WriteAllText(Path.Combine(dir, $"{target}-{_seen.Count}.txt"), $"{e}\n\n--- input ---\n{Input}", new UTF8Encoding(false, throwOnInvalidBytes: false));
         }
 
         public void Report()
         {
             Console.WriteLine();
-            foreach (var (key, (target, error, hits)) in seen)
+            foreach (var (key, (target, error, hits)) in _seen)
                 Console.WriteLine($"[{target}] {error.GetType().Name}: {error.Message.Split('\n')[0]}  ({hits}×)\n    {key.Split('|')[2]}");
-            Console.WriteLine(seen.Count == 0 ? "No findings." : $"{seen.Count} distinct findings; inputs in {dir}");
+            Console.WriteLine(_seen.Count == 0 ? "No findings." : $"{_seen.Count} distinct findings; inputs in {dir}");
         }
     }
 }

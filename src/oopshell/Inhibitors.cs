@@ -4,9 +4,9 @@ namespace oopshell;
 
 public abstract partial class Surface
 {
-    bool inhibitIdle, inhibitShortcuts;
-    ZwpIdleInhibitorV1? idleInhibitor;
-    ZwpKeyboardShortcutsInhibitorV1? shortcutsInhibitor;
+    private bool _inhibitIdle, _inhibitShortcuts;
+    private ZwpIdleInhibitorV1? _idleInhibitor;
+    private ZwpKeyboardShortcutsInhibitorV1? _shortcutsInhibitor;
 
     /// <summary>
     /// While true and the surface is visible, the screen does not blank, dim or lock for inactivity (a video
@@ -14,18 +14,18 @@ public abstract partial class Surface
     /// </summary>
     public bool InhibitIdle
     {
-        get => inhibitIdle;
+        get => _inhibitIdle;
         set
         {
-            if (value == inhibitIdle || IsDisposed)
+            if (value == _inhibitIdle || IsDisposed)
                 return;
-            inhibitIdle = value;
+            _inhibitIdle = value;
             if (value && App.TryGet<ZwpIdleInhibitManagerV1>() is { } manager)
-                idleInhibitor = manager.CreateInhibitor(Proxy);
+                _idleInhibitor = manager.CreateInhibitor(Proxy);
             else if (!value)
             {
-                idleInhibitor?.Dispose();
-                idleInhibitor = null;
+                _idleInhibitor?.Dispose();
+                _idleInhibitor = null;
             }
         }
     }
@@ -37,22 +37,22 @@ public abstract partial class Surface
     /// </summary>
     public bool InhibitShortcuts
     {
-        get => inhibitShortcuts;
+        get => _inhibitShortcuts;
         set
         {
-            if (value == inhibitShortcuts || IsDisposed)
+            if (value == _inhibitShortcuts || IsDisposed)
                 return;
-            inhibitShortcuts = value;
+            _inhibitShortcuts = value;
             if (value && App.TryGet<ZwpKeyboardShortcutsInhibitManagerV1>() is { } manager && App.DefaultSeat is { } seat)
             {
-                shortcutsInhibitor = manager.InhibitShortcuts(Proxy, seat.Proxy);
-                shortcutsInhibitor.Active += () => SetShortcutsInhibited(true);
-                shortcutsInhibitor.Inactive += () => SetShortcutsInhibited(false);
+                _shortcutsInhibitor = manager.InhibitShortcuts(Proxy, seat.Proxy);
+                _shortcutsInhibitor.Active += () => SetShortcutsInhibited(true);
+                _shortcutsInhibitor.Inactive += () => SetShortcutsInhibited(false);
             }
             else if (!value)
             {
-                shortcutsInhibitor?.Dispose();
-                shortcutsInhibitor = null;
+                _shortcutsInhibitor?.Dispose();
+                _shortcutsInhibitor = null;
                 SetShortcutsInhibited(false);
             }
         }
@@ -64,7 +64,7 @@ public abstract partial class Surface
     /// <summary><see cref="ShortcutsInhibited"/> changed: e.g. the surface lost focus, or the user overrode it.</summary>
     public event Action? ShortcutsInhibitedChanged;
 
-    void SetShortcutsInhibited(bool active)
+    private void SetShortcutsInhibited(bool active)
     {
         if (active == ShortcutsInhibited)
             return;
@@ -72,12 +72,12 @@ public abstract partial class Surface
         ShortcutsInhibitedChanged?.Invoke();
     }
 
-    void DisposeInhibitors()
+    private void DisposeInhibitors()
     {
-        idleInhibitor?.Dispose();
-        idleInhibitor = null;
-        shortcutsInhibitor?.Dispose();
-        shortcutsInhibitor = null;
+        _idleInhibitor?.Dispose();
+        _idleInhibitor = null;
+        _shortcutsInhibitor?.Dispose();
+        _shortcutsInhibitor = null;
     }
 }
 

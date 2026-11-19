@@ -15,13 +15,13 @@ public sealed class UsageHistory
         public long LastUsed { get; set; } // unix seconds
     }
 
-    readonly string? path;
-    readonly Dictionary<string, Record> records;
+    private readonly string? _path;
+    private readonly Dictionary<string, Record> _records;
 
-    UsageHistory(string? path, Dictionary<string, Record> records)
+    private UsageHistory(string? path, Dictionary<string, Record> records)
     {
-        this.path = path;
-        this.records = records;
+        _path = path;
+        _records = records;
     }
 
     public static string DefaultPath => Path.Combine(
@@ -48,8 +48,8 @@ public sealed class UsageHistory
 
     public void RecordLaunch(string desktopId, DateTimeOffset? now = null)
     {
-        if (!records.TryGetValue(desktopId, out var record))
-            records[desktopId] = record = new Record();
+        if (!_records.TryGetValue(desktopId, out var record))
+            _records[desktopId] = record = new Record();
         record.Count++;
         record.LastUsed = (now ?? DateTimeOffset.UtcNow).ToUnixTimeSeconds();
         Save();
@@ -58,23 +58,23 @@ public sealed class UsageHistory
     /// <summary>0..20: grows with the launch count, fades over weeks.</summary>
     public double Boost(string desktopId, DateTimeOffset? now = null)
     {
-        if (!records.TryGetValue(desktopId, out var record))
+        if (!_records.TryGetValue(desktopId, out var record))
             return 0;
         double ageDays = ((now ?? DateTimeOffset.UtcNow).ToUnixTimeSeconds() - record.LastUsed) / 86400.0;
         double recency = ageDays < 1 ? 1 : ageDays < 7 ? 0.7 : ageDays < 30 ? 0.4 : 0.2;
         return Math.Min(20, 6 * Math.Log(1 + record.Count) * recency);
     }
 
-    void Save()
+    private void Save()
     {
-        if (path is null)
+        if (_path is null)
             return;
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            string temp = path + ".tmp";
-            File.WriteAllText(temp, JsonSerializer.Serialize(records, UsageJson.Default.DictionaryStringRecord));
-            File.Move(temp, path, overwrite: true); // atomic: never a half-written file
+            Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
+            string temp = _path + ".tmp";
+            File.WriteAllText(temp, JsonSerializer.Serialize(_records, UsageJson.Default.DictionaryStringRecord));
+            File.Move(temp, _path, overwrite: true); // atomic: never a half-written file
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {

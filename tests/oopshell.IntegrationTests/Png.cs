@@ -74,7 +74,7 @@ public sealed class Png(int width, int height, byte[] rgba)
         return new Png(width, height, rgba);
     }
 
-    static void Unfilter(int filter, byte[] line, byte[] previous, int bpp)
+    private static void Unfilter(int filter, byte[] line, byte[] previous, int bpp)
     {
         for (int i = 0; i < line.Length; i++)
         {
@@ -93,7 +93,7 @@ public sealed class Png(int width, int height, byte[] rgba)
         }
     }
 
-    static int Paeth(int a, int b, int c)
+    private static int Paeth(int a, int b, int c)
     {
         int p = a + b - c;
         int pa = Math.Abs(p - a), pb = Math.Abs(p - b), pc = Math.Abs(p - c);
@@ -125,7 +125,7 @@ public sealed class Png(int width, int height, byte[] rgba)
         return output.ToArray();
     }
 
-    static void WriteChunk(Stream output, string type, byte[] data)
+    private static void WriteChunk(Stream output, string type, byte[] data)
     {
         var buffer = new byte[4];
         BinaryPrimitives.WriteInt32BigEndian(buffer, data.Length);
@@ -136,7 +136,7 @@ public sealed class Png(int width, int height, byte[] rgba)
         output.Write(buffer);
     }
 
-    static uint Crc32(byte[] data)
+    private static uint Crc32(byte[] data)
     {
         uint crc = 0xFFFFFFFF;
         foreach (byte b in data)

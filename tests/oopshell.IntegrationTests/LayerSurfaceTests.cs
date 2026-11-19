@@ -5,7 +5,7 @@ namespace oopshell.IntegrationTests;
 [Collection("sway")]
 public class LayerSurfaceTests(SwayFixture sway)
 {
-    static LayerSurface CreateBar(OopsApp app, Output? output, int height)
+    private static LayerSurface CreateBar(OopsApp app, Output? output, int height)
     {
         return new LayerSurface(app, output, Layer.Top, "test-bar")
         {
@@ -134,7 +134,7 @@ public class LayerSurfaceTests(SwayFixture sway)
         }
     }
 
-    sealed class Disposer(Action action) : IDisposable
+    private sealed class Disposer(Action action) : IDisposable
     {
         public void Dispose() => action();
     }

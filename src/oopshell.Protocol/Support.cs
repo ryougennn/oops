@@ -40,8 +40,8 @@ public static unsafe class WlInterfaceTable
     {
         if (errors is not null)
         {
-            lock (ErrorNames)
-                ErrorNames[name] = errors;
+            lock (s_errorNames)
+                s_errorNames[name] = errors;
         }
         iface->Name = Utf8(name);
         iface->Version = version;
@@ -51,14 +51,14 @@ public static unsafe class WlInterfaceTable
         iface->Events = Messages(events);
     }
 
-    static readonly Dictionary<string, (uint Code, string Name)[]> ErrorNames = new();
+    private static readonly Dictionary<string, (uint Code, string Name)[]> s_errorNames = new();
 
     /// <summary>The name of an interface's <c>error</c> enum entry, if the bindings for it have been loaded.</summary>
     public static string? ErrorName(string iface, uint code)
     {
-        lock (ErrorNames)
+        lock (s_errorNames)
         {
-            if (ErrorNames.TryGetValue(iface, out var entries))
+            if (s_errorNames.TryGetValue(iface, out var entries))
                 foreach (var entry in entries)
                     if (entry.Code == code)
                         return entry.Name;
@@ -66,7 +66,7 @@ public static unsafe class WlInterfaceTable
         return null;
     }
 
-    static WlMessage* Messages(MessageInfo[] infos)
+    private static WlMessage* Messages(MessageInfo[] infos)
     {
         var messages = (WlMessage*)NativeMemory.AllocZeroed((nuint)(Math.Max(infos.Length, 1) * sizeof(WlMessage)));
         for (int i = 0; i < infos.Length; i++)

@@ -9,7 +9,7 @@ namespace oopshell.Native;
 /// </summary>
 public static unsafe partial class Vulkan
 {
-    const string Lib = "libvulkan.so.1";
+    private const string Lib = "libvulkan.so.1";
 
     public const int VK_SUCCESS = 0;
     public const int VK_SUBOPTIMAL_KHR = 1000001003;
@@ -302,7 +302,8 @@ public static unsafe partial class Vulkan
     [LibraryImport(Lib)] public static partial void vkFreeCommandBuffers(nint device, ulong pool, uint count, nint* buffers);
     [LibraryImport(Lib)] public static partial int vkBeginCommandBuffer(nint buffer, VkCommandBufferBeginInfo* info);
     [LibraryImport(Lib)] public static partial int vkEndCommandBuffer(nint buffer);
-    [LibraryImport(Lib)] public static partial void vkCmdPipelineBarrier(nint buffer, uint srcStage, uint dstStage, uint dependency,
+    [LibraryImport(Lib)]
+    public static partial void vkCmdPipelineBarrier(nint buffer, uint srcStage, uint dstStage, uint dependency,
         uint memoryBarrierCount, void* memoryBarriers, uint bufferBarrierCount, void* bufferBarriers, uint imageBarrierCount, VkImageMemoryBarrier* imageBarriers);
     [LibraryImport(Lib)] public static partial int vkQueueSubmit(nint queue, uint count, VkSubmitInfo* submits, ulong fence);
 }

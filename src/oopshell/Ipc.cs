@@ -1,6 +1,6 @@
-using oopshell.Native;
 using System.Net.Sockets;
 using System.Text;
+using oopshell.Native;
 
 namespace oopshell;
 
@@ -34,31 +34,31 @@ public readonly record struct IpcReply(IpcStatus Status, string Text)
 
 public sealed class IpcServer : IDisposable
 {
-    const int MaxRequest = 64 * 1024;
-    const int MaxReply = 1024 * 1024;
-    static readonly TimeSpan ClientTimeout = TimeSpan.FromSeconds(2);
+    private const int MaxRequest = 64 * 1024;
+    private const int MaxReply = 1024 * 1024;
+    private static readonly TimeSpan s_clientTimeout = TimeSpan.FromSeconds(2);
 
-    readonly OopsApp app;
-    readonly Socket listener;
-    readonly IDisposable watch;
-    readonly Func<IReadOnlyList<string>, string?> handler;
-    readonly HashSet<Client> clients = new();
-    bool disposed;
+    private readonly OopsApp _app;
+    private readonly Socket _listener;
+    private readonly IDisposable _watch;
+    private readonly Func<IReadOnlyList<string>, string?> _handler;
+    private readonly HashSet<Client> _clients = new();
+    private bool _disposed;
 
-    sealed class Client(Socket socket)
+    private sealed class Client(Socket socket)
     {
         public readonly Socket Socket = socket;
         public readonly MemoryStream Request = new();
         public IDisposable? Watch;
     }
 
-    IpcServer(OopsApp app, Socket listener, string path, Func<IReadOnlyList<string>, string?> handler)
+    private IpcServer(OopsApp app, Socket listener, string path, Func<IReadOnlyList<string>, string?> handler)
     {
-        this.app = app;
-        this.listener = listener;
-        this.handler = handler;
+        _app = app;
+        _listener = listener;
+        _handler = handler;
         SocketPath = path;
-        watch = app.WatchFd((int)listener.Handle, FdEvents.Readable, _ => Accept());
+        _watch = app.WatchFd((int)listener.Handle, FdEvents.Readable, _ => Accept());
     }
 
     /// <summary>The socket file.</summary>
@@ -71,7 +71,7 @@ public sealed class IpcServer : IDisposable
     public static string PathFor(string name) =>
         Path.IsPathRooted(name) ? name : Path.Combine(Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR") is { Length: > 0 } dir ? dir : PrivateDir(), name + ".sock");
 
-    static string PrivateDir()
+    private static string PrivateDir()
     {
         string dir = $"/tmp/oopshell-{LibC.geteuid()}";
         if (OperatingSystem.IsWindows())
@@ -85,7 +85,7 @@ public sealed class IpcServer : IDisposable
     }
 
     /// <summary>The uid of the process at the other end of a connected Unix socket (SO_PEERCRED).</summary>
-    static uint PeerUid(Socket socket)
+    private static uint PeerUid(Socket socket)
     {
         Span<byte> cred = stackalloc byte[12]; // struct ucred { pid_t pid; uid_t uid; gid_t gid; }
         socket.GetRawSocketOption(1 /* SOL_SOCKET */, 17 /* SO_PEERCRED */, cred);
@@ -137,8 +137,8 @@ public sealed class IpcServer : IDisposable
         {
             using var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified)
             {
-                SendTimeout = (int)ClientTimeout.TotalMilliseconds,
-                ReceiveTimeout = (int)ClientTimeout.TotalMilliseconds,
+                SendTimeout = (int)s_clientTimeout.TotalMilliseconds,
+                ReceiveTimeout = (int)s_clientTimeout.TotalMilliseconds,
             };
             socket.Connect(new UnixDomainSocketEndPoint(PathFor(name)));
             if (PeerUid(socket) != LibC.geteuid())
@@ -167,14 +167,14 @@ public sealed class IpcServer : IDisposable
         }
     }
 
-    void Accept()
+    private void Accept()
     {
         while (true)
         {
             Socket socket;
             try
             {
-                socket = listener.Accept();
+                socket = _listener.Accept();
             }
             catch (SocketException e) when (e.SocketErrorCode == SocketError.WouldBlock)
             {
@@ -187,14 +187,14 @@ public sealed class IpcServer : IDisposable
             }
             socket.Blocking = false;
             var client = new Client(socket);
-            clients.Add(client);
-            client.Watch = app.WatchFd((int)socket.Handle, FdEvents.Readable, _ => Read(client));
+            _clients.Add(client);
+            client.Watch = _app.WatchFd((int)socket.Handle, FdEvents.Readable, _ => Read(client));
             // A client that never finishes its request is dropped.
-            app.SetTimer(ClientTimeout, null, () => Drop(client));
+            _app.SetTimer(s_clientTimeout, null, () => Drop(client));
         }
     }
 
-    void Read(Client client)
+    private void Read(Client client)
     {
         var buffer = new byte[4096];
         while (true)
@@ -230,7 +230,7 @@ public sealed class IpcServer : IDisposable
         {
             try
             {
-                reply = "+" + handler(text.Split('\0'));
+                reply = "+" + _handler(text.Split('\0'));
             }
             catch (Exception e)
             {
@@ -240,7 +240,7 @@ public sealed class IpcServer : IDisposable
         try
         {
             client.Socket.Blocking = true;
-            client.Socket.SendTimeout = (int)ClientTimeout.TotalMilliseconds;
+            client.Socket.SendTimeout = (int)s_clientTimeout.TotalMilliseconds;
             client.Socket.Send(Encoding.UTF8.GetBytes(reply));
         }
         catch (SocketException)
@@ -250,9 +250,9 @@ public sealed class IpcServer : IDisposable
         Drop(client);
     }
 
-    void Drop(Client client)
+    private void Drop(Client client)
     {
-        if (!clients.Remove(client))
+        if (!_clients.Remove(client))
             return;
         client.Watch?.Dispose();
         client.Socket.Dispose();
@@ -260,13 +260,13 @@ public sealed class IpcServer : IDisposable
 
     public void Dispose()
     {
-        if (disposed)
+        if (_disposed)
             return;
-        disposed = true;
-        watch.Dispose();
-        foreach (var client in clients.ToList())
+        _disposed = true;
+        _watch.Dispose();
+        foreach (var client in _clients.ToList())
             Drop(client);
-        listener.Dispose();
+        _listener.Dispose();
         try
         {
             File.Delete(SocketPath);

@@ -4,13 +4,13 @@ namespace oopshell.Services.Tests;
 
 public sealed class DesktopTests : IDisposable
 {
-    readonly string root = Directory.CreateTempSubdirectory("oopshell-desktop-").FullName;
+    private readonly string _root = Directory.CreateTempSubdirectory("oopshell-desktop-").FullName;
 
-    public void Dispose() => Directory.Delete(root, recursive: true);
+    public void Dispose() => Directory.Delete(_root, recursive: true);
 
-    string Write(string relative, string content)
+    private string Write(string relative, string content)
     {
-        string path = Path.Combine(root, relative);
+        string path = Path.Combine(_root, relative);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(path, content);
         return path;
@@ -105,7 +105,7 @@ public sealed class DesktopTests : IDisposable
         Write("usr/applications/kde/konsole.desktop", "[Desktop Entry]\nName=Konsole\nExec=konsole\n");
         Write("usr/applications/broken.desktop", "[Something Else]\nName=x\n");
 
-        var entries = DesktopEntries.LoadAll("C", [Path.Combine(root, "home"), Path.Combine(root, "usr")]);
+        var entries = DesktopEntries.LoadAll("C", [Path.Combine(_root, "home"), Path.Combine(_root, "usr")]);
 
         Assert.Equal(["kde-konsole.desktop", "editor.desktop"], entries.Select(e => e.Id));
         Assert.Equal("My Editor", entries.Single(e => e.Id == "editor.desktop").Name);
@@ -150,7 +150,7 @@ public sealed class DesktopTests : IDisposable
         string inheritedSvg = Write("icons/hicolor/scalable/apps/editor.svg", "");
         string pixmap = Write("pixmaps/legacy.png", "png"); // absolute paths must be non-empty regular files
 
-        var theme = new IconTheme("Retro", [Path.Combine(root, "icons"), Path.Combine(root, "pixmaps")]);
+        var theme = new IconTheme("Retro", [Path.Combine(_root, "icons"), Path.Combine(_root, "pixmaps")]);
 
         Assert.Equal(["Retro", "hicolor"], theme.ThemeNames);
         Assert.Equal(small, theme.Find("term", 16));

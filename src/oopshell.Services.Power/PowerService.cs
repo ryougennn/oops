@@ -19,16 +19,16 @@ public sealed class PowerService : IDisposable
     public const string Interface = "org.freedesktop.UPower";
     public const string DeviceInterface = "org.freedesktop.UPower.Device";
 
-    readonly OopsApp app;
-    readonly DBusConnection connection;
-    readonly ObservableCollection<PowerDevice> devices = new();
-    readonly List<IDisposable> watches = new();
+    private readonly OopsApp _app;
+    private readonly DBusConnection _connection;
+    private readonly ObservableCollection<PowerDevice> _devices = new();
+    private readonly List<IDisposable> _watches = new();
 
-    PowerService(OopsApp app, DBusConnection connection)
+    private PowerService(OopsApp app, DBusConnection connection)
     {
-        this.app = app;
-        this.connection = connection;
-        Devices = new ReadOnlyObservableCollection<PowerDevice>(devices);
+        _app = app;
+        _connection = connection;
+        Devices = new ReadOnlyObservableCollection<PowerDevice>(_devices);
     }
 
     /// <summary>Connects to UPower on <paramref name="connection"/> (normally the system bus). Throws if UPower is not running.</summary>
@@ -54,30 +54,30 @@ public sealed class PowerService : IDisposable
     /// <summary><see cref="OnBattery"/> changed.</summary>
     public event Action? OnBatteryChanged;
 
-    async Task InitializeAsync()
+    private async Task InitializeAsync()
     {
         // Subscribe first so nothing that changes during the initial reads is missed.
-        watches.Add(await connection.WatchSignalAsync(app, BusName, ObjectPath, Interface, "DeviceAdded",
+        _watches.Add(await _connection.WatchSignalAsync(_app, BusName, ObjectPath, Interface, "DeviceAdded",
             (message, _) => message.GetBodyReader().ReadObjectPathAsString(), path => _ = AddAsync(path)));
-        watches.Add(await connection.WatchSignalAsync(app, BusName, ObjectPath, Interface, "DeviceRemoved",
+        _watches.Add(await _connection.WatchSignalAsync(_app, BusName, ObjectPath, Interface, "DeviceRemoved",
             (message, _) => message.GetBodyReader().ReadObjectPathAsString(), Remove));
-        watches.Add(await connection.WatchSignalAsync(app, BusName, null, "org.freedesktop.DBus.Properties", "PropertiesChanged",
+        _watches.Add(await _connection.WatchSignalAsync(_app, BusName, null, "org.freedesktop.DBus.Properties", "PropertiesChanged",
             (message, _) => (Path: message.PathAsString ?? "", Interface: message.GetBodyReader().ReadString()), OnPropertiesChanged));
 
         await RefreshOnBatteryAsync();
-        string displayPath = await connection.CallAsync(BusName, ObjectPath, Interface, "GetDisplayDevice",
+        string displayPath = await _connection.CallAsync(BusName, ObjectPath, Interface, "GetDisplayDevice",
             (message, _) => message.GetBodyReader().ReadObjectPathAsString());
         var display = new PowerDevice(displayPath);
         await RefreshAsync(display);
         DisplayDevice = display;
 
-        var paths = await connection.CallAsync(BusName, ObjectPath, Interface, "EnumerateDevices",
+        var paths = await _connection.CallAsync(BusName, ObjectPath, Interface, "EnumerateDevices",
             (message, _) => message.GetBodyReader().ReadArrayOfObjectPath());
         foreach (var path in paths)
             await AddAsync(path.ToString());
     }
 
-    void OnPropertiesChanged((string Path, string Interface) change)
+    private void OnPropertiesChanged((string Path, string Interface) change)
     {
         if (change.Interface == Interface && change.Path == ObjectPath)
             _ = RefreshOnBatteryAsync();
@@ -85,43 +85,43 @@ public sealed class PowerService : IDisposable
             _ = RefreshAsync(device);
     }
 
-    PowerDevice? Find(string path) =>
-        DisplayDevice?.Path == path ? DisplayDevice : devices.FirstOrDefault(d => d.Path == path);
+    private PowerDevice? Find(string path) =>
+        DisplayDevice?.Path == path ? DisplayDevice : _devices.FirstOrDefault(d => d.Path == path);
 
-    async Task AddAsync(string path)
+    private async Task AddAsync(string path)
     {
         if (Find(path) is not null)
             return;
         var device = new PowerDevice(path);
         if (!await RefreshAsync(device))
             return;
-        await app.InvokeAsync(() =>
+        await _app.InvokeAsync(() =>
         {
             if (Find(path) is null)
-                devices.Add(device);
+                _devices.Add(device);
             return Task.CompletedTask;
         });
     }
 
-    void Remove(string path)
+    private void Remove(string path)
     {
-        if (devices.FirstOrDefault(d => d.Path == path) is { } device)
-            devices.Remove(device);
+        if (_devices.FirstOrDefault(d => d.Path == path) is { } device)
+            _devices.Remove(device);
     }
 
     /// <summary>Re-reads all properties (PropertiesChanged is not always complete). False if the device is gone.</summary>
-    async Task<bool> RefreshAsync(PowerDevice device)
+    private async Task<bool> RefreshAsync(PowerDevice device)
     {
         Dictionary<string, VariantValue> properties;
         try
         {
-            properties = await connection.GetAllPropertiesAsync(BusName, device.Path, DeviceInterface);
+            properties = await _connection.GetAllPropertiesAsync(BusName, device.Path, DeviceInterface);
         }
         catch (DBusErrorReplyException)
         {
             return false; // removed meanwhile; DeviceRemoved follows
         }
-        await app.InvokeAsync(() =>
+        await _app.InvokeAsync(() =>
         {
             device.Apply(properties);
             return Task.CompletedTask;
@@ -129,10 +129,10 @@ public sealed class PowerService : IDisposable
         return true;
     }
 
-    async Task RefreshOnBatteryAsync()
+    private async Task RefreshOnBatteryAsync()
     {
-        var value = await connection.GetPropertyAsync(BusName, ObjectPath, Interface, "OnBattery");
-        await app.InvokeAsync(() =>
+        var value = await _connection.GetPropertyAsync(BusName, ObjectPath, Interface, "OnBattery");
+        await _app.InvokeAsync(() =>
         {
             bool onBattery = value.Type == VariantValueType.Bool && value.GetBool();
             if (onBattery != OnBattery)
@@ -146,8 +146,8 @@ public sealed class PowerService : IDisposable
 
     public void Dispose()
     {
-        foreach (var watch in watches)
+        foreach (var watch in _watches)
             watch.Dispose();
-        watches.Clear();
+        _watches.Clear();
     }
 }

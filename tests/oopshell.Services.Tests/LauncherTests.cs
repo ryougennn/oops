@@ -5,16 +5,16 @@ namespace oopshell.Services.Tests;
 
 public sealed class LauncherTests : IDisposable
 {
-    readonly string root = Directory.CreateTempSubdirectory("oopslaunch.").FullName;
+    private readonly string _root = Directory.CreateTempSubdirectory("oopslaunch.").FullName;
 
-    public void Dispose() => Directory.Delete(root, recursive: true);
+    public void Dispose() => Directory.Delete(_root, recursive: true);
 
-    static DesktopEntry Entry(string id, string body, string? locale = null) =>
+    private static DesktopEntry Entry(string id, string body, string? locale = null) =>
         DesktopEntry.Parse(id, "/x/" + id, "[Desktop Entry]\nType=Application\n" + body, locale)!;
 
-    string Write(string relativePath, string content)
+    private string Write(string relativePath, string content)
     {
-        string path = Path.Combine(root, relativePath);
+        string path = Path.Combine(_root, relativePath);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(path, content);
         return path;
@@ -30,7 +30,7 @@ public sealed class LauncherTests : IDisposable
     public void Text_folds_case_accents_width_and_kana(string text, string folded) =>
         Assert.Equal(folded, TextFold.Fold(text));
 
-    static readonly DesktopEntry[] Apps =
+    private static readonly DesktopEntry[] s_apps =
     [
         Entry("org.mozilla.firefox.desktop", "Name=Firefox\nGenericName=Web Browser\nKeywords=Internet;WWW;\nExec=firefox %u\nActions=new-window;new-private-window;\n\n[Desktop Action new-window]\nName=New Window\nExec=firefox --new-window\n\n[Desktop Action new-private-window]\nName=New Private Window\nExec=firefox --private-window"),
         Entry("libreoffice-writer.desktop", "Name=LibreOffice Writer\nGenericName=Word Processor\nKeywords=Text;Letter;Document;\nExec=libreoffice --writer %U"),
@@ -42,8 +42,8 @@ public sealed class LauncherTests : IDisposable
         Entry("steam.desktop", "Name=Steam\nExec=/usr/bin/steam %U"),
     ];
 
-    static string[] Top(string query, int n = 1, Func<string, double>? boost = null) =>
-        AppSearch.Search(Apps, query, boost).Take(n).Select(m => m.Label).ToArray();
+    private static string[] Top(string query, int n = 1, Func<string, double>? boost = null) =>
+        AppSearch.Search(s_apps, query, boost).Take(n).Select(m => m.Label).ToArray();
 
     [Fact]
     public void Search_ranks_the_way_people_type()
@@ -60,8 +60,8 @@ public sealed class LauncherTests : IDisposable
         Assert.Equal(["ファイアウォール"], Top("ふぁいあ"));                 // hiragana finds katakana
         Assert.Equal(["Files"], Top("nautilus"));                        // the program
         Assert.Equal(["Files"], Top("folder"));
-        Assert.Empty(AppSearch.Search(Apps, "   "));
-        Assert.Empty(AppSearch.Search(Apps, "zzzz"));
+        Assert.Empty(AppSearch.Search(s_apps, "   "));
+        Assert.Empty(AppSearch.Search(s_apps, "zzzz"));
     }
 
     [Fact]
@@ -72,7 +72,7 @@ public sealed class LauncherTests : IDisposable
         // A translated action is still found by its English name.
         var japanese = Entry("firefox.desktop", "Name=Firefox\nExec=firefox\nActions=private;\n\n[Desktop Action private]\nName=New Private Window\nName[ja]=新しいプライベートウィンドウ\nExec=firefox --private-window", "ja_JP.UTF-8");
         Assert.Equal(["Firefox — 新しいプライベートウィンドウ"], AppSearch.Search([japanese], "private").Select(m => m.Label));
-        var match = AppSearch.Search(Apps, "private")[0];
+        var match = AppSearch.Search(s_apps, "private")[0];
         Assert.Equal(["firefox", "--private-window"], match.Entry.ExpandExec(match.Action!));
 
         // "libreoffice" matches Writer and Calc equally; usage decides.
@@ -93,7 +93,7 @@ public sealed class LauncherTests : IDisposable
         Assert.True(usage.Boost("b.desktop", now) > usage.Boost("a.desktop", now));
         Assert.Equal(0, usage.Boost("never.desktop", now));
 
-        string path = Path.Combine(root, "state", "usage.json");
+        string path = Path.Combine(_root, "state", "usage.json");
         UsageHistory.Load(path).RecordLaunch("kept.desktop");
         Assert.True(UsageHistory.Load(path).Boost("kept.desktop") > 0);
         File.WriteAllText(path, "{ not json");
@@ -105,12 +105,12 @@ public sealed class LauncherTests : IDisposable
     [Fact]
     public void Real_world_layouts_load_with_their_quirks()
     {
-        string home = Path.Combine(root, "home/.local/share");
-        string flatpak = Path.Combine(root, "var/lib/flatpak/exports/share");
-        string snap = Path.Combine(root, "var/lib/snapd/desktop");
-        string system = Path.Combine(root, "usr/share");
-        string nixProfile = Path.Combine(root, "home/.nix-profile/share");
-        string nixStore = Path.Combine(root, "nix/store/abc123-hello-2.12/share");
+        string home = Path.Combine(_root, "home/.local/share");
+        string flatpak = Path.Combine(_root, "var/lib/flatpak/exports/share");
+        string snap = Path.Combine(_root, "var/lib/snapd/desktop");
+        string system = Path.Combine(_root, "usr/share");
+        string nixProfile = Path.Combine(_root, "home/.nix-profile/share");
+        string nixStore = Path.Combine(_root, "nix/store/abc123-hello-2.12/share");
 
         // A user override hides a system entry; a subdirectory makes a dashed id.
         Write("usr/share/applications/org.example.Hidden.desktop", "[Desktop Entry]\nType=Application\nName=Should Hide\nExec=hidden");
@@ -127,7 +127,7 @@ public sealed class LauncherTests : IDisposable
         Directory.CreateDirectory(Path.Combine(nixProfile, "applications"));
         File.CreateSymbolicLink(Path.Combine(nixProfile, "applications", "hello.desktop"), storeFile);
         Write("nix/store/def456-world/share/applications/world.desktop", "[Desktop Entry]\nType=Application\nName=World\nExec=world");
-        Directory.CreateSymbolicLink(Path.Combine(nixProfile, "applications", "linked"), Path.Combine(root, "nix/store/def456-world/share/applications"));
+        Directory.CreateSymbolicLink(Path.Combine(nixProfile, "applications", "linked"), Path.Combine(_root, "nix/store/def456-world/share/applications"));
         // Steam game, AppImage with a space, BOM and CRLF, a missing TryExec, another desktop only.
         Write("home/.local/share/applications/steam_app_620.desktop", "[Desktop Entry]\nType=Application\nName=Portal 2\nExec=steam steam://rungameid/620\nIcon=steam_icon_620");
         Write("home/.local/share/applications/myapp.desktop", "[Desktop Entry]\nType=Application\nName=My App\nExec=\"/home/u/Apps/My App.AppImage\" --no-sandbox %U");
@@ -158,9 +158,9 @@ public sealed class LauncherTests : IDisposable
 
     // ---- terminals ---------------------------------------------------------------------------
 
-    string FakePath(params string[] programs)
+    private string FakePath(params string[] programs)
     {
-        string bin = Path.Combine(root, "bin-" + string.Join("-", programs));
+        string bin = Path.Combine(_root, "bin-" + string.Join("-", programs));
         Directory.CreateDirectory(bin);
         foreach (var program in programs)
         {
@@ -193,7 +193,7 @@ public sealed class LauncherTests : IDisposable
     [Fact]
     public void Files_folders_and_urls_open_with_the_users_defaults()
     {
-        string data = Path.Combine(root, "share");
+        string data = Path.Combine(_root, "share");
         Write("share/mime/globs2", "# comment\n50:text/plain:*.txt\n50:application/pdf:*.pdf\n50:text/x-csrc:*.c\n50:application/gzip:*.gz\n55:application/x-compressed-tar:*.tar.gz\n50:image/png:*.png\n50:text/x-makefile:Makefile:cs\n");
         Write("share/mime/subclasses", "text/x-csrc text/plain\napplication/x-compressed-tar application/gzip\n");
         Write("share/mime/aliases", "application/x-pdf application/pdf\n");
@@ -204,7 +204,7 @@ public sealed class LauncherTests : IDisposable
         Assert.Equal("text/x-makefile", mime.FromFileName("Makefile"));
         Assert.Equal("application/octet-stream", mime.FromFileName("makefile")); // that glob is case-sensitive
         Assert.Equal("application/octet-stream", mime.FromFileName("noext"));
-        Assert.Equal("inode/directory", mime.Guess(root));
+        Assert.Equal("inode/directory", mime.Guess(_root));
         Assert.Equal("x-scheme-handler/https", mime.Guess("https://example.org/a.pdf"));
         Assert.Equal("text/plain", mime.Guess("file:///tmp/notes%20a.txt"));
         Assert.Equal(["text/x-csrc", "text/plain", "application/octet-stream"], mime.WithParents("text/x-csrc"));

@@ -5,13 +5,13 @@ namespace oopshell.IntegrationTests;
 [Collection("sway")]
 public sealed class LauncherCatalogTests(SwayFixture sway) : IDisposable
 {
-    readonly string root = Directory.CreateTempSubdirectory("oopscatalog.").FullName;
+    private readonly string _root = Directory.CreateTempSubdirectory("oopscatalog.").FullName;
 
-    public void Dispose() => Directory.Delete(root, recursive: true);
+    public void Dispose() => Directory.Delete(_root, recursive: true);
 
-    void Write(string relativePath, string content)
+    private void Write(string relativePath, string content)
     {
-        string path = Path.Combine(root, relativePath);
+        string path = Path.Combine(_root, relativePath);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(path, content);
     }
@@ -20,7 +20,7 @@ public sealed class LauncherCatalogTests(SwayFixture sway) : IDisposable
     public void The_catalog_follows_installs_and_removals()
     {
         using var app = sway.Connect();
-        string system = Path.Combine(root, "system"), user = Path.Combine(root, "user");
+        string system = Path.Combine(_root, "system"), user = Path.Combine(_root, "user");
         Directory.CreateDirectory(user); // no applications dir yet: the first per-user install creates it
         Write("system/applications/one.desktop", "[Desktop Entry]\nType=Application\nName=One\nExec=one");
         using var catalog = AppCatalog.Start(app, new AppCatalogOptions { DataDirs = [user, system], Usage = UsageHistory.InMemory(), CurrentDesktops = [] });
@@ -32,7 +32,7 @@ public sealed class LauncherCatalogTests(SwayFixture sway) : IDisposable
         app.RunUntil(() => catalog.Apps.Count == 2, what: "installed app");
         Write("user/applications/three.desktop", "[Desktop Entry]\nType=Application\nName=Three\nExec=three");
         app.RunUntil(() => catalog.Apps.Count == 3, what: "first per-user app");
-        File.Delete(Path.Combine(root, "system/applications/one.desktop"));
+        File.Delete(Path.Combine(_root, "system/applications/one.desktop"));
         app.RunUntil(() => catalog.Apps.All(a => a.Name != "One"), what: "removed app");
         Assert.True(changes >= 3);
         Assert.Equal(["Three"], catalog.Search("thr").Select(m => m.Label));
@@ -42,8 +42,8 @@ public sealed class LauncherCatalogTests(SwayFixture sway) : IDisposable
     public void Files_open_with_the_default_application()
     {
         using var app = sway.Connect();
-        string data = Path.Combine(root, "share");
-        string output = Path.Combine(root, "opened.txt");
+        string data = Path.Combine(_root, "share");
+        string output = Path.Combine(_root, "opened.txt");
         // A test-only file type, so the user's own mimeapps.list cannot interfere.
         Write("share/mime/globs2", "50:application/x-oopshell-test:*.oopstest\n");
         Write("share/applications/opener.desktop",
@@ -51,7 +51,7 @@ public sealed class LauncherCatalogTests(SwayFixture sway) : IDisposable
             "[Desktop Entry]\nType=Application\nName=Opener\nMimeType=application/x-oopshell-test;\nNoDisplay=true\n" +
             $$"""Exec=sh -c "echo \\"\\$1\\" > {{output}}" sh %f""" + "\n");
         using var catalog = AppCatalog.Start(app, new AppCatalogOptions { DataDirs = [data], Usage = UsageHistory.InMemory(), Watch = false });
-        string file = Path.Combine(root, "my file.oopstest");
+        string file = Path.Combine(_root, "my file.oopstest");
         File.WriteAllText(file, "x");
 
         var used = app.Complete(catalog.OpenAsync(new Uri(file).AbsoluteUri));

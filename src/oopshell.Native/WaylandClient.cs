@@ -5,7 +5,7 @@ namespace oopshell.Native;
 /// <summary>P/Invoke surface of <c>libwayland-client.so.0</c>. Only non-varargs entry points.</summary>
 public static unsafe partial class WaylandClient
 {
-    const string Lib = "libwayland-client.so.0";
+    private const string Lib = "libwayland-client.so.0";
 
     /// <summary><c>WL_MARSHAL_FLAG_DESTROY</c>: destroy the proxy after marshalling.</summary>
     public const uint MarshalFlagDestroy = 1;

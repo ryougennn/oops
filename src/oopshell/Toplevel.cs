@@ -32,16 +32,16 @@ public enum DecorationMode
 /// <summary>A regular application window (<c>xdg_toplevel</c>).</summary>
 public sealed class Toplevel : Surface
 {
-    readonly ZxdgToplevelDecorationV1? decoration;
-    Size pendingSize;
-    Size geometrySize;
-    ToplevelStates pendingStates;
-    Margins shadowMargins;
-    bool geometrySent;
-    string title = "";
-    string appId = "";
-    Size minSize;
-    Size maxSize;
+    private readonly ZxdgToplevelDecorationV1? _decoration;
+    private Size _pendingSize;
+    private Size _geometrySize;
+    private ToplevelStates _pendingStates;
+    private Margins _shadowMargins;
+    private bool _geometrySent;
+    private string _title = "";
+    private string _appId = "";
+    private Size _minSize;
+    private Size _maxSize;
 
     public Toplevel(OopsApp app) : base(app)
     {
@@ -49,23 +49,23 @@ public sealed class Toplevel : Surface
         XdgSurface.Configure += e =>
         {
             XdgSurface.AckConfigure(e.Serial);
-            States = pendingStates;
-            geometrySize = pendingSize.Width > 0 && pendingSize.Height > 0 ? pendingSize : geometrySize.IsEmpty ? DefaultSize : geometrySize;
+            States = _pendingStates;
+            _geometrySize = _pendingSize.Width > 0 && _pendingSize.Height > 0 ? _pendingSize : _geometrySize.IsEmpty ? DefaultSize : _geometrySize;
             ApplyGeometry();
         };
         Role = XdgSurface.GetToplevel();
         Role.Configure += e =>
         {
-            pendingSize = new Size(e.Width, e.Height);
-            pendingStates = ParseStates(e.States);
+            _pendingSize = new Size(e.Width, e.Height);
+            _pendingStates = ParseStates(e.States);
         };
         Role.Close += () => CloseRequested?.Invoke();
         Role.ConfigureBounds += e => Bounds = new Size(e.Width, e.Height);
 
         if (app.TryGet<ZxdgDecorationManagerV1>() is { } decorations)
         {
-            decoration = decorations.GetToplevelDecoration(Role);
-            decoration.Configure += e => Decoration = (DecorationMode)e.Mode;
+            _decoration = decorations.GetToplevelDecoration(Role);
+            _decoration.Configure += e => Decoration = (DecorationMode)e.Mode;
         }
     }
 
@@ -82,22 +82,22 @@ public sealed class Toplevel : Surface
     /// </summary>
     public Margins ShadowMargins
     {
-        get => shadowMargins;
+        get => _shadowMargins;
         set
         {
-            shadowMargins = value;
+            _shadowMargins = value;
             if (IsConfigured)
                 ApplyGeometry();
         }
     }
 
     /// <summary>The window's size without <see cref="ShadowMargins"/>, as the compositor configured it.</summary>
-    public Size GeometrySize => geometrySize;
+    public Size GeometrySize => _geometrySize;
 
-    void ApplyGeometry()
+    private void ApplyGeometry()
     {
-        SendWindowGeometry(XdgSurface, shadowMargins, geometrySize, ref geometrySent);
-        ApplyConfigure(GrowBy(geometrySize, shadowMargins));
+        SendWindowGeometry(XdgSurface, _shadowMargins, _geometrySize, ref _geometrySent);
+        ApplyConfigure(GrowBy(_geometrySize, _shadowMargins));
     }
 
     /// <summary>Size to use when the compositor lets the client choose (configure with 0×0).</summary>
@@ -116,35 +116,35 @@ public sealed class Toplevel : Surface
 
     public string Title
     {
-        get => title;
-        set { title = value; Role.SetTitle(value); }
+        get => _title;
+        set { _title = value; Role.SetTitle(value); }
     }
 
     public string AppId
     {
-        get => appId;
-        set { appId = value; Role.SetAppId(value); }
+        get => _appId;
+        set { _appId = value; Role.SetAppId(value); }
     }
 
     /// <summary>Minimum logical size; empty = no minimum.</summary>
     public Size MinSize
     {
-        get => minSize;
-        set { minSize = value; Role.SetMinSize(value.Width, value.Height); }
+        get => _minSize;
+        set { _minSize = value; Role.SetMinSize(value.Width, value.Height); }
     }
 
     /// <summary>Maximum logical size; empty = no maximum.</summary>
     public Size MaxSize
     {
-        get => maxSize;
-        set { maxSize = value; Role.SetMaxSize(value.Width, value.Height); }
+        get => _maxSize;
+        set { _maxSize = value; Role.SetMaxSize(value.Width, value.Height); }
     }
 
     /// <summary>
     /// Asks for client- or server-side decorations. The compositor decides; read <see cref="Decoration"/>
     /// after the next configure. Does nothing without xdg-decoration (decorations are then client-side).
     /// </summary>
-    public void RequestDecoration(DecorationMode mode) => decoration?.SetMode((ZxdgToplevelDecorationV1Mode)mode);
+    public void RequestDecoration(DecorationMode mode) => _decoration?.SetMode((ZxdgToplevelDecorationV1Mode)mode);
 
     public void SetMaximized(bool maximized)
     {
@@ -173,7 +173,7 @@ public sealed class Toplevel : Surface
     /// <summary>Shows the compositor's window menu at a logical position.</summary>
     public void ShowWindowMenu(Seat seat, int x, int y) => Role.ShowWindowMenu(seat.Proxy, seat.LastSerial, x, y);
 
-    static ToplevelStates ParseStates(ReadOnlySpan<byte> array)
+    private static ToplevelStates ParseStates(ReadOnlySpan<byte> array)
     {
         var states = ToplevelStates.None;
         foreach (uint state in System.Runtime.InteropServices.MemoryMarshal.Cast<byte, uint>(array))
@@ -187,7 +187,7 @@ public sealed class Toplevel : Surface
 
     private protected override void DestroyRole()
     {
-        decoration?.Dispose();
+        _decoration?.Dispose();
         Role.Dispose();
         XdgSurface.Dispose();
     }
@@ -195,19 +195,19 @@ public sealed class Toplevel : Surface
 
 public sealed partial class OopsApp
 {
-    XdgWmBase? wmBase;
+    private XdgWmBase? _wmBase;
 
     /// <summary><c>xdg_wm_base</c>, bound on first use, answering pings.</summary>
     internal XdgWmBase WmBase
     {
         get
         {
-            if (wmBase is null)
+            if (_wmBase is null)
             {
-                wmBase = Get<XdgWmBase>();
-                wmBase.Ping += e => wmBase.Pong(e.Serial);
+                _wmBase = Get<XdgWmBase>();
+                _wmBase.Ping += e => _wmBase.Pong(e.Serial);
             }
-            return wmBase;
+            return _wmBase;
         }
     }
 }

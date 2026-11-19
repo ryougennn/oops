@@ -9,7 +9,7 @@ namespace oopshell.Services.DBus;
 /// </summary>
 public static class Variants
 {
-    static VariantValue Unwrap(VariantValue v) => v.Type == VariantValueType.Variant ? Unwrap(v.GetVariantValue()) : v;
+    private static VariantValue Unwrap(VariantValue v) => v.Type == VariantValueType.Variant ? Unwrap(v.GetVariantValue()) : v;
 
     public static string? AsString(this VariantValue value)
     {

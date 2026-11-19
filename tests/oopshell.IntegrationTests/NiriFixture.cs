@@ -8,8 +8,8 @@ namespace oopshell.IntegrationTests;
 /// </summary>
 public sealed class NiriFixture : IDisposable
 {
-    readonly List<Process> processes = new();
-    readonly DBusDaemon? bus;
+    private readonly List<Process> _processes = new();
+    private readonly DBusDaemon? _bus;
 
     public NiriFixture(string extraConfig = "")
     {
@@ -25,7 +25,9 @@ public sealed class NiriFixture : IDisposable
 
         var sway = Start("sway", ["-c", Path.Combine(RuntimeDir, "sway.conf")], new()
         {
-            ["WLR_BACKENDS"] = "headless", ["WLR_LIBINPUT_NO_DEVICES"] = "1", ["WLR_RENDERER"] = "gles2",
+            ["WLR_BACKENDS"] = "headless",
+            ["WLR_LIBINPUT_NO_DEVICES"] = "1",
+            ["WLR_RENDERER"] = "gles2",
         });
         string? swayDisplay = WaitFor(() => Directory.GetFiles(RuntimeDir, "wayland-*").FirstOrDefault(f => !f.EndsWith(".lock")));
         if (swayDisplay is null)
@@ -33,10 +35,11 @@ public sealed class NiriFixture : IDisposable
             SkipReason = "headless sway did not start.";
             return;
         }
-        bus = new DBusDaemon();
+        _bus = new DBusDaemon();
         Start("niri", ["-c", Path.Combine(RuntimeDir, "niri.kdl")], new()
         {
-            ["WAYLAND_DISPLAY"] = Path.GetFileName(swayDisplay), ["DBUS_SESSION_BUS_ADDRESS"] = bus.Address,
+            ["WAYLAND_DISPLAY"] = Path.GetFileName(swayDisplay),
+            ["DBUS_SESSION_BUS_ADDRESS"] = _bus.Address,
         });
         WaylandSocket = WaitFor(() => Directory.GetFiles(RuntimeDir, "wayland-*")
             .FirstOrDefault(f => !f.EndsWith(".lock") && f != swayDisplay && File.Exists(f + ".lock")));
@@ -49,7 +52,7 @@ public sealed class NiriFixture : IDisposable
     public string RuntimeDir { get; } = "";
     public string? WaylandSocket { get; }
 
-    Process Start(string program, string[] args, Dictionary<string, string> env)
+    private Process Start(string program, string[] args, Dictionary<string, string> env)
     {
         var start = new ProcessStartInfo(program, args) { RedirectStandardOutput = true, RedirectStandardError = true };
         start.Environment.Clear();
@@ -63,11 +66,11 @@ public sealed class NiriFixture : IDisposable
         process.ErrorDataReceived += (_, _) => { };
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
-        processes.Add(process);
+        _processes.Add(process);
         return process;
     }
 
-    static string? WaitFor(Func<string?> find)
+    private static string? WaitFor(Func<string?> find)
     {
         var deadline = DateTime.UtcNow.AddSeconds(10);
         while (DateTime.UtcNow < deadline)
@@ -88,20 +91,20 @@ public sealed class NiriFixture : IDisposable
     public void Dispose()
     {
         // niri first (it is sway's client), then sway.
-        foreach (var process in Enumerable.Reverse(processes))
+        foreach (var process in Enumerable.Reverse(_processes))
         {
             if (!process.HasExited)
                 process.Kill();
             process.WaitForExit();
             process.Dispose();
         }
-        bus?.Dispose();
+        _bus?.Dispose();
         if (RuntimeDir.Length > 0)
             Directory.Delete(RuntimeDir, recursive: true);
     }
 }
 
-static class SwayFixtureHelpers
+internal static class SwayFixtureHelpers
 {
     public static bool OnPath(string program) =>
         (Environment.GetEnvironmentVariable("PATH") ?? "").Split(':').Any(dir => File.Exists(Path.Combine(dir, program)));

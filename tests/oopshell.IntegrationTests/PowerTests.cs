@@ -7,12 +7,12 @@ namespace oopshell.IntegrationTests;
 [Collection("sway")]
 public class PowerTests(SwayFixture sway)
 {
-    const string DisplayPath = "/org/freedesktop/UPower/devices/DisplayDevice";
-    const string MousePath = "/org/freedesktop/UPower/devices/mouse_hidpp_battery_0";
-    const string LaptopPath = "/org/freedesktop/UPower/devices/battery_BAT0";
+    private const string DisplayPath = "/org/freedesktop/UPower/devices/DisplayDevice";
+    private const string MousePath = "/org/freedesktop/UPower/devices/mouse_hidpp_battery_0";
+    private const string LaptopPath = "/org/freedesktop/UPower/devices/battery_BAT0";
 
     /// <summary>A UPower device: its properties are a plain dictionary the test edits.</summary>
-    sealed class FakeDevice(OopsApp app, string path, Dictionary<string, object> properties) : ExportedObject(app, path)
+    private sealed class FakeDevice(OopsApp app, string path, Dictionary<string, object> properties) : ExportedObject(app, path)
     {
         public readonly Dictionary<string, object> Properties = properties;
         public int Reads;
@@ -49,7 +49,7 @@ public class PowerTests(SwayFixture sway)
         }
     }
 
-    sealed class FakeUPower(OopsApp app) : ExportedObject(app, PowerService.ObjectPath)
+    private sealed class FakeUPower(OopsApp app) : ExportedObject(app, PowerService.ObjectPath)
     {
         public readonly List<string> Devices = new();
         public bool OnBattery;
@@ -59,55 +59,55 @@ public class PowerTests(SwayFixture sway)
             switch (context.Request.MemberAsString)
             {
                 case "EnumerateDevices":
-                {
-                    var writer = context.CreateReplyWriter("ao");
-                    try
                     {
-                        var array = writer.WriteArrayStart(DBusType.ObjectPath);
-                        foreach (var path in Devices)
-                            writer.WriteObjectPath(path);
-                        writer.WriteArrayEnd(array);
-                        context.Reply(writer.CreateMessage());
+                        var writer = context.CreateReplyWriter("ao");
+                        try
+                        {
+                            var array = writer.WriteArrayStart(DBusType.ObjectPath);
+                            foreach (var path in Devices)
+                                writer.WriteObjectPath(path);
+                            writer.WriteArrayEnd(array);
+                            context.Reply(writer.CreateMessage());
+                        }
+                        finally
+                        {
+                            writer.Dispose();
+                        }
+                        break;
                     }
-                    finally
-                    {
-                        writer.Dispose();
-                    }
-                    break;
-                }
                 case "GetDisplayDevice":
-                {
-                    var writer = context.CreateReplyWriter("o");
-                    try
                     {
-                        writer.WriteObjectPath(DisplayPath);
-                        context.Reply(writer.CreateMessage());
+                        var writer = context.CreateReplyWriter("o");
+                        try
+                        {
+                            writer.WriteObjectPath(DisplayPath);
+                            context.Reply(writer.CreateMessage());
+                        }
+                        finally
+                        {
+                            writer.Dispose();
+                        }
+                        break;
                     }
-                    finally
-                    {
-                        writer.Dispose();
-                    }
-                    break;
-                }
                 case "Get": // only OnBattery is asked for
-                {
-                    var writer = context.CreateReplyWriter("v");
-                    try
                     {
-                        writer.WriteVariantBool(OnBattery);
-                        context.Reply(writer.CreateMessage());
+                        var writer = context.CreateReplyWriter("v");
+                        try
+                        {
+                            writer.WriteVariantBool(OnBattery);
+                            context.Reply(writer.CreateMessage());
+                        }
+                        finally
+                        {
+                            writer.Dispose();
+                        }
+                        break;
                     }
-                    finally
-                    {
-                        writer.Dispose();
-                    }
-                    break;
-                }
             }
         }
     }
 
-    static void EmitPropertiesChanged(DBusConnection bus, string path, string iface) =>
+    private static void EmitPropertiesChanged(DBusConnection bus, string path, string iface) =>
         bus.EmitSignal(path, "org.freedesktop.DBus.Properties", "PropertiesChanged", "sa{sv}as", (ref MessageWriter w) =>
         {
             w.WriteString(iface);
@@ -126,9 +126,17 @@ public class PowerTests(SwayFixture sway)
         var display = new FakeDevice(app, DisplayPath, new() { ["Type"] = 0u, ["IsPresent"] = false, ["Percentage"] = 0.0 });
         var mouse = new FakeDevice(app, MousePath, new()
         {
-            ["Type"] = 5u, ["Model"] = "G602", ["IsPresent"] = true, ["IsRechargeable"] = true, ["PowerSupply"] = false,
-            ["State"] = 2u, ["Percentage"] = 55.0, ["BatteryLevel"] = 6u, ["WarningLevel"] = 1u,
-            ["IconName"] = "battery-low-symbolic", ["TimeToEmpty"] = 0L,
+            ["Type"] = 5u,
+            ["Model"] = "G602",
+            ["IsPresent"] = true,
+            ["IsRechargeable"] = true,
+            ["PowerSupply"] = false,
+            ["State"] = 2u,
+            ["Percentage"] = 55.0,
+            ["BatteryLevel"] = 6u,
+            ["WarningLevel"] = 1u,
+            ["IconName"] = "battery-low-symbolic",
+            ["TimeToEmpty"] = 0L,
         });
         upowerBus.AddMethodHandler(upower);
         upowerBus.AddMethodHandler(display);
@@ -171,8 +179,13 @@ public class PowerTests(SwayFixture sway)
         // A laptop battery appears, with an exact percentage and an estimate.
         var laptop = new FakeDevice(app, LaptopPath, new()
         {
-            ["Type"] = 2u, ["IsPresent"] = true, ["PowerSupply"] = true, ["State"] = 2u, ["Percentage"] = 80.0,
-            ["BatteryLevel"] = 1u, ["TimeToEmpty"] = 3600L,
+            ["Type"] = 2u,
+            ["IsPresent"] = true,
+            ["PowerSupply"] = true,
+            ["State"] = 2u,
+            ["Percentage"] = 80.0,
+            ["BatteryLevel"] = 1u,
+            ["TimeToEmpty"] = 3600L,
         });
         upowerBus.AddMethodHandler(laptop);
         upower.Devices.Add(LaptopPath);

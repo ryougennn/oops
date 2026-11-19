@@ -60,18 +60,18 @@ public sealed record AppCatalogOptions
 /// </summary>
 public sealed class AppCatalog : IDisposable
 {
-    readonly OopsApp app;
-    readonly AppCatalogOptions options;
-    readonly List<FileSystemWatcher> watchers = new();
-    readonly Dictionary<string, DesktopEntry?> byAppId = new();
-    MimeDatabase? mimeDatabase;
-    IDisposable? reloadTimer;
-    bool disposed;
+    private readonly OopsApp _app;
+    private readonly AppCatalogOptions _options;
+    private readonly List<FileSystemWatcher> _watchers = new();
+    private readonly Dictionary<string, DesktopEntry?> _byAppId = new();
+    private MimeDatabase? _mimeDatabase;
+    private IDisposable? _reloadTimer;
+    private bool _disposed;
 
-    AppCatalog(OopsApp app, AppCatalogOptions options)
+    private AppCatalog(OopsApp app, AppCatalogOptions options)
     {
-        this.app = app;
-        this.options = options;
+        _app = app;
+        _options = options;
         Usage = options.Usage ?? UsageHistory.Load();
         Reload();
     }
@@ -89,15 +89,15 @@ public sealed class AppCatalog : IDisposable
     /// <summary>The applications changed (on the UI thread).</summary>
     public event Action? Changed;
 
-    IReadOnlyList<string> DataDirs => options.DataDirs ?? DesktopEntries.DataDirs().ToList();
+    private IReadOnlyList<string> DataDirs => _options.DataDirs ?? DesktopEntries.DataDirs().ToList();
 
     public DesktopEntry? ById(string desktopId) => AllEntries.FirstOrDefault(e => e.Id == desktopId);
 
     /// <summary>The application a window belongs to (<see cref="DesktopEntries.FindByAppId"/>), cached.</summary>
     public DesktopEntry? FindByAppId(string appId)
     {
-        if (!byAppId.TryGetValue(appId, out var entry))
-            byAppId[appId] = entry = DesktopEntries.FindByAppId(AllEntries.Where(e => !e.Hidden).ToList(), appId);
+        if (!_byAppId.TryGetValue(appId, out var entry))
+            _byAppId[appId] = entry = DesktopEntries.FindByAppId(AllEntries.Where(e => !e.Hidden).ToList(), appId);
         return entry;
     }
 
@@ -107,7 +107,7 @@ public sealed class AppCatalog : IDisposable
     /// <summary>Launches an application (or action), with files/URLs, and records it for ranking.</summary>
     public async Task LaunchAsync(DesktopEntry entry, DesktopAction? action = null, IReadOnlyList<string>? filesOrUrls = null, Surface? from = null)
     {
-        await AppLauncher.LaunchAsync(app, entry, action, filesOrUrls, from, options.Terminal);
+        await AppLauncher.LaunchAsync(_app, entry, action, filesOrUrls, from, _options.Terminal);
         Usage.RecordLaunch(entry.Id);
     }
 
@@ -120,38 +120,38 @@ public sealed class AppCatalog : IDisposable
         // A relative path becomes absolute, so a file named "-rf" reaches the app as a file, not an option.
         if (MimeDatabase.TryScheme(target) is null && !Path.IsPathRooted(target))
             target = Path.GetFullPath(target);
-        mimeDatabase ??= MimeDatabase.Load(DataDirs);
-        var handler = DefaultApps.For(mimeDatabase.Guess(target), AllEntries, mimeDatabase, DefaultApps.ListFiles(options.CurrentDesktops, DataDirs));
+        _mimeDatabase ??= MimeDatabase.Load(DataDirs);
+        var handler = DefaultApps.For(_mimeDatabase.Guess(target), AllEntries, _mimeDatabase, DefaultApps.ListFiles(_options.CurrentDesktops, DataDirs));
         if (handler is null)
         {
-            await app.LaunchAsync("xdg-open", [target], new LaunchOptions { Surface = from });
+            await _app.LaunchAsync("xdg-open", [target], new LaunchOptions { Surface = from });
             return null;
         }
         // %f wants a path; %u takes the URL as is.
         string argument = target.StartsWith("file://", StringComparison.OrdinalIgnoreCase) && handler.Exec?.Contains("%u", StringComparison.OrdinalIgnoreCase) != true
             ? MimeDatabase.FilePath(target) ?? throw new ArgumentException($"Not a valid file URL: {target}", nameof(target))
             : target;
-        await AppLauncher.LaunchAsync(app, handler, null, [argument], from, options.Terminal);
+        await AppLauncher.LaunchAsync(_app, handler, null, [argument], from, _options.Terminal);
         return handler;
     }
 
-    void Reload()
+    private void Reload()
     {
         var dirs = DataDirs;
-        AllEntries = DesktopEntries.LoadAll(options.Locale, dirs);
-        var desktops = options.CurrentDesktops;
+        AllEntries = DesktopEntries.LoadAll(_options.Locale, dirs);
+        var desktops = _options.CurrentDesktops;
         Apps = AllEntries.Where(e => e.IsVisible(desktops) && (e.TryExec is null || Terminal.FindOnPath(e.TryExec) is not null)).ToList();
-        byAppId.Clear();
-        mimeDatabase = null;
-        if (options.Watch)
+        _byAppId.Clear();
+        _mimeDatabase = null;
+        if (_options.Watch)
             Rewatch(dirs);
     }
 
-    void Rewatch(IReadOnlyList<string> dirs)
+    private void Rewatch(IReadOnlyList<string> dirs)
     {
-        foreach (var watcher in watchers)
+        foreach (var watcher in _watchers)
             watcher.Dispose();
-        watchers.Clear();
+        _watchers.Clear();
         foreach (var dir in dirs)
         {
             string applications = Path.Combine(dir, "applications");
@@ -173,7 +173,7 @@ public sealed class AppCatalog : IDisposable
                 watcher.Changed += OnChanged;
                 watcher.Renamed += OnChanged;
                 watcher.EnableRaisingEvents = true;
-                watchers.Add(watcher);
+                _watchers.Add(watcher);
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
             {
@@ -183,15 +183,15 @@ public sealed class AppCatalog : IDisposable
     }
 
     /// <summary>Watcher events come from a worker thread and in bursts (package installs): reload once, 300 ms after the last.</summary>
-    void OnChanged(object sender, FileSystemEventArgs e) => app.Post(() =>
+    private void OnChanged(object sender, FileSystemEventArgs e) => _app.Post(() =>
     {
-        if (disposed)
+        if (_disposed)
             return;
-        reloadTimer?.Dispose();
-        reloadTimer = app.SetTimer(TimeSpan.FromMilliseconds(300), null, () =>
+        _reloadTimer?.Dispose();
+        _reloadTimer = _app.SetTimer(TimeSpan.FromMilliseconds(300), null, () =>
         {
-            reloadTimer = null;
-            if (disposed)
+            _reloadTimer = null;
+            if (_disposed)
                 return;
             Reload();
             Changed?.Invoke();
@@ -200,10 +200,10 @@ public sealed class AppCatalog : IDisposable
 
     public void Dispose()
     {
-        disposed = true;
-        reloadTimer?.Dispose();
-        foreach (var watcher in watchers)
+        _disposed = true;
+        _reloadTimer?.Dispose();
+        foreach (var watcher in _watchers)
             watcher.Dispose();
-        watchers.Clear();
+        _watchers.Clear();
     }
 }

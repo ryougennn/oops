@@ -9,14 +9,14 @@ public enum PlaybackStatus { Stopped, Playing, Paused }
 /// <summary>One MPRIS media player (a bus name <c>org.mpris.MediaPlayer2.*</c>). Properties refresh when it signals a change.</summary>
 public sealed class MediaPlayer
 {
-    const string Path = "/org/mpris/MediaPlayer2";
-    const string PlayerInterface = "org.mpris.MediaPlayer2.Player";
+    private const string Path = "/org/mpris/MediaPlayer2";
+    private const string PlayerInterface = "org.mpris.MediaPlayer2.Player";
 
-    readonly DBusConnection connection;
+    private readonly DBusConnection _connection;
 
     internal MediaPlayer(DBusConnection connection, string busName)
     {
-        this.connection = connection;
+        _connection = connection;
         BusName = busName;
     }
 
@@ -53,11 +53,11 @@ public sealed class MediaPlayer
     public Task PreviousAsync() => Call("Previous");
     public Task StopAsync() => Call("Stop");
 
-    async Task Call(string method)
+    private async Task Call(string method)
     {
         try
         {
-            await connection.CallAsync(BusName, Path, PlayerInterface, method);
+            await _connection.CallAsync(BusName, Path, PlayerInterface, method);
         }
         catch (DBusErrorReplyException)
         {
@@ -70,8 +70,8 @@ public sealed class MediaPlayer
         Dictionary<string, VariantValue> player, root;
         try
         {
-            player = await connection.GetAllPropertiesAsync(BusName, Path, PlayerInterface);
-            root = await connection.GetAllPropertiesAsync(BusName, Path, "org.mpris.MediaPlayer2");
+            player = await _connection.GetAllPropertiesAsync(BusName, Path, PlayerInterface);
+            root = await _connection.GetAllPropertiesAsync(BusName, Path, "org.mpris.MediaPlayer2");
         }
         catch (DBusErrorReplyException)
         {
@@ -85,7 +85,7 @@ public sealed class MediaPlayer
         return true;
     }
 
-    void Apply(Dictionary<string, VariantValue> player, Dictionary<string, VariantValue> root)
+    private void Apply(Dictionary<string, VariantValue> player, Dictionary<string, VariantValue> root)
     {
         Identity = Str(root, "Identity") is { Length: > 0 } identity ? identity : BusName[(BusName.LastIndexOf('.') + 1)..];
         DesktopEntry = Str(root, "DesktopEntry");
@@ -142,16 +142,16 @@ public sealed class MediaService : IDisposable
 {
     public const string BusNamePrefix = "org.mpris.MediaPlayer2.";
 
-    readonly OopsApp app;
-    readonly DBusConnection connection;
-    readonly ObservableCollection<MediaPlayer> players = new();
-    readonly List<IDisposable> watches = new();
+    private readonly OopsApp _app;
+    private readonly DBusConnection _connection;
+    private readonly ObservableCollection<MediaPlayer> _players = new();
+    private readonly List<IDisposable> _watches = new();
 
-    MediaService(OopsApp app, DBusConnection connection)
+    private MediaService(OopsApp app, DBusConnection connection)
     {
-        this.app = app;
-        this.connection = connection;
-        Players = new ReadOnlyObservableCollection<MediaPlayer>(players);
+        _app = app;
+        _connection = connection;
+        Players = new ReadOnlyObservableCollection<MediaPlayer>(_players);
     }
 
     public static async Task<MediaService> StartAsync(OopsApp app, DBusConnection connection)
@@ -165,14 +165,14 @@ public sealed class MediaService : IDisposable
 
     /// <summary>The player to show: one that is playing, else the one that changed last.</summary>
     public MediaPlayer? Active =>
-        players.Where(p => p.Status == PlaybackStatus.Playing).MaxBy(p => p.LastChanged) ?? players.MaxBy(p => p.LastChanged);
+        _players.Where(p => p.Status == PlaybackStatus.Playing).MaxBy(p => p.LastChanged) ?? _players.MaxBy(p => p.LastChanged);
 
     /// <summary>A player appeared, quit, or changed (on the UI thread).</summary>
     public event Action? Changed;
 
-    async Task InitializeAsync()
+    private async Task InitializeAsync()
     {
-        watches.Add(await connection.WatchSignalAsync(app, "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "NameOwnerChanged",
+        _watches.Add(await _connection.WatchSignalAsync(_app, "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "NameOwnerChanged",
             (message, _) =>
             {
                 var reader = message.GetBodyReader();
@@ -184,28 +184,28 @@ public sealed class MediaService : IDisposable
                     return;
                 if (change.New.Length == 0)
                     Remove(change.Name);
-                else if (players.FirstOrDefault(p => p.BusName == change.Name) is { } known)
+                else if (_players.FirstOrDefault(p => p.BusName == change.Name) is { } known)
                     known.Owner = change.New;
                 else
                     _ = AddAsync(change.Name);
             }));
-        watches.Add(await connection.WatchSignalAsync(app, null, "/org/mpris/MediaPlayer2", "org.freedesktop.DBus.Properties", "PropertiesChanged",
+        _watches.Add(await _connection.WatchSignalAsync(_app, null, "/org/mpris/MediaPlayer2", "org.freedesktop.DBus.Properties", "PropertiesChanged",
             (message, _) => message.SenderAsString ?? "",
             sender => _ = RefreshFromAsync(sender)));
-        var names = await connection.CallAsync("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "ListNames",
+        var names = await _connection.CallAsync("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "ListNames",
             (message, _) => message.GetBodyReader().ReadArrayOfString());
         await Task.WhenAll(names.Where(n => n.StartsWith(BusNamePrefix, StringComparison.Ordinal)).Select(AddAsync));
     }
 
-    async Task AddAsync(string busName)
+    private async Task AddAsync(string busName)
     {
-        if (players.Any(p => p.BusName == busName))
+        if (_players.Any(p => p.BusName == busName))
             return;
-        var player = new MediaPlayer(connection, busName);
+        var player = new MediaPlayer(_connection, busName);
         player.Changed += () => Changed?.Invoke();
         try
         {
-            player.Owner = await connection.CallAsync("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "GetNameOwner",
+            player.Owner = await _connection.CallAsync("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "GetNameOwner",
                 (message, _) => message.GetBodyReader().ReadString(), (ref MessageWriter w) => w.WriteString(busName), "s");
         }
         catch (DBusErrorReplyException)
@@ -214,44 +214,44 @@ public sealed class MediaService : IDisposable
         }
         try
         {
-            if (!await player.RefreshAsync(app).WaitAsync(TimeSpan.FromSeconds(3)))
+            if (!await player.RefreshAsync(_app).WaitAsync(TimeSpan.FromSeconds(3)))
                 return;
         }
         catch (Exception)
         {
             return; // a player that hangs or answers nonsense is left out; the others still show
         }
-        await app.InvokeAsync(() =>
+        await _app.InvokeAsync(() =>
         {
-            if (players.All(p => p.BusName != busName))
+            if (_players.All(p => p.BusName != busName))
             {
-                players.Add(player);
+                _players.Add(player);
                 Changed?.Invoke();
             }
             return Task.CompletedTask;
         });
     }
 
-    void Remove(string busName)
+    private void Remove(string busName)
     {
-        if (players.FirstOrDefault(p => p.BusName == busName) is { } player)
+        if (_players.FirstOrDefault(p => p.BusName == busName) is { } player)
         {
-            players.Remove(player);
+            _players.Remove(player);
             Changed?.Invoke();
         }
     }
 
     /// <summary>PropertiesChanged comes from the player's unique name (":1.42"), not its well-known one.</summary>
-    async Task RefreshFromAsync(string sender)
+    private async Task RefreshFromAsync(string sender)
     {
-        foreach (var player in players.Where(p => p.Owner == sender).ToList())
-            await player.RefreshAsync(app);
+        foreach (var player in _players.Where(p => p.Owner == sender).ToList())
+            await player.RefreshAsync(_app);
     }
 
     public void Dispose()
     {
-        foreach (var watch in watches)
+        foreach (var watch in _watches)
             watch.Dispose();
-        watches.Clear();
+        _watches.Clear();
     }
 }

@@ -8,7 +8,7 @@ namespace oopshell.IntegrationTests;
 public class MediaTests(SwayFixture sway)
 {
     /// <summary>A minimal MPRIS player whose state the test edits.</summary>
-    sealed class FakePlayer(OopsApp app) : ExportedObject(app, "/org/mpris/MediaPlayer2")
+    private sealed class FakePlayer(OopsApp app) : ExportedObject(app, "/org/mpris/MediaPlayer2")
     {
         public string Status = "Playing";
         public string Title = "Blue Hour";
@@ -71,7 +71,7 @@ public class MediaTests(SwayFixture sway)
         }
     }
 
-    static void EmitChanged(DBusConnection bus) =>
+    private static void EmitChanged(DBusConnection bus) =>
         bus.EmitSignal("/org/mpris/MediaPlayer2", "org.freedesktop.DBus.Properties", "PropertiesChanged", "sa{sv}as", (ref MessageWriter w) =>
         {
             w.WriteString("org.mpris.MediaPlayer2.Player");

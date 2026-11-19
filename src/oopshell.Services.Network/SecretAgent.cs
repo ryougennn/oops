@@ -10,13 +10,13 @@ namespace oopshell.Services.Network;
 /// </summary>
 public sealed class NetworkSecretRequest
 {
-    readonly MethodContext context;
-    readonly string key;
+    private readonly MethodContext _context;
+    private readonly string _key;
 
     internal NetworkSecretRequest(MethodContext context, string connectionName, string? ssid, string settingName, string key, bool isRetry)
     {
-        this.context = context;
-        this.key = key;
+        _context = context;
+        _key = key;
         ConnectionName = connectionName;
         Ssid = ssid;
         SettingName = settingName;
@@ -42,16 +42,16 @@ public sealed class NetworkSecretRequest
         if (IsFinished)
             return;
         IsFinished = true;
-        using (var w = context.CreateReplyWriter("a{sa{sv}}"))
+        using (var w = _context.CreateReplyWriter("a{sa{sv}}"))
         {
             var all = w.WriteDictionaryStart();
             w.WriteDictionaryEntryStart();
             w.WriteString(SettingName);
-            w.WriteDictionary(new Dictionary<string, VariantValue> { [key] = secret });
+            w.WriteDictionary(new Dictionary<string, VariantValue> { [_key] = secret });
             w.WriteDictionaryEnd(all);
-            context.Reply(w.CreateMessage());
+            _context.Reply(w.CreateMessage());
         }
-        context.Dispose();
+        _context.Dispose();
     }
 
     /// <summary>The user gave up; the connection attempt fails.</summary>
@@ -60,8 +60,8 @@ public sealed class NetworkSecretRequest
         if (IsFinished)
             return;
         IsFinished = true;
-        context.ReplyError("org.freedesktop.NetworkManager.SecretAgent.UserCanceled", "Cancelled by the user.");
-        context.Dispose();
+        _context.ReplyError("org.freedesktop.NetworkManager.SecretAgent.UserCanceled", "Cancelled by the user.");
+        _context.Dispose();
     }
 
     internal void CancelledByNetworkManager()
@@ -69,8 +69,8 @@ public sealed class NetworkSecretRequest
         if (IsFinished)
             return;
         IsFinished = true;
-        context.ReplyError("org.freedesktop.NetworkManager.SecretAgent.AgentCanceled", "Cancelled.");
-        context.Dispose();
+        _context.ReplyError("org.freedesktop.NetworkManager.SecretAgent.AgentCanceled", "Cancelled.");
+        _context.Dispose();
         Cancelled?.Invoke();
     }
 
@@ -78,10 +78,10 @@ public sealed class NetworkSecretRequest
 }
 
 /// <summary>The secret agent object NetworkManager calls (org.freedesktop.NetworkManager.SecretAgent).</summary>
-sealed class SecretAgent(OopsApp app, NetworkService service, string? networkManager) : ExportedObject(app, "/org/freedesktop/NetworkManager/SecretAgent")
+internal sealed class SecretAgent(OopsApp app, NetworkService service, string? networkManager) : ExportedObject(app, "/org/freedesktop/NetworkManager/SecretAgent")
 {
-    const string Interface = "org.freedesktop.NetworkManager.SecretAgent";
-    readonly List<NetworkSecretRequest> pending = new();
+    private const string Interface = "org.freedesktop.NetworkManager.SecretAgent";
+    private readonly List<NetworkSecretRequest> _pending = new();
 
     protected override void HandleMethod(MethodContext context)
     {
@@ -100,9 +100,9 @@ sealed class SecretAgent(OopsApp app, NetworkService service, string? networkMan
                 break;
             case "CancelGetSecrets":
                 string cancelPath = reader.ReadObjectPathAsString();
-                foreach (var request in pending.Where(r => r.ConnectionPath == cancelPath).ToList())
+                foreach (var request in _pending.Where(r => r.ConnectionPath == cancelPath).ToList())
                 {
-                    pending.Remove(request);
+                    _pending.Remove(request);
                     request.CancelledByNetworkManager();
                 }
                 ReplyEmpty(context);
@@ -113,7 +113,7 @@ sealed class SecretAgent(OopsApp app, NetworkService service, string? networkMan
         }
     }
 
-    void GetSecrets(MethodContext context, Dictionary<string, Dictionary<string, VariantValue>> settings, string path, string settingName, uint flags)
+    private void GetSecrets(MethodContext context, Dictionary<string, Dictionary<string, VariantValue>> settings, string path, string settingName, uint flags)
     {
         const uint AllowInteraction = 0x1, RequestNew = 0x2;
         // Wi-Fi passwords only: other secrets (VPN, enterprise 802.1X) are left to dedicated agents.
@@ -128,12 +128,12 @@ sealed class SecretAgent(OopsApp app, NetworkService service, string? networkMan
         string? ssid = settings.TryGetValue("802-11-wireless", out var w) && w.TryGetValue("ssid", out var s) && s.AsBytes() is { } ssidBytes ? Encoding.UTF8.GetString(ssidBytes) : null;
         Defer(context);
         var request = new NetworkSecretRequest(context, name, ssid, settingName, key, (flags & RequestNew) != 0) { ConnectionPath = path };
-        pending.Add(request);
-        request.Cancelled += () => pending.Remove(request);
+        _pending.Add(request);
+        request.Cancelled += () => _pending.Remove(request);
         service.RaiseSecretsRequested(request);
     }
 
-    static Dictionary<string, Dictionary<string, VariantValue>> ReadSettings(ref Reader reader)
+    private static Dictionary<string, Dictionary<string, VariantValue>> ReadSettings(ref Reader reader)
     {
         var result = new Dictionary<string, Dictionary<string, VariantValue>>();
         var end = reader.ReadDictionaryStart();
@@ -144,8 +144,8 @@ sealed class SecretAgent(OopsApp app, NetworkService service, string? networkMan
 
     public void CancelAll()
     {
-        foreach (var request in pending.ToList())
+        foreach (var request in _pending.ToList())
             request.Cancel();
-        pending.Clear();
+        _pending.Clear();
     }
 }

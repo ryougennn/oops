@@ -47,12 +47,12 @@ public readonly record struct Margins(int Top, int Right, int Bottom, int Left)
 /// </summary>
 public sealed class LayerSurface : Surface
 {
-    Layer layer;
-    Anchor anchor;
-    Margins margins;
-    Size size;
-    int exclusiveZone;
-    KeyboardInteractivity keyboardInteractivity;
+    private Layer _layer;
+    private Anchor _anchor;
+    private Margins _margins;
+    private Size _size;
+    private int _exclusiveZone;
+    private KeyboardInteractivity _keyboardInteractivity;
 
     /// <param name="app">The app.</param>
     /// <param name="output">Output to show on, or null to let the compositor choose.</param>
@@ -62,13 +62,13 @@ public sealed class LayerSurface : Surface
     {
         Output = output;
         Namespace = @namespace;
-        this.layer = layer;
+        _layer = layer;
         Role = app.Get<ZwlrLayerShellV1>().GetLayerSurface(Proxy, output?.Proxy, (ZwlrLayerShellV1Layer)layer, @namespace);
         Role.Configure += e =>
         {
             Role.AckConfigure(e.Serial);
             // 0 means "you choose", which only happens for dimensions we gave ourselves.
-            ApplyConfigure(new Size(e.Width > 0 ? (int)e.Width : size.Width, e.Height > 0 ? (int)e.Height : size.Height));
+            ApplyConfigure(new Size(e.Width > 0 ? (int)e.Width : _size.Width, e.Height > 0 ? (int)e.Height : _size.Height));
         };
         Role.Closed += RaiseClosed;
     }
@@ -86,42 +86,42 @@ public sealed class LayerSurface : Surface
     /// <summary>Changing the layer needs layer-shell v2.</summary>
     public Layer Layer
     {
-        get => layer;
-        set { layer = value; Role.SetLayer((ZwlrLayerShellV1Layer)value); Changed(); }
+        get => _layer;
+        set { _layer = value; Role.SetLayer((ZwlrLayerShellV1Layer)value); Changed(); }
     }
 
     public Anchor Anchor
     {
-        get => anchor;
-        set { anchor = value; Role.SetAnchor((ZwlrLayerSurfaceV1Anchor)value); Changed(); }
+        get => _anchor;
+        set { _anchor = value; Role.SetAnchor((ZwlrLayerSurfaceV1Anchor)value); Changed(); }
     }
 
     public Margins Margins
     {
-        get => margins;
-        set { margins = value; Role.SetMargin(value.Top, value.Right, value.Bottom, value.Left); Changed(); }
+        get => _margins;
+        set { _margins = value; Role.SetMargin(value.Top, value.Right, value.Bottom, value.Left); Changed(); }
     }
 
     /// <summary>Requested logical size. Use 0 for a dimension anchored on both sides to stretch it.</summary>
     public Size Size
     {
-        get => size;
-        set { size = value; Role.SetSize((uint)value.Width, (uint)value.Height); Changed(); }
+        get => _size;
+        set { _size = value; Role.SetSize((uint)value.Width, (uint)value.Height); Changed(); }
     }
 
     /// <summary>Space reserved at the anchored edge (positive), -1 to ignore other zones, 0 for none.</summary>
     public int ExclusiveZone
     {
-        get => exclusiveZone;
-        set { exclusiveZone = value; Role.SetExclusiveZone(value); Changed(); }
+        get => _exclusiveZone;
+        set { _exclusiveZone = value; Role.SetExclusiveZone(value); Changed(); }
     }
 
     public KeyboardInteractivity KeyboardInteractivity
     {
-        get => keyboardInteractivity;
+        get => _keyboardInteractivity;
         set
         {
-            keyboardInteractivity = value;
+            _keyboardInteractivity = value;
             Role.SetKeyboardInteractivity((ZwlrLayerSurfaceV1KeyboardInteractivity)value);
             Changed();
         }
@@ -130,7 +130,7 @@ public sealed class LayerSurface : Surface
     // Changes take effect on commit. Outside a render they are committed at once, without a new buffer:
     // waiting for the next frame (which may wait on a frame callback) could let later requests overtake them,
     // e.g. a popup's grab reaching the compositor before the keyboard interactivity it depends on.
-    void Changed()
+    private void Changed()
     {
         if (!IsConfigured || IsRendering)
             return; // before the first configure, or the frame being drawn commits it

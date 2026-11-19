@@ -60,24 +60,24 @@ public sealed class BluetoothDevice
 public sealed class BluetoothService : IDisposable
 {
     public const string BusName = "org.bluez";
-    const string AdapterInterface = "org.bluez.Adapter1";
-    const string DeviceInterface = "org.bluez.Device1";
-    const string BatteryInterface = "org.bluez.Battery1";
+    private const string AdapterInterface = "org.bluez.Adapter1";
+    private const string DeviceInterface = "org.bluez.Device1";
+    private const string BatteryInterface = "org.bluez.Battery1";
 
-    readonly OopsApp app;
-    readonly DBusConnection connection;
-    readonly ObservableCollection<BluetoothAdapter> adapters = new();
-    readonly ObservableCollection<BluetoothDevice> devices = new();
-    readonly List<IDisposable> watches = new();
-    IDisposable? refreshTimer;
-    bool refreshing, refreshAgain, disposed;
+    private readonly OopsApp _app;
+    private readonly DBusConnection _connection;
+    private readonly ObservableCollection<BluetoothAdapter> _adapters = new();
+    private readonly ObservableCollection<BluetoothDevice> _devices = new();
+    private readonly List<IDisposable> _watches = new();
+    private IDisposable? _refreshTimer;
+    private bool _refreshing, _refreshAgain, _disposed;
 
-    BluetoothService(OopsApp app, DBusConnection connection)
+    private BluetoothService(OopsApp app, DBusConnection connection)
     {
-        this.app = app;
-        this.connection = connection;
-        Adapters = new ReadOnlyObservableCollection<BluetoothAdapter>(adapters);
-        Devices = new ReadOnlyObservableCollection<BluetoothDevice>(devices);
+        _app = app;
+        _connection = connection;
+        Adapters = new ReadOnlyObservableCollection<BluetoothAdapter>(_adapters);
+        Devices = new ReadOnlyObservableCollection<BluetoothDevice>(_devices);
     }
 
     /// <summary>Reads BlueZ on <paramref name="connection"/> (the system bus). Throws if bluetoothd is not running.</summary>
@@ -90,7 +90,7 @@ public sealed class BluetoothService : IDisposable
             ("org.freedesktop.DBus.ObjectManager", "InterfacesAdded"), ("org.freedesktop.DBus.ObjectManager", "InterfacesRemoved"),
         })
         {
-            service.watches.Add(await connection.WatchSignalAsync(app, BusName, null, iface, member, (_, _) => true, _ => service.ScheduleRefresh()));
+            service._watches.Add(await connection.WatchSignalAsync(app, BusName, null, iface, member, (_, _) => true, _ => service.ScheduleRefresh()));
         }
         await service.RefreshAsync();
         return service;
@@ -99,7 +99,7 @@ public sealed class BluetoothService : IDisposable
     public ReadOnlyObservableCollection<BluetoothAdapter> Adapters { get; }
 
     /// <summary>The default (first) adapter, if any.</summary>
-    public BluetoothAdapter? Adapter => adapters.FirstOrDefault();
+    public BluetoothAdapter? Adapter => _adapters.FirstOrDefault();
 
     /// <summary>Known devices: connected first, then paired, then by name.</summary>
     public ReadOnlyObservableCollection<BluetoothDevice> Devices { get; }
@@ -107,7 +107,7 @@ public sealed class BluetoothService : IDisposable
     /// <summary>Something changed (UI thread).</summary>
     public event Action? Changed;
 
-    PairingAgent? agent;
+    private PairingAgent? _agent;
 
     /// <summary>
     /// BlueZ asks the user something while pairing (a PIN, a passkey to compare, permission) (UI thread). Only
@@ -125,64 +125,64 @@ public sealed class BluetoothService : IDisposable
     /// </summary>
     public async Task RegisterPairingAgentAsync()
     {
-        if (agent is not null)
+        if (_agent is not null)
             return;
-        var created = new PairingAgent(app, this, await connection.GetNameOwnerAsync(BusName));
-        connection.AddMethodHandler(created);
+        var created = new PairingAgent(_app, this, await _connection.GetNameOwnerAsync(BusName));
+        _connection.AddMethodHandler(created);
         try
         {
-            await connection.CallAsync(BusName, "/org/bluez", "org.bluez.AgentManager1", "RegisterAgent", (ref MessageWriter w) =>
+            await _connection.CallAsync(BusName, "/org/bluez", "org.bluez.AgentManager1", "RegisterAgent", (ref MessageWriter w) =>
             {
                 w.WriteObjectPath(created.Path);
                 w.WriteString("KeyboardDisplay");
             }, "os");
-            await connection.CallAsync(BusName, "/org/bluez", "org.bluez.AgentManager1", "RequestDefaultAgent",
+            await _connection.CallAsync(BusName, "/org/bluez", "org.bluez.AgentManager1", "RequestDefaultAgent",
                 (ref MessageWriter w) => w.WriteObjectPath(created.Path), "o");
         }
         catch
         {
-            connection.RemoveMethodHandler(created.Path);
+            _connection.RemoveMethodHandler(created.Path);
             throw;
         }
-        agent = created;
+        _agent = created;
     }
 
-    void ScheduleRefresh()
+    private void ScheduleRefresh()
     {
-        if (disposed)
+        if (_disposed)
             return;
-        refreshTimer?.Dispose();
-        refreshTimer = app.SetTimer(TimeSpan.FromMilliseconds(100), null, () =>
+        _refreshTimer?.Dispose();
+        _refreshTimer = _app.SetTimer(TimeSpan.FromMilliseconds(100), null, () =>
         {
-            refreshTimer = null;
+            _refreshTimer = null;
             _ = RefreshAsync();
         });
     }
 
-    async Task RefreshAsync()
+    private async Task RefreshAsync()
     {
-        if (refreshing)
+        if (_refreshing)
         {
-            refreshAgain = true;
+            _refreshAgain = true;
             return;
         }
-        refreshing = true;
+        _refreshing = true;
         try
         {
             do
             {
-                refreshAgain = false;
-                Apply(await connection.CallAsync(BusName, "/", "org.freedesktop.DBus.ObjectManager", "GetManagedObjects", (m, _) => ReadObjects(m)));
+                _refreshAgain = false;
+                Apply(await _connection.CallAsync(BusName, "/", "org.freedesktop.DBus.ObjectManager", "GetManagedObjects", (m, _) => ReadObjects(m)));
             }
-            while (refreshAgain && !disposed);
+            while (_refreshAgain && !_disposed);
         }
         finally
         {
-            refreshing = false;
+            _refreshing = false;
         }
     }
 
-    static Dictionary<string, Dictionary<string, Dictionary<string, VariantValue>>> ReadObjects(Message message)
+    private static Dictionary<string, Dictionary<string, Dictionary<string, VariantValue>>> ReadObjects(Message message)
     {
         var reader = message.GetBodyReader();
         var objects = new Dictionary<string, Dictionary<string, Dictionary<string, VariantValue>>>();
@@ -199,7 +199,7 @@ public sealed class BluetoothService : IDisposable
         return objects;
     }
 
-    void Apply(Dictionary<string, Dictionary<string, Dictionary<string, VariantValue>>> objects)
+    private void Apply(Dictionary<string, Dictionary<string, Dictionary<string, VariantValue>>> objects)
     {
         var seenAdapters = new List<BluetoothAdapter>();
         var seenDevices = new List<BluetoothDevice>();
@@ -207,7 +207,7 @@ public sealed class BluetoothService : IDisposable
         {
             if (interfaces.TryGetValue(AdapterInterface, out var a))
             {
-                var adapter = adapters.FirstOrDefault(x => x.Path == path) ?? new BluetoothAdapter(path);
+                var adapter = _adapters.FirstOrDefault(x => x.Path == path) ?? new BluetoothAdapter(path);
                 adapter.Name = Str(a, "Alias") ?? Str(a, "Name") ?? "";
                 adapter.Address = Str(a, "Address") ?? "";
                 adapter.Powered = Bool(a, "Powered");
@@ -217,7 +217,7 @@ public sealed class BluetoothService : IDisposable
             }
             if (interfaces.TryGetValue(DeviceInterface, out var d))
             {
-                var device = devices.FirstOrDefault(x => x.Path == path) ?? new BluetoothDevice(path);
+                var device = _devices.FirstOrDefault(x => x.Path == path) ?? new BluetoothDevice(path);
                 device.Address = Str(d, "Address") ?? "";
                 device.Name = Str(d, "Alias") ?? Str(d, "Name") ?? device.Address;
                 device.Icon = Str(d, "Icon");
@@ -230,14 +230,14 @@ public sealed class BluetoothService : IDisposable
                 seenDevices.Add(device);
             }
         }
-        Sync(adapters, seenAdapters);
-        Sync(devices, seenDevices.OrderByDescending(d => d.Connected).ThenByDescending(d => d.Paired)
+        Sync(_adapters, seenAdapters);
+        Sync(_devices, seenDevices.OrderByDescending(d => d.Connected).ThenByDescending(d => d.Paired)
             .ThenBy(d => d.Name, StringComparer.CurrentCultureIgnoreCase).ToList());
         Changed?.Invoke();
     }
 
     /// <summary>Makes <paramref name="target"/> equal <paramref name="wanted"/> with minimal moves (keeps UI selections stable).</summary>
-    static void Sync<T>(ObservableCollection<T> target, List<T> wanted) where T : class
+    private static void Sync<T>(ObservableCollection<T> target, List<T> wanted) where T : class
     {
         for (int i = target.Count - 1; i >= 0; i--)
         {
@@ -254,13 +254,13 @@ public sealed class BluetoothService : IDisposable
         }
     }
 
-    static string? Str(Dictionary<string, VariantValue> props, string name) =>
+    private static string? Str(Dictionary<string, VariantValue> props, string name) =>
         props.TryGetValue(name, out var v) && v.AsString() is { Length: > 0 } s ? s.Clip(256) : null;
 
-    static bool Bool(Dictionary<string, VariantValue> props, string name) => props.TryGetValue(name, out var v) && v.AsBool() == true;
+    private static bool Bool(Dictionary<string, VariantValue> props, string name) => props.TryGetValue(name, out var v) && v.AsBool() == true;
 
-    Task SetAsync(string path, string iface, string property, bool value) =>
-        connection.CallAsync(BusName, path, "org.freedesktop.DBus.Properties", "Set", (ref MessageWriter w) =>
+    private Task SetAsync(string path, string iface, string property, bool value) =>
+        _connection.CallAsync(BusName, path, "org.freedesktop.DBus.Properties", "Set", (ref MessageWriter w) =>
         {
             w.WriteString(iface);
             w.WriteString(property);
@@ -271,19 +271,19 @@ public sealed class BluetoothService : IDisposable
     public Task SetPoweredAsync(BluetoothAdapter adapter, bool powered) => SetAsync(adapter.Path, AdapterInterface, "Powered", powered);
 
     /// <summary>Starts scanning; found devices appear in <see cref="Devices"/>. Stop when the user is done (it costs power).</summary>
-    public Task StartDiscoveryAsync(BluetoothAdapter adapter) => connection.CallAsync(BusName, adapter.Path, AdapterInterface, "StartDiscovery");
+    public Task StartDiscoveryAsync(BluetoothAdapter adapter) => _connection.CallAsync(BusName, adapter.Path, AdapterInterface, "StartDiscovery");
 
-    public Task StopDiscoveryAsync(BluetoothAdapter adapter) => connection.CallAsync(BusName, adapter.Path, AdapterInterface, "StopDiscovery");
+    public Task StopDiscoveryAsync(BluetoothAdapter adapter) => _connection.CallAsync(BusName, adapter.Path, AdapterInterface, "StopDiscovery");
 
     /// <summary>Connects (pairing first is the caller's job: see <see cref="PairAsync"/>).</summary>
-    public Task ConnectAsync(BluetoothDevice device) => connection.CallAsync(BusName, device.Path, DeviceInterface, "Connect");
+    public Task ConnectAsync(BluetoothDevice device) => _connection.CallAsync(BusName, device.Path, DeviceInterface, "Connect");
 
-    public Task DisconnectAsync(BluetoothDevice device) => connection.CallAsync(BusName, device.Path, DeviceInterface, "Disconnect");
+    public Task DisconnectAsync(BluetoothDevice device) => _connection.CallAsync(BusName, device.Path, DeviceInterface, "Disconnect");
 
     /// <summary>Pairs and trusts the device (so it may reconnect by itself later).</summary>
     public async Task PairAsync(BluetoothDevice device)
     {
-        await connection.CallAsync(BusName, device.Path, DeviceInterface, "Pair");
+        await _connection.CallAsync(BusName, device.Path, DeviceInterface, "Pair");
         await SetTrustedAsync(device, true);
     }
 
@@ -291,21 +291,21 @@ public sealed class BluetoothService : IDisposable
 
     /// <summary>Removes the device and its pairing.</summary>
     public Task ForgetAsync(BluetoothDevice device) =>
-        connection.CallAsync(BusName, device.AdapterPath, AdapterInterface, "RemoveDevice", (ref MessageWriter w) => w.WriteObjectPath(device.Path), "o");
+        _connection.CallAsync(BusName, device.AdapterPath, AdapterInterface, "RemoveDevice", (ref MessageWriter w) => w.WriteObjectPath(device.Path), "o");
 
     public void Dispose()
     {
-        disposed = true;
-        if (agent is not null)
+        _disposed = true;
+        if (_agent is not null)
         {
-            agent.CancelAll();
-            connection.RemoveMethodHandler(agent.Path);
-            _ = connection.CallAsync(BusName, "/org/bluez", "org.bluez.AgentManager1", "UnregisterAgent",
-                (ref MessageWriter w) => w.WriteObjectPath(agent.Path), "o").ContinueWith(t => _ = t.Exception, TaskScheduler.Default);
+            _agent.CancelAll();
+            _connection.RemoveMethodHandler(_agent.Path);
+            _ = _connection.CallAsync(BusName, "/org/bluez", "org.bluez.AgentManager1", "UnregisterAgent",
+                (ref MessageWriter w) => w.WriteObjectPath(_agent.Path), "o").ContinueWith(t => _ = t.Exception, TaskScheduler.Default);
         }
-        refreshTimer?.Dispose();
-        foreach (var watch in watches)
+        _refreshTimer?.Dispose();
+        foreach (var watch in _watches)
             watch.Dispose();
-        watches.Clear();
+        _watches.Clear();
     }
 }

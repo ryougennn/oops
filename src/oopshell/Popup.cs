@@ -48,16 +48,16 @@ public sealed record PopupOptions
 /// </summary>
 public sealed class Popup : Surface
 {
-    readonly Surface parent;
-    Seat? grabSeat;
-    uint grabSerial;
-    uint repositionToken;
-    Margins shadowMargins;
-    bool geometrySent;
+    private readonly Surface _parent;
+    private Seat? _grabSeat;
+    private uint _grabSerial;
+    private uint _repositionToken;
+    private Margins _shadowMargins;
+    private bool _geometrySent;
 
     public Popup(Surface parent, PopupOptions options) : base(parent.App)
     {
-        this.parent = parent;
+        _parent = parent;
         Options = options;
         var wmBase = App.WmBase;
         XdgSurface = wmBase.GetXdgSurface(Proxy);
@@ -99,7 +99,7 @@ public sealed class Popup : Surface
     /// <summary>The raw <c>xdg_popup</c> (escape hatch).</summary>
     public XdgPopup Role { get; }
 
-    public Surface Parent => parent;
+    public Surface Parent => _parent;
 
     public PopupOptions Options { get; private set; }
 
@@ -114,19 +114,19 @@ public sealed class Popup : Surface
     /// </summary>
     public Margins ShadowMargins
     {
-        get => shadowMargins;
+        get => _shadowMargins;
         set
         {
-            shadowMargins = value;
+            _shadowMargins = value;
             if (IsConfigured)
                 ApplyGeometry();
         }
     }
 
-    void ApplyGeometry()
+    private void ApplyGeometry()
     {
-        SendWindowGeometry(XdgSurface, shadowMargins, Geometry.Size, ref geometrySent);
-        ApplyConfigure(GrowBy(Geometry.Size, shadowMargins));
+        SendWindowGeometry(XdgSurface, _shadowMargins, Geometry.Size, ref _geometrySent);
+        ApplyConfigure(GrowBy(Geometry.Size, _shadowMargins));
     }
 
     /// <summary>The compositor dismissed the popup (outside click, parent closed…). Dispose it.</summary>
@@ -142,8 +142,8 @@ public sealed class Popup : Surface
     {
         if (IsConfigured)
             throw new InvalidOperationException("Grab must be called before the popup is shown.");
-        grabSeat = seat;
-        grabSerial = seat.LastSerial;
+        _grabSeat = seat;
+        _grabSerial = seat.LastSerial;
     }
 
     /// <summary>Moves or resizes the popup. Needs xdg_popup v3; otherwise recreate the popup instead.</summary>
@@ -153,20 +153,20 @@ public sealed class Popup : Surface
             throw new NotSupportedException("The compositor's xdg_popup does not support reposition; recreate the popup.");
         Options = options;
         using var positioner = options.Create(App.WmBase);
-        Role.Reposition(positioner, ++repositionToken);
+        Role.Reposition(positioner, ++_repositionToken);
     }
 
     private protected override void BeforeInitialCommit()
     {
-        if (grabSeat is not null)
-            Role.Grab(grabSeat.Proxy, grabSerial);
+        if (_grabSeat is not null)
+            Role.Grab(_grabSeat.Proxy, _grabSerial);
     }
 
-    private protected override int InitialScaleHint => (int)Math.Ceiling(parent.Scale);
+    private protected override int InitialScaleHint => (int)Math.Ceiling(_parent.Scale);
 
     private protected override void DestroyRole()
     {
-        parent.ChildPopups.Remove(this);
+        _parent.ChildPopups.Remove(this);
         Role.Dispose();
         XdgSurface.Dispose();
     }

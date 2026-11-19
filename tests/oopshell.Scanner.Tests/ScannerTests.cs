@@ -8,9 +8,9 @@ namespace oopshell.Scanner.Tests;
 
 public class ScannerTests
 {
-    static readonly string RepoRoot = FindRepoRoot();
+    private static readonly string s_repoRoot = FindRepoRoot();
 
-    static readonly string[] GoldenProtocols =
+    private static readonly string[] s_goldenProtocols =
     [
         "protocols/wayland/wayland.xml",
         "protocols/wayland-protocols/xdg-shell.xml",
@@ -24,11 +24,11 @@ public class ScannerTests
     [Fact]
     public void Output_matches_golden_files()
     {
-        var files = GoldenProtocols.Select(p => new ProtocolFile(p, File.ReadAllText(Path.Combine(RepoRoot, p)))).ToImmutableArray();
+        var files = s_goldenProtocols.Select(p => new ProtocolFile(p, File.ReadAllText(Path.Combine(s_repoRoot, p)))).ToImmutableArray();
         var result = WaylandScanner.Generate(files, "oopshell.Protocol", new Dictionary<string, string>());
 
         Assert.Empty(result.Diagnostics);
-        string goldenDir = Path.Combine(RepoRoot, "tests/oopshell.Scanner.Tests/Goldens");
+        string goldenDir = Path.Combine(s_repoRoot, "tests/oopshell.Scanner.Tests/Goldens");
         bool update = Environment.GetEnvironmentVariable("UPDATE_GOLDENS") == "1";
         foreach (var (hint, source) in result.Sources)
         {
@@ -43,7 +43,7 @@ public class ScannerTests
     [Fact]
     public void Output_is_deterministic()
     {
-        var files = GoldenProtocols.Select(p => new ProtocolFile(p, File.ReadAllText(Path.Combine(RepoRoot, p)))).ToImmutableArray();
+        var files = s_goldenProtocols.Select(p => new ProtocolFile(p, File.ReadAllText(Path.Combine(s_repoRoot, p)))).ToImmutableArray();
         var first = WaylandScanner.Generate(files, "X", new Dictionary<string, string>());
         var second = WaylandScanner.Generate(files.Reverse().ToImmutableArray(), "X", new Dictionary<string, string>());
         Assert.Equal(first.Sources, second.Sources);
@@ -130,7 +130,7 @@ public class ScannerTests
         Assert.Contains("global::oopshell.Protocol.WlOutputTransform transform", generated);
     }
 
-    static string FindRepoRoot([CallerFilePath] string path = "")
+    private static string FindRepoRoot([CallerFilePath] string path = "")
     {
         var dir = Path.GetDirectoryName(path);
         while (dir is not null && !File.Exists(Path.Combine(dir, "SPEC.md")))
@@ -138,19 +138,19 @@ public class ScannerTests
         return dir ?? throw new InvalidOperationException("Repository root not found.");
     }
 
-    sealed class InMemoryText(string path, string text) : AdditionalText
+    private sealed class InMemoryText(string path, string text) : AdditionalText
     {
         public override string Path => path;
         public override Microsoft.CodeAnalysis.Text.SourceText GetText(CancellationToken ct = default) => Microsoft.CodeAnalysis.Text.SourceText.From(text);
     }
 
-    sealed class TestOptions(string ns) : Microsoft.CodeAnalysis.Diagnostics.AnalyzerConfigOptionsProvider
+    private sealed class TestOptions(string ns) : Microsoft.CodeAnalysis.Diagnostics.AnalyzerConfigOptionsProvider
     {
         public override Microsoft.CodeAnalysis.Diagnostics.AnalyzerConfigOptions GlobalOptions { get; } = new Options(ns);
         public override Microsoft.CodeAnalysis.Diagnostics.AnalyzerConfigOptions GetOptions(SyntaxTree tree) => new Options(null);
         public override Microsoft.CodeAnalysis.Diagnostics.AnalyzerConfigOptions GetOptions(AdditionalText textFile) => new Options(null);
 
-        sealed class Options(string? ns) : Microsoft.CodeAnalysis.Diagnostics.AnalyzerConfigOptions
+        private sealed class Options(string? ns) : Microsoft.CodeAnalysis.Diagnostics.AnalyzerConfigOptions
         {
             public override bool TryGetValue(string key, out string value)
             {

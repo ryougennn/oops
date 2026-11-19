@@ -12,11 +12,11 @@ namespace oopshell.Services.Desktop;
 /// </summary>
 public static unsafe partial class SvgRenderer
 {
-    const string Rsvg = "librsvg-2.so.2", Cairo = "libcairo.so.2", GObject = "libgobject-2.0.so.0", GLib = "libglib-2.0.so.0";
-    const int CAIRO_FORMAT_ARGB32 = 0;
+    private const string Rsvg = "librsvg-2.so.2", Cairo = "libcairo.so.2", GObject = "libgobject-2.0.so.0", GLib = "libglib-2.0.so.0";
+    private const int CAIRO_FORMAT_ARGB32 = 0;
 
     [StructLayout(LayoutKind.Sequential)]
-    struct RsvgRectangle
+    private struct RsvgRectangle
     {
         public double X, Y, Width, Height;
     }
@@ -33,11 +33,11 @@ public static unsafe partial class SvgRenderer
     [LibraryImport(GObject)] private static partial void g_object_unref(nint obj);
     [LibraryImport(GLib)] private static partial void g_error_free(nint error);
 
-    static readonly Lazy<bool> Available = new(() =>
+    private static readonly Lazy<bool> s_available = new(() =>
         NativeLibrary.TryLoad(Rsvg, out _) && NativeLibrary.TryLoad(Cairo, out _) && NativeLibrary.TryLoad(GObject, out _) && NativeLibrary.TryLoad(GLib, out _));
 
     /// <summary>True if librsvg and cairo could be loaded.</summary>
-    public static bool IsAvailable => Available.Value;
+    public static bool IsAvailable => s_available.Value;
 
     /// <summary>
     /// Renders the SVG file scaled to fit <paramref name="width"/>×<paramref name="height"/> (aspect kept,

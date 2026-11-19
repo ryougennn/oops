@@ -153,14 +153,14 @@ public abstract class ExportedObject(OopsApp app, string path) : IPathMethodHand
                     context.ReplyIntrospectXml([System.Text.Encoding.UTF8.GetBytes(IntrospectionXml)]);
                 else
                     HandleMethod(context);
-                if (!context.ReplySent && !context.NoReplyExpected && !deferred.Remove(context))
+                if (!context.ReplySent && !context.NoReplyExpected && !_deferred.Remove(context))
                     ReplyError(context, "org.freedesktop.DBus.Error.UnknownMethod", $"No such method {context.Request.InterfaceAsString}.{context.Request.MemberAsString}.");
             }
             catch (Exception e)
             {
                 // Bad input from a peer (wrong types, malformed body) or a bug in a handler: the caller gets an
                 // error, the shell carries on, and a deferred call is not left dangling.
-                bool wasDeferred = deferred.Remove(context);
+                bool wasDeferred = _deferred.Remove(context);
                 if (!context.ReplySent && !context.NoReplyExpected)
                     ReplyError(context, "org.freedesktop.DBus.Error.Failed", e is InvalidOperationException or IndexOutOfRangeException or FormatException
                         ? "Invalid arguments." : e.Message);
@@ -184,7 +184,7 @@ public abstract class ExportedObject(OopsApp app, string path) : IPathMethodHand
         return true;
     }
 
-    readonly HashSet<MethodContext> deferred = new();
+    private readonly HashSet<MethodContext> _deferred = new();
 
     /// <summary>
     /// Keeps <paramref name="context"/> open past <see cref="HandleMethod"/>: reply later with
@@ -193,7 +193,7 @@ public abstract class ExportedObject(OopsApp app, string path) : IPathMethodHand
     protected void Defer(MethodContext context)
     {
         context.DisposesAsynchronously = true;
-        deferred.Add(context);
+        _deferred.Add(context);
     }
 
     /// <summary>Answers a <see cref="Defer"/>red call with an empty reply and releases it.</summary>

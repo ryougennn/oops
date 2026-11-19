@@ -9,10 +9,10 @@ namespace oopshell.Services.Polkit;
 public sealed record PolkitUser(string Name, uint Uid, string RealName);
 
 /// <summary>Users and groups from the system's account database (NSS: files, LDAP, SSSD…).</summary>
-static unsafe partial class Accounts
+internal static unsafe partial class Accounts
 {
     [StructLayout(LayoutKind.Sequential)]
-    struct Passwd
+    private struct Passwd
     {
         public byte* Name, Password;
         public uint Uid, Gid;
@@ -20,7 +20,7 @@ static unsafe partial class Accounts
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    struct Group
+    private struct Group
     {
         public byte* Name, Password;
         public uint Gid;
@@ -32,9 +32,9 @@ static unsafe partial class Accounts
     [LibraryImport("libc", StringMarshalling = StringMarshalling.Utf8)] private static partial Passwd* getpwnam(string name);
     [LibraryImport("libc")] private static partial Group* getgrgid(uint gid);
 
-    static string Str(byte* p) => Marshal.PtrToStringUTF8((nint)p) ?? "";
+    private static string Str(byte* p) => Marshal.PtrToStringUTF8((nint)p) ?? "";
 
-    static PolkitUser? From(Passwd* pw)
+    private static PolkitUser? From(Passwd* pw)
     {
         if (pw == null)
             return null;

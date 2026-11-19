@@ -50,10 +50,10 @@ public sealed record GreetdLoginResult(GreetdLoginStatus Status, string? Descrip
 /// </summary>
 public sealed class GreetdClient : IDisposable
 {
-    readonly Socket socket;
-    bool sessionOpen;
+    private readonly Socket _socket;
+    private bool _sessionOpen;
 
-    GreetdClient(Socket socket) => this.socket = socket;
+    private GreetdClient(Socket socket) => _socket = socket;
 
     /// <summary>Connects to greetd at <paramref name="path"/> (default <c>$GREETD_SOCK</c>, which greetd sets for its greeter).</summary>
     public static async Task<GreetdClient> ConnectAsync(string? path = null)
@@ -79,14 +79,14 @@ public sealed class GreetdClient : IDisposable
     /// </summary>
     public async Task<GreetdLoginResult> LoginAsync(string user, Func<GreetdPrompt, string?> respond)
     {
-        if (sessionOpen)
+        if (_sessionOpen)
             await CancelAsync();
         var reply = await RequestAsync(w =>
         {
             w.WriteString("type", "create_session");
             w.WriteString("username", user);
         });
-        sessionOpen = true;
+        _sessionOpen = true;
         while (true)
         {
             string type, text;
@@ -157,22 +157,22 @@ public sealed class GreetdClient : IDisposable
         var root = reply.RootElement;
         if (root.GetProperty("type").GetString() != "success")
             throw new InvalidOperationException($"greetd refused to start the session: {(root.TryGetProperty("description", out var d) ? d.GetString() : root.GetRawText())}");
-        sessionOpen = false;
+        _sessionOpen = false;
     }
 
     /// <summary>Abandons the login in progress (e.g. the user picked someone else).</summary>
     public async Task CancelAsync()
     {
-        if (!sessionOpen)
+        if (!_sessionOpen)
             return;
-        sessionOpen = false;
+        _sessionOpen = false;
         using var _ = await RequestAsync(w => w.WriteString("type", "cancel_session"));
     }
 
-    const int MaxReply = 1 << 20;
+    private const int MaxReply = 1 << 20;
 
     /// <summary>One request and its reply: a native-endian u32 length, then JSON, each way.</summary>
-    async Task<JsonDocument> RequestAsync(Action<Utf8JsonWriter> write)
+    private async Task<JsonDocument> RequestAsync(Action<Utf8JsonWriter> write)
     {
         using var body = new MemoryStream();
         using (var json = new Utf8JsonWriter(body))
@@ -184,7 +184,7 @@ public sealed class GreetdClient : IDisposable
         var frame = new byte[4 + body.Length];
         BinaryPrimitives.WriteUInt32LittleEndian(frame, (uint)body.Length); // greetd: native endianness; x86/ARM Linux are little-endian
         body.GetBuffer().AsSpan(0, (int)body.Length).CopyTo(frame.AsSpan(4));
-        await socket.SendAsync(frame);
+        await _socket.SendAsync(frame);
         var header = new byte[4];
         await ReceiveExactlyAsync(header);
         uint length = BinaryPrimitives.ReadUInt32LittleEndian(header);
@@ -202,16 +202,16 @@ public sealed class GreetdClient : IDisposable
         }
     }
 
-    async Task ReceiveExactlyAsync(byte[] buffer)
+    private async Task ReceiveExactlyAsync(byte[] buffer)
     {
         for (int read = 0; read < buffer.Length;)
         {
-            int n = await socket.ReceiveAsync(buffer.AsMemory(read));
+            int n = await _socket.ReceiveAsync(buffer.AsMemory(read));
             if (n == 0)
                 throw new IOException("greetd closed the connection.");
             read += n;
         }
     }
 
-    public void Dispose() => socket.Dispose();
+    public void Dispose() => _socket.Dispose();
 }

@@ -25,30 +25,30 @@ public sealed record OopsOptions
 /// </summary>
 public sealed partial class OopsApp : IDisposable, IEventSource
 {
-    readonly EventLoop loop = new();
-    readonly List<GlobalInfo> globals = new();
-    readonly Dictionary<string, WlProxy> boundSingletons = new();
-    readonly WlRegistry registry;
-    readonly List<PosixSignalRegistration> signals = new();
-    int exitCode;
-    bool disposed;
-    bool sourceAdded;
+    private readonly EventLoop _loop = new();
+    private readonly List<GlobalInfo> _globals = new();
+    private readonly Dictionary<string, WlProxy> _boundSingletons = new();
+    private readonly WlRegistry _registry;
+    private readonly List<PosixSignalRegistration> _signals = new();
+    private int _exitCode;
+    private bool _disposed;
+    private bool _sourceAdded;
 
-    OopsApp(OopsOptions options)
+    private OopsApp(OopsOptions options)
     {
         Options = options;
-        SynchronizationContext = new LoopSynchronizationContext(loop);
-        loop.ErrorHandler = HandleUnhandled;
+        SynchronizationContext = new LoopSynchronizationContext(_loop);
+        _loop.ErrorHandler = HandleUnhandled;
         WlProxy.UnhandledException = e => Current?.HandleUnhandled(e) == true;
         Display = WlDisplay.Connect(options.Display);
-        registry = Display.GetRegistry();
-        registry.Global += e => OnGlobal(new GlobalInfo(e.Name, e.Interface, e.Version));
-        registry.GlobalRemove += e => OnGlobalRemove(e.Name);
+        _registry = Display.GetRegistry();
+        _registry.Global += e => OnGlobal(new GlobalInfo(e.Name, e.Interface, e.Version));
+        _registry.GlobalRemove += e => OnGlobalRemove(e.Name);
         Display.Roundtrip(); // globals
         Initializing = true;
         Compositor = Get<WlCompositor>();
         Shm = Get<WlShm>();
-        foreach (var global in globals.ToList())
+        foreach (var global in _globals.ToList())
             BindKnownGlobal(global);
         BindBackgroundEffects(); // its capabilities arrive in the next roundtrip
         Display.Roundtrip(); // initial output/seat state
@@ -78,7 +78,7 @@ public sealed partial class OopsApp : IDisposable, IEventSource
     /// </summary>
     public event Action<LoopExceptionEventArgs>? UnhandledException;
 
-    bool HandleUnhandled(Exception e)
+    private bool HandleUnhandled(Exception e)
     {
         if (e is WaylandConnectionException or WaylandProtocolException || UnhandledException is null)
             return false;
@@ -95,7 +95,7 @@ public sealed partial class OopsApp : IDisposable, IEventSource
     public WlShm Shm { get; }
 
     /// <summary>Every global the compositor currently advertises.</summary>
-    public IReadOnlyList<GlobalInfo> Globals => globals;
+    public IReadOnlyList<GlobalInfo> Globals => _globals;
 
     /// <summary>The exception that stopped <see cref="Run"/> because the connection died, if any.</summary>
     public Exception? ConnectionError { get; private set; }
@@ -109,12 +109,12 @@ public sealed partial class OopsApp : IDisposable, IEventSource
     /// </summary>
     public T Get<T>() where T : WlProxy, IWaylandProxy<T>
     {
-        if (boundSingletons.TryGetValue(T.InterfaceName, out var existing))
+        if (_boundSingletons.TryGetValue(T.InterfaceName, out var existing))
             return (T)existing;
         var global = FindGlobal(T.InterfaceName)
             ?? throw new NotSupportedException($"The compositor does not support {T.InterfaceName}.");
         var proxy = Bind<T>(global);
-        boundSingletons[T.InterfaceName] = proxy;
+        _boundSingletons[T.InterfaceName] = proxy;
         return proxy;
     }
 
@@ -127,30 +127,30 @@ public sealed partial class OopsApp : IDisposable, IEventSource
         if (global.Interface != T.InterfaceName)
             throw new ArgumentException($"Global {global.Name} is {global.Interface}, not {T.InterfaceName}.");
         uint bound = Math.Min(version ?? global.Version, Math.Min(global.Version, T.MaxVersion));
-        return registry.Bind<T>(global.Name, bound);
+        return _registry.Bind<T>(global.Name, bound);
     }
 
-    GlobalInfo? FindGlobal(string iface) => globals.Find(g => g.Interface == iface);
+    private GlobalInfo? FindGlobal(string iface) => _globals.Find(g => g.Interface == iface);
 
-    void OnGlobal(GlobalInfo global)
+    private void OnGlobal(GlobalInfo global)
     {
-        globals.Add(global);
+        _globals.Add(global);
         if (!Initializing && Compositor is not null)
             BindKnownGlobal(global);
     }
 
-    void OnGlobalRemove(uint name)
+    private void OnGlobalRemove(uint name)
     {
-        int index = globals.FindIndex(g => g.Name == name);
+        int index = _globals.FindIndex(g => g.Name == name);
         if (index < 0)
             return;
-        var global = globals[index];
-        globals.RemoveAt(index);
+        var global = _globals[index];
+        _globals.RemoveAt(index);
         RemoveKnownGlobal(global);
     }
 
     /// <summary>Binds multi-instance globals (outputs, seats) as they appear.</summary>
-    void BindKnownGlobal(GlobalInfo global)
+    private void BindKnownGlobal(GlobalInfo global)
     {
         switch (global.Interface)
         {
@@ -159,7 +159,7 @@ public sealed partial class OopsApp : IDisposable, IEventSource
         }
     }
 
-    void RemoveKnownGlobal(GlobalInfo global)
+    private void RemoveKnownGlobal(GlobalInfo global)
     {
         switch (global.Interface)
         {
@@ -178,34 +178,34 @@ public sealed partial class OopsApp : IDisposable, IEventSource
     {
         var previousContext = SynchronizationContext.Current;
         SynchronizationContext.SetSynchronizationContext(SynchronizationContext);
-        signals.Add(PosixSignalRegistration.Create(PosixSignal.SIGINT, OnSignal));
-        signals.Add(PosixSignalRegistration.Create(PosixSignal.SIGTERM, OnSignal));
-        if (!sourceAdded)
+        _signals.Add(PosixSignalRegistration.Create(PosixSignal.SIGINT, OnSignal));
+        _signals.Add(PosixSignalRegistration.Create(PosixSignal.SIGTERM, OnSignal));
+        if (!_sourceAdded)
         {
-            loop.AddSource(Display.Fd);
-            sourceAdded = true;
+            _loop.AddSource(Display.Fd);
+            _sourceAdded = true;
         }
         try
         {
-            loop.Run(this);
+            _loop.Run(this);
         }
         catch (Exception e) when (e is WaylandConnectionException or WaylandProtocolException)
         {
             ConnectionError = e;
             Console.Error.WriteLine($"oopshell: {e.Message}");
-            exitCode = exitCode == 0 ? 1 : exitCode;
+            _exitCode = _exitCode == 0 ? 1 : _exitCode;
         }
         finally
         {
-            foreach (var signal in signals)
+            foreach (var signal in _signals)
                 signal.Dispose();
-            signals.Clear();
+            _signals.Clear();
             SynchronizationContext.SetSynchronizationContext(previousContext);
         }
-        return exitCode;
+        return _exitCode;
     }
 
-    void OnSignal(PosixSignalContext context)
+    private void OnSignal(PosixSignalContext context)
     {
         context.Cancel = true;
         int code = 128 + (context.Signal == PosixSignal.SIGINT ? 2 : 15);
@@ -215,12 +215,12 @@ public sealed partial class OopsApp : IDisposable, IEventSource
     /// <summary>Stops <see cref="Run"/>, which then returns <paramref name="exitCode"/>.</summary>
     public void Quit(int exitCode = 0)
     {
-        this.exitCode = exitCode;
-        loop.Stop();
+        _exitCode = exitCode;
+        _loop.Stop();
     }
 
     /// <summary>Runs <paramref name="action"/> on the UI thread. Safe from any thread.</summary>
-    public void Post(Action action) => loop.Post(action);
+    public void Post(Action action) => _loop.Post(action);
 
     /// <summary>Runs async work on the UI thread and completes when it does. Safe from any thread.</summary>
     public Task InvokeAsync(Func<Task> work)
@@ -246,21 +246,21 @@ public sealed partial class OopsApp : IDisposable, IEventSource
     /// Dispose to cancel. Measured on the monotonic clock, which stops during suspend: for anything that shows
     /// the time, use <see cref="SetClockTimer"/>.
     /// </summary>
-    public IDisposable SetTimer(TimeSpan due, TimeSpan? period, Action callback) => loop.SetTimer(due, period, callback);
+    public IDisposable SetTimer(TimeSpan due, TimeSpan? period, Action callback) => _loop.SetTimer(due, period, callback);
 
     /// <summary>
     /// Calls <paramref name="callback"/> on every multiple of <paramref name="interval"/> of local wall-clock time:
     /// <c>SetClockTimer(TimeSpan.FromMinutes(1), …)</c> ticks on the minute, for a clock. After a suspend it fires
     /// on resume, and when the system clock is set it fires at once and realigns. Dispose to cancel.
     /// </summary>
-    public IDisposable SetClockTimer(TimeSpan interval, Action callback) => loop.SetClockTimer(interval, callback);
+    public IDisposable SetClockTimer(TimeSpan interval, Action callback) => _loop.SetClockTimer(interval, callback);
 
     /// <summary>Calls <paramref name="callback"/> on the UI thread whenever <paramref name="fd"/> is ready. Dispose to stop.</summary>
-    public IDisposable WatchFd(int fd, FdEvents events, Action<FdEvents> callback) => loop.WatchFd(fd, events, callback);
+    public IDisposable WatchFd(int fd, FdEvents events, Action<FdEvents> callback) => _loop.WatchFd(fd, events, callback);
 
     int IEventSource.Fd => Display.Fd;
 
-    bool waitingForWritable;
+    private bool _waitingForWritable;
 
     void IEventSource.BeforeWait()
     {
@@ -272,10 +272,10 @@ public sealed partial class OopsApp : IDisposable, IEventSource
             RenderPhase();
         }
         bool flushed = Display.Flush();
-        if (flushed == waitingForWritable)
+        if (flushed == _waitingForWritable)
         {
-            waitingForWritable = !flushed;
-            loop.ModifyWatch(Display.Fd, flushed ? FdEvents.Readable : FdEvents.Readable | FdEvents.Writable);
+            _waitingForWritable = !flushed;
+            _loop.ModifyWatch(Display.Fd, flushed ? FdEvents.Readable : FdEvents.Readable | FdEvents.Writable);
         }
     }
 
@@ -296,16 +296,16 @@ public sealed partial class OopsApp : IDisposable, IEventSource
 
     public void Dispose()
     {
-        if (disposed)
+        if (_disposed)
             return;
-        disposed = true;
+        _disposed = true;
         Disposing?.Invoke();
-        foreach (var surface in surfaces.ToList())
+        foreach (var surface in _surfaces.ToList())
             surface.Dispose();
         if (Current == this)
             Current = null;
         Display.Dispose();
-        loop.Dispose();
+        _loop.Dispose();
     }
 }
 

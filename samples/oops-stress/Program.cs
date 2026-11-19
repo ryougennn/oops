@@ -354,66 +354,66 @@ static int Sweep(OopsApp app, int y, int seconds)
 
 static double Percentile(List<double> sorted, double p) => sorted.Count == 0 ? 0 : sorted[(int)Math.Min(sorted.Count - 1, p * sorted.Count)];
 
-sealed class Disposer(Action action) : IDisposable
+internal sealed class Disposer(Action action) : IDisposable
 {
     public void Dispose() => action();
 }
 
-static class Scene
+internal static class Scene
 {
-    static readonly SKFont Font = new(SKFontManager.Default.MatchCharacter('A'), 14);
-    static readonly SKPaint Fill = new() { IsAntialias = true };
-    static readonly SKPaint Text = new() { Color = SKColors.Black, IsAntialias = true };
+    private static readonly SKFont s_font = new(SKFontManager.Default.MatchCharacter('A'), 14);
+    private static readonly SKPaint s_fill = new() { IsAntialias = true };
+    private static readonly SKPaint s_text = new() { Color = SKColors.Black, IsAntialias = true };
 
     /// <summary>A taskbar/menu-like frame: background, bevelled rows, text, one moving highlight.</summary>
-    static readonly bool ClearOnly = Environment.GetEnvironmentVariable("STRESS_SCENE") == "clear";
+    private static readonly bool s_clearOnly = Environment.GetEnvironmentVariable("STRESS_SCENE") == "clear";
 
     public static void Draw(SKCanvas canvas, Size size, int tick)
     {
         canvas.Clear(new SKColor(0xC0, 0xC0, 0xC0));
-        if (ClearOnly)
+        if (s_clearOnly)
             return;
         for (int y = 4, row = 0; y + 22 < size.Height && row < 24; y += 24, row++)
         {
             bool hot = row == tick / 4 % 24;
-            Fill.Color = hot ? new SKColor(0, 0, 0x80) : SKColors.White;
-            canvas.DrawRoundRect(4, y, size.Width - 8, 20, 2, 2, Fill);
-            Text.Color = hot ? SKColors.White : SKColors.Black;
-            canvas.DrawText($"Item {row} — frame {tick}", 10, y + 15, SKTextAlign.Left, Font, Text);
+            s_fill.Color = hot ? new SKColor(0, 0, 0x80) : SKColors.White;
+            canvas.DrawRoundRect(4, y, size.Width - 8, 20, 2, 2, s_fill);
+            s_text.Color = hot ? SKColors.White : SKColors.Black;
+            canvas.DrawText($"Item {row} — frame {tick}", 10, y + 15, SKTextAlign.Left, s_font, s_text);
         }
     }
 }
 
 /// <summary>Process-wide counters between <see cref="Start"/> and <see cref="Report"/>.</summary>
-sealed class Stats
+internal sealed class Stats
 {
-    long allocated, ticks;
-    TimeSpan cpu;
-    int gen0, gen1, gen2, fds;
-    long rss, heap;
+    private long _allocated, _ticks;
+    private TimeSpan _cpu;
+    private int _gen0, _gen1, _gen2, _fds;
+    private long _rss, _heap;
 
     public void Start()
     {
         GC.Collect();
         GC.WaitForPendingFinalizers();
         GC.Collect();
-        heap = GC.GetTotalMemory(true);
-        rss = Rss();
-        fds = Directory.GetFiles("/proc/self/fd").Length;
-        allocated = GC.GetTotalAllocatedBytes(true);
-        gen0 = GC.CollectionCount(0);
-        gen1 = GC.CollectionCount(1);
-        gen2 = GC.CollectionCount(2);
-        cpu = Process.GetCurrentProcess().TotalProcessorTime;
-        ticks = Stopwatch.GetTimestamp();
+        _heap = GC.GetTotalMemory(true);
+        _rss = Rss();
+        _fds = Directory.GetFiles("/proc/self/fd").Length;
+        _allocated = GC.GetTotalAllocatedBytes(true);
+        _gen0 = GC.CollectionCount(0);
+        _gen1 = GC.CollectionCount(1);
+        _gen2 = GC.CollectionCount(2);
+        _cpu = Process.GetCurrentProcess().TotalProcessorTime;
+        _ticks = Stopwatch.GetTimestamp();
     }
 
     public void Report(string name, int units, string unit, string extra)
     {
-        double wall = Stopwatch.GetElapsedTime(ticks).TotalSeconds;
-        double cpuMs = (Process.GetCurrentProcess().TotalProcessorTime - cpu).TotalMilliseconds;
-        long alloc = GC.GetTotalAllocatedBytes(true) - allocated;
-        int g0 = GC.CollectionCount(0) - gen0, g1 = GC.CollectionCount(1) - gen1, g2 = GC.CollectionCount(2) - gen2;
+        double wall = Stopwatch.GetElapsedTime(_ticks).TotalSeconds;
+        double cpuMs = (Process.GetCurrentProcess().TotalProcessorTime - _cpu).TotalMilliseconds;
+        long alloc = GC.GetTotalAllocatedBytes(true) - _allocated;
+        int g0 = GC.CollectionCount(0) - _gen0, g1 = GC.CollectionCount(1) - _gen1, g2 = GC.CollectionCount(2) - _gen2;
         long rssNow = Rss();
         GC.Collect();
         GC.WaitForPendingFinalizers();
@@ -421,9 +421,9 @@ sealed class Stats
         long heapNow = GC.GetTotalMemory(true);
         int fdsNow = Directory.GetFiles("/proc/self/fd").Length;
         Console.WriteLine($"{name}: {units} {unit}s in {wall:0.0}s | cpu {cpuMs / wall / 10:0.0}% ({cpuMs / Math.Max(units, 1) * 1000:0} µs/{unit}) | " +
-            $"alloc {alloc / Math.Max(units, 1)} B/{unit} | gc {g0}/{g1}/{g2} | rss {rss / 1024}→{rssNow / 1024} KiB | " +
-            $"heap {heap / 1024}→{heapNow / 1024} KiB | fds {fds}→{fdsNow} | {extra}");
+            $"alloc {alloc / Math.Max(units, 1)} B/{unit} | gc {g0}/{g1}/{g2} | rss {_rss / 1024}→{rssNow / 1024} KiB | " +
+            $"heap {_heap / 1024}→{heapNow / 1024} KiB | fds {_fds}→{fdsNow} | {extra}");
     }
 
-    static long Rss() => long.Parse(File.ReadAllText("/proc/self/statm").Split(' ')[1]) * Environment.SystemPageSize;
+    private static long Rss() => long.Parse(File.ReadAllText("/proc/self/statm").Split(' ')[1]) * Environment.SystemPageSize;
 }

@@ -51,7 +51,7 @@ static void FillRect(ShmBuffer buffer, Rectangle r, uint color)
         buffer.Pixels.Slice(y * buffer.Size.Width + r.Left, r.Width).Fill(color);
 }
 
-sealed class CompositeDisposable(params IDisposable[] items) : IDisposable
+internal sealed class CompositeDisposable(params IDisposable[] items) : IDisposable
 {
     public void Dispose()
     {

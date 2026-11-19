@@ -31,19 +31,19 @@ public sealed class DBusMenuItem
 /// </summary>
 public sealed class DBusMenu : IDisposable
 {
-    const string Interface = "com.canonical.dbusmenu";
-    readonly OopsApp app;
-    readonly DBusConnection connection;
-    readonly string busName;
-    readonly string path;
-    readonly List<IDisposable> watches = new();
+    private const string Interface = "com.canonical.dbusmenu";
+    private readonly OopsApp _app;
+    private readonly DBusConnection _connection;
+    private readonly string _busName;
+    private readonly string _path;
+    private readonly List<IDisposable> _watches = new();
 
     internal DBusMenu(OopsApp app, DBusConnection connection, string busName, string path)
     {
-        this.app = app;
-        this.connection = connection;
-        this.busName = busName;
-        this.path = path;
+        _app = app;
+        _connection = connection;
+        _busName = busName;
+        _path = path;
     }
 
     /// <summary>The root item; its <see cref="DBusMenuItem.Children"/> are the top-level entries.</summary>
@@ -55,17 +55,17 @@ public sealed class DBusMenu : IDisposable
     internal async Task StartAsync()
     {
         await RefreshAsync();
-        watches.Add(await connection.WatchSignalAsync(app, busName, path, Interface, "LayoutUpdated", (_, _) => true, OnChangeSignal));
-        watches.Add(await connection.WatchSignalAsync(app, busName, path, Interface, "ItemsPropertiesUpdated", (_, _) => true, OnChangeSignal));
+        _watches.Add(await _connection.WatchSignalAsync(_app, _busName, _path, Interface, "LayoutUpdated", (_, _) => true, OnChangeSignal));
+        _watches.Add(await _connection.WatchSignalAsync(_app, _busName, _path, Interface, "ItemsPropertiesUpdated", (_, _) => true, OnChangeSignal));
     }
 
     // Fire and forget: a failed refresh keeps the previous state.
-    void OnChangeSignal(bool signal) => _ = RefreshAsync();
+    private void OnChangeSignal(bool signal) => _ = RefreshAsync();
 
     /// <summary>Reloads the whole layout.</summary>
     public async Task RefreshAsync()
     {
-        var root = await connection.CallAsync(busName, path, Interface, "GetLayout",
+        var root = await _connection.CallAsync(_busName, _path, Interface, "GetLayout",
             (message, _) =>
             {
                 var reader = message.GetBodyReader();
@@ -78,7 +78,7 @@ public sealed class DBusMenu : IDisposable
                 w.WriteInt32(-1);  // all levels
                 w.WriteArray(Array.Empty<string>()); // all properties
             }, "iias");
-        await app.InvokeAsync(() =>
+        await _app.InvokeAsync(() =>
         {
             Root = root;
             Changed?.Invoke();
@@ -89,7 +89,7 @@ public sealed class DBusMenu : IDisposable
     /// <summary>Tells the app the user is about to open <paramref name="item"/>'s submenu (lets it fill it lazily).</summary>
     public async Task AboutToShowAsync(DBusMenuItem item)
     {
-        bool needsUpdate = await connection.CallAsync(busName, path, Interface, "AboutToShow",
+        bool needsUpdate = await _connection.CallAsync(_busName, _path, Interface, "AboutToShow",
             (message, _) => message.GetBodyReader().ReadBool(), (ref MessageWriter w) => w.WriteInt32(item.Id), "i");
         if (needsUpdate)
             await RefreshAsync();
@@ -97,7 +97,7 @@ public sealed class DBusMenu : IDisposable
 
     /// <summary>Activates <paramref name="item"/>.</summary>
     public Task ClickAsync(DBusMenuItem item) =>
-        connection.CallAsync(busName, path, Interface, "Event", (ref MessageWriter w) =>
+        _connection.CallAsync(_busName, _path, Interface, "Event", (ref MessageWriter w) =>
         {
             w.WriteInt32(item.Id);
             w.WriteString("clicked");
@@ -167,8 +167,8 @@ public sealed class DBusMenu : IDisposable
 
     public void Dispose()
     {
-        foreach (var watch in watches)
+        foreach (var watch in _watches)
             watch.Dispose();
-        watches.Clear();
+        _watches.Clear();
     }
 }

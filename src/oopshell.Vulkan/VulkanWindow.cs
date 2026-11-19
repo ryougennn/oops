@@ -19,10 +19,10 @@ public sealed unsafe class VulkanWindow : IDisposable
 {
     // No INPUT_ATTACHMENT: with it, SkiaSharp's Vulkan backend (3.119 and 4.157) crashes on blend modes that read the
     // destination (e.g. Multiply) when drawing into a wrapped image; without it Skia copies the destination instead.
-    const uint DesiredUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+    private const uint DesiredUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT
         | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 
-    sealed class Slot
+    private sealed class Slot
     {
         public ulong Image;
         public nint Before, After; // command buffers with the layout transitions
@@ -31,21 +31,21 @@ public sealed unsafe class VulkanWindow : IDisposable
         public bool Submitted, Presented;
     }
 
-    readonly Surface surface;
-    readonly ulong vkSurface;
-    readonly ulong commandPool;
-    readonly ulong acquireFence;
-    readonly int presentMode;
-    ulong swapchain;
-    Slot[] slots = [];
-    Size size;
-    int current = -1;
-    bool outOfDate;
-    bool disposed;
+    private readonly Surface _surface;
+    private readonly ulong _vkSurface;
+    private readonly ulong _commandPool;
+    private readonly ulong _acquireFence;
+    private readonly int _presentMode;
+    private ulong _swapchain;
+    private Slot[] _slots = [];
+    private Size _size;
+    private int _current = -1;
+    private bool _outOfDate;
+    private bool _disposed;
 
-    VulkanWindow(Surface surface, VulkanDevice device)
+    private VulkanWindow(Surface surface, VulkanDevice device)
     {
-        this.surface = surface;
+        _surface = surface;
         Device = device;
         var surfaceInfo = new VkWaylandSurfaceCreateInfoKHR
         {
@@ -55,17 +55,17 @@ public sealed unsafe class VulkanWindow : IDisposable
         };
         ulong s;
         Check(vkCreateWaylandSurfaceKHR(device.Instance, &surfaceInfo, 0, &s), "vkCreateWaylandSurfaceKHR");
-        vkSurface = s;
+        _vkSurface = s;
 
         uint supported;
-        Check(vkGetPhysicalDeviceSurfaceSupportKHR(device.PhysicalDevice, device.QueueFamily, vkSurface, &supported), "vkGetPhysicalDeviceSurfaceSupportKHR");
+        Check(vkGetPhysicalDeviceSurfaceSupportKHR(device.PhysicalDevice, device.QueueFamily, _vkSurface, &supported), "vkGetPhysicalDeviceSurfaceSupportKHR");
         (Format, ColorSpace) = PickFormat();
         if (supported == 0 || Format == 0)
         {
-            vkDestroySurfaceKHR(device.Instance, vkSurface, 0);
+            vkDestroySurfaceKHR(device.Instance, _vkSurface, 0);
             throw new NotSupportedException($"{device.DeviceName} cannot present to this surface.");
         }
-        presentMode = PickPresentMode();
+        _presentMode = PickPresentMode();
 
         var poolInfo = new VkCommandPoolCreateInfo
         {
@@ -75,8 +75,8 @@ public sealed unsafe class VulkanWindow : IDisposable
         };
         ulong pool;
         Check(vkCreateCommandPool(device.Device, &poolInfo, 0, &pool), "vkCreateCommandPool");
-        commandPool = pool;
-        acquireFence = CreateFence(signaled: false);
+        _commandPool = pool;
+        _acquireFence = CreateFence(signaled: false);
     }
 
     /// <summary>Creates a Vulkan window for <paramref name="surface"/>. Throws <see cref="NotSupportedException"/> without Vulkan.</summary>
@@ -88,9 +88,9 @@ public sealed unsafe class VulkanWindow : IDisposable
     public int ColorSpace { get; }
     /// <summary><c>VkImageUsageFlags</c> the swapchain images were created with.</summary>
     public uint ImageUsage { get; private set; }
-    public Size Size => size;
+    public Size Size => _size;
     /// <summary>The image <see cref="Acquire"/> returned, until <see cref="Present"/>.</summary>
-    public ulong CurrentImage => current >= 0 ? slots[current].Image : 0;
+    public ulong CurrentImage => _current >= 0 ? _slots[_current].Image : 0;
 
     /// <summary>Raised before the swapchain images are destroyed (resize or dispose): drop anything wrapping them.</summary>
     public event Action? ImagesDestroying;
@@ -101,24 +101,24 @@ public sealed unsafe class VulkanWindow : IDisposable
     /// </summary>
     public int Acquire(Size bufferSize)
     {
-        ObjectDisposedException.ThrowIf(disposed, this);
-        if (current >= 0)
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_current >= 0)
             throw new InvalidOperationException("Present was not called for the previous image.");
-        if (swapchain == 0 || outOfDate || bufferSize != size)
+        if (_swapchain == 0 || _outOfDate || bufferSize != _size)
             CreateSwapchain(bufferSize);
 
         uint index;
-        int result = vkAcquireNextImageKHR(Device.Device, swapchain, ulong.MaxValue, 0, acquireFence, &index);
+        int result = vkAcquireNextImageKHR(Device.Device, _swapchain, ulong.MaxValue, 0, _acquireFence, &index);
         if (result == VK_ERROR_OUT_OF_DATE_KHR)
         {
             CreateSwapchain(bufferSize);
-            result = vkAcquireNextImageKHR(Device.Device, swapchain, ulong.MaxValue, 0, acquireFence, &index);
+            result = vkAcquireNextImageKHR(Device.Device, _swapchain, ulong.MaxValue, 0, _acquireFence, &index);
         }
         if (result != VK_SUBOPTIMAL_KHR)
             Check(result, "vkAcquireNextImageKHR");
-        WaitAndReset(acquireFence);
+        WaitAndReset(_acquireFence);
 
-        var slot = slots[index];
+        var slot = _slots[index];
         if (slot.Submitted)
             WaitAndReset(slot.Done);
         slot.Submitted = false;
@@ -126,28 +126,28 @@ public sealed unsafe class VulkanWindow : IDisposable
             VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 0, VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
             VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
         Submit(slot.Before, signal: 0, fence: 0);
-        current = (int)index;
-        return current;
+        _current = (int)index;
+        return _current;
     }
 
     /// <summary>The swapchain image at <paramref name="index"/> (stable until <see cref="ImagesDestroying"/>).</summary>
-    public ulong GetImage(int index) => slots[index].Image;
+    public ulong GetImage(int index) => _slots[index].Image;
 
     /// <summary>Presents the acquired image. Submit all rendering to <see cref="VulkanDevice.Queue"/> first.</summary>
     public void Present()
     {
-        if (current < 0)
+        if (_current < 0)
             throw new InvalidOperationException("Acquire was not called.");
-        var slot = slots[current];
+        var slot = _slots[_current];
         Record(slot.After, slot.Image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
             VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
         Submit(slot.After, slot.RenderDone, slot.Done);
         slot.Submitted = true;
         slot.Presented = true;
 
-        surface.PrepareCommit();
-        ulong semaphore = slot.RenderDone, chain = swapchain;
-        uint index = (uint)current;
+        _surface.PrepareCommit();
+        ulong semaphore = slot.RenderDone, chain = _swapchain;
+        uint index = (uint)_current;
         // shortcut: no VK_KHR_incremental_present, so the compositor is told the whole buffer changed;
         // add it if compositor-side damage ever matters for Vulkan windows.
         var info = new VkPresentInfoKHR
@@ -159,21 +159,21 @@ public sealed unsafe class VulkanWindow : IDisposable
             pSwapchains = &chain,
             pImageIndices = &index,
         };
-        current = -1;
+        _current = -1;
         int result = vkQueuePresentKHR(Device.Queue, &info);
         if (result is VK_SUBOPTIMAL_KHR or VK_ERROR_OUT_OF_DATE_KHR)
-            outOfDate = true;
+            _outOfDate = true;
         else
             Check(result, "vkQueuePresentKHR");
     }
 
-    (int Format, int ColorSpace) PickFormat()
+    private (int Format, int ColorSpace) PickFormat()
     {
         uint count;
-        Check(vkGetPhysicalDeviceSurfaceFormatsKHR(Device.PhysicalDevice, vkSurface, &count, null), "vkGetPhysicalDeviceSurfaceFormatsKHR");
+        Check(vkGetPhysicalDeviceSurfaceFormatsKHR(Device.PhysicalDevice, _vkSurface, &count, null), "vkGetPhysicalDeviceSurfaceFormatsKHR");
         var formats = new VkSurfaceFormatKHR[count];
         fixed (VkSurfaceFormatKHR* p = formats)
-            Check(vkGetPhysicalDeviceSurfaceFormatsKHR(Device.PhysicalDevice, vkSurface, &count, p), "vkGetPhysicalDeviceSurfaceFormatsKHR");
+            Check(vkGetPhysicalDeviceSurfaceFormatsKHR(Device.PhysicalDevice, _vkSurface, &count, p), "vkGetPhysicalDeviceSurfaceFormatsKHR");
         foreach (int wanted in (int[])[VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM])
         {
             foreach (var f in formats)
@@ -185,25 +185,25 @@ public sealed unsafe class VulkanWindow : IDisposable
         return (0, 0);
     }
 
-    int PickPresentMode()
+    private int PickPresentMode()
     {
         uint count;
-        Check(vkGetPhysicalDeviceSurfacePresentModesKHR(Device.PhysicalDevice, vkSurface, &count, null), "vkGetPhysicalDeviceSurfacePresentModesKHR");
+        Check(vkGetPhysicalDeviceSurfacePresentModesKHR(Device.PhysicalDevice, _vkSurface, &count, null), "vkGetPhysicalDeviceSurfacePresentModesKHR");
         var modes = new int[count];
         fixed (int* p = modes)
-            Check(vkGetPhysicalDeviceSurfacePresentModesKHR(Device.PhysicalDevice, vkSurface, &count, p), "vkGetPhysicalDeviceSurfacePresentModesKHR");
+            Check(vkGetPhysicalDeviceSurfacePresentModesKHR(Device.PhysicalDevice, _vkSurface, &count, p), "vkGetPhysicalDeviceSurfacePresentModesKHR");
         // FIFO would make Mesa wait for its own frame callbacks, blocking the event loop while the surface is hidden.
         return modes.Contains(VK_PRESENT_MODE_MAILBOX_KHR) ? VK_PRESENT_MODE_MAILBOX_KHR
             : modes.Contains(VK_PRESENT_MODE_IMMEDIATE_KHR) ? VK_PRESENT_MODE_IMMEDIATE_KHR
             : VK_PRESENT_MODE_FIFO_KHR;
     }
 
-    void CreateSwapchain(Size bufferSize)
+    private void CreateSwapchain(Size bufferSize)
     {
         if (bufferSize.IsEmpty)
             throw new ArgumentException("The buffer size is empty.", nameof(bufferSize));
         VkSurfaceCapabilitiesKHR caps;
-        Check(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(Device.PhysicalDevice, vkSurface, &caps), "vkGetPhysicalDeviceSurfaceCapabilitiesKHR");
+        Check(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(Device.PhysicalDevice, _vkSurface, &caps), "vkGetPhysicalDeviceSurfaceCapabilitiesKHR");
         uint imageCount = Math.Max(caps.minImageCount, 3);
         if (caps.maxImageCount != 0)
             imageCount = Math.Min(imageCount, caps.maxImageCount);
@@ -215,7 +215,7 @@ public sealed unsafe class VulkanWindow : IDisposable
         var info = new VkSwapchainCreateInfoKHR
         {
             sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-            surface = vkSurface,
+            surface = _vkSurface,
             minImageCount = imageCount,
             imageFormat = Format,
             imageColorSpace = ColorSpace,
@@ -225,36 +225,36 @@ public sealed unsafe class VulkanWindow : IDisposable
             imageUsage = ImageUsage,
             preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
             compositeAlpha = alpha,
-            presentMode = presentMode,
+            presentMode = _presentMode,
             clipped = 1,
-            oldSwapchain = swapchain,
+            oldSwapchain = _swapchain,
         };
         ulong created;
         Check(vkCreateSwapchainKHR(Device.Device, &info, 0, &created), "vkCreateSwapchainKHR");
         DestroySlots();
-        swapchain = created;
-        size = bufferSize;
-        outOfDate = false;
+        _swapchain = created;
+        _size = bufferSize;
+        _outOfDate = false;
 
         uint count;
-        Check(vkGetSwapchainImagesKHR(Device.Device, swapchain, &count, null), "vkGetSwapchainImagesKHR");
+        Check(vkGetSwapchainImagesKHR(Device.Device, _swapchain, &count, null), "vkGetSwapchainImagesKHR");
         var images = new ulong[count];
         fixed (ulong* p = images)
-            Check(vkGetSwapchainImagesKHR(Device.Device, swapchain, &count, p), "vkGetSwapchainImagesKHR");
+            Check(vkGetSwapchainImagesKHR(Device.Device, _swapchain, &count, p), "vkGetSwapchainImagesKHR");
         var buffers = new nint[count * 2];
         var allocInfo = new VkCommandBufferAllocateInfo
         {
             sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-            commandPool = commandPool,
+            commandPool = _commandPool,
             level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
             commandBufferCount = count * 2,
         };
         fixed (nint* p = buffers)
             Check(vkAllocateCommandBuffers(Device.Device, &allocInfo, p), "vkAllocateCommandBuffers");
-        slots = new Slot[count];
+        _slots = new Slot[count];
         for (int i = 0; i < count; i++)
         {
-            slots[i] = new Slot
+            _slots[i] = new Slot
             {
                 Image = images[i],
                 Before = buffers[2 * i],
@@ -266,32 +266,32 @@ public sealed unsafe class VulkanWindow : IDisposable
     }
 
     /// <summary>Destroys the old swapchain's images (after <see cref="ImagesDestroying"/>), keeping the swapchain handle for reuse as oldSwapchain.</summary>
-    void DestroySlots()
+    private void DestroySlots()
     {
-        if (slots.Length == 0 && swapchain == 0)
+        if (_slots.Length == 0 && _swapchain == 0)
             return;
         ImagesDestroying?.Invoke();
         vkDeviceWaitIdle(Device.Device);
         var buffers = new List<nint>();
-        foreach (var slot in slots)
+        foreach (var slot in _slots)
         {
             vkDestroySemaphore(Device.Device, slot.RenderDone, 0);
             vkDestroyFence(Device.Device, slot.Done, 0);
             buffers.Add(slot.Before);
             buffers.Add(slot.After);
         }
-        slots = [];
+        _slots = [];
         if (buffers.Count > 0)
         {
             fixed (nint* p = buffers.ToArray())
-                vkFreeCommandBuffers(Device.Device, commandPool, (uint)buffers.Count, p);
+                vkFreeCommandBuffers(Device.Device, _commandPool, (uint)buffers.Count, p);
         }
-        if (swapchain != 0)
-            vkDestroySwapchainKHR(Device.Device, swapchain, 0);
-        swapchain = 0;
+        if (_swapchain != 0)
+            vkDestroySwapchainKHR(Device.Device, _swapchain, 0);
+        _swapchain = 0;
     }
 
-    void Record(nint buffer, ulong image, int oldLayout, int newLayout, uint srcAccess, uint dstAccess, uint srcStage, uint dstStage)
+    private void Record(nint buffer, ulong image, int oldLayout, int newLayout, uint srcAccess, uint dstAccess, uint srcStage, uint dstStage)
     {
         var begin = new VkCommandBufferBeginInfo
         {
@@ -317,7 +317,7 @@ public sealed unsafe class VulkanWindow : IDisposable
         Check(vkEndCommandBuffer(buffer), "vkEndCommandBuffer");
     }
 
-    void Submit(nint buffer, ulong signal, ulong fence)
+    private void Submit(nint buffer, ulong signal, ulong fence)
     {
         var info = new VkSubmitInfo
         {
@@ -330,13 +330,13 @@ public sealed unsafe class VulkanWindow : IDisposable
         Check(vkQueueSubmit(Device.Queue, 1, &info, fence), "vkQueueSubmit");
     }
 
-    void WaitAndReset(ulong fence)
+    private void WaitAndReset(ulong fence)
     {
         Check(vkWaitForFences(Device.Device, 1, &fence, 1, ulong.MaxValue), "vkWaitForFences");
         Check(vkResetFences(Device.Device, 1, &fence), "vkResetFences");
     }
 
-    ulong CreateFence(bool signaled)
+    private ulong CreateFence(bool signaled)
     {
         var info = new VkFenceCreateInfo { sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, flags = signaled ? 1u : 0 };
         ulong fence;
@@ -344,7 +344,7 @@ public sealed unsafe class VulkanWindow : IDisposable
         return fence;
     }
 
-    ulong CreateSemaphore()
+    private ulong CreateSemaphore()
     {
         var info = new VkFenceCreateInfo { sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
         ulong semaphore;
@@ -354,12 +354,12 @@ public sealed unsafe class VulkanWindow : IDisposable
 
     public void Dispose()
     {
-        if (disposed)
+        if (_disposed)
             return;
-        disposed = true;
+        _disposed = true;
         DestroySlots();
-        vkDestroyFence(Device.Device, acquireFence, 0);
-        vkDestroyCommandPool(Device.Device, commandPool, 0);
-        vkDestroySurfaceKHR(Device.Instance, vkSurface, 0);
+        vkDestroyFence(Device.Device, _acquireFence, 0);
+        vkDestroyCommandPool(Device.Device, _commandPool, 0);
+        vkDestroySurfaceKHR(Device.Instance, _vkSurface, 0);
     }
 }

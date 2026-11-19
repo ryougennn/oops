@@ -22,20 +22,20 @@ window.Render += frame =>
 
 return app.Run();
 
-static class Scene
+internal static class Scene
 {
-    static readonly SKPaint Text = new() { Color = SKColors.White, IsAntialias = true };
+    private static readonly SKPaint s_text = new() { Color = SKColors.White, IsAntialias = true };
     // Skia's fontconfig lookup does not resolve generic names like "sans-serif" everywhere; fall back to
     // whatever font covers Latin text.
-    static readonly SKFont Font = new(SKTypeface.FromFamilyName("sans-serif") is { FamilyName.Length: > 0 } sans
+    private static readonly SKFont s_font = new(SKTypeface.FromFamilyName("sans-serif") is { FamilyName.Length: > 0 } sans
         ? sans : SKFontManager.Default.MatchCharacter('A'), 28);
-    static readonly SKPaint Accent = new() { Color = new SKColor(0xFF, 0x8C, 0x42), IsAntialias = true };
+    private static readonly SKPaint s_accent = new() { Color = new SKColor(0xFF, 0x8C, 0x42), IsAntialias = true };
 
     public static void Draw(SKCanvas canvas, int width, int height, double scale)
     {
         canvas.Clear(new SKColor(0x1E, 0x24, 0x30));
-        canvas.DrawCircle(width / 2f, height / 2f - 30, 60, Accent);
-        canvas.DrawText("Hello, Skia", width / 2f, height / 2f + 70, SKTextAlign.Center, Font, Text);
-        canvas.DrawText($"scale {scale:0.##}", 12, height - 12, SKTextAlign.Left, Font, Text);
+        canvas.DrawCircle(width / 2f, height / 2f - 30, 60, s_accent);
+        canvas.DrawText("Hello, Skia", width / 2f, height / 2f + 70, SKTextAlign.Center, s_font, s_text);
+        canvas.DrawText($"scale {scale:0.##}", 12, height - 12, SKTextAlign.Left, s_font, s_text);
     }
 }

@@ -6,7 +6,7 @@ using SkiaSharp;
 namespace OopsLab;
 
 /// <summary>A plain lock screen on every output: type the password, Enter; PAM decides.</summary>
-static class LockScreen
+internal static class LockScreen
 {
     public static async Task LockAsync(OopsApp app, Action<string, SKColor?> log)
     {

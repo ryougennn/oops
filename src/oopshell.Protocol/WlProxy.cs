@@ -14,12 +14,12 @@ namespace oopshell.Protocol;
 public abstract unsafe class WlProxy : IDisposable
 {
     // Proxies we created carry this tag, so foreign proxies (EGL's, for example) are never mistaken for ours.
-    static readonly byte** Tag = CreateTag();
+    private static readonly byte** s_tag = CreateTag();
 
-    [ThreadStatic] static ExceptionDispatchInfo? pendingException;
+    [ThreadStatic] private static ExceptionDispatchInfo? s_pendingException;
 
-    GCHandle self;
-    readonly int ownerThread = Environment.CurrentManagedThreadId;
+    private GCHandle _self;
+    private readonly int _ownerThread = Environment.CurrentManagedThreadId;
 
     protected WlProxy(nint handle, bool dispatch = true)
     {
@@ -30,9 +30,9 @@ public abstract unsafe class WlProxy : IDisposable
         BoundVersion = Math.Max(1u, wl_proxy_get_version(handle));
         if (!dispatch)
             return;
-        self = GCHandle.Alloc(this);
-        void* data = (void*)GCHandle.ToIntPtr(self);
-        wl_proxy_set_tag(handle, Tag);
+        _self = GCHandle.Alloc(this);
+        void* data = (void*)GCHandle.ToIntPtr(_self);
+        wl_proxy_set_tag(handle, s_tag);
         if (wl_proxy_add_dispatcher(handle, &DispatchNative, data, data) != 0)
             throw new InvalidOperationException($"{Class}@{Id} already has a listener.");
     }
@@ -86,7 +86,7 @@ public abstract unsafe class WlProxy : IDisposable
         return created;
     }
 
-    void CheckUsable(uint since, string request)
+    private void CheckUsable(uint since, string request)
     {
         ObjectDisposedException.ThrowIf(IsDisposed, this);
         CheckThread();
@@ -94,24 +94,24 @@ public abstract unsafe class WlProxy : IDisposable
             throw new WaylandVersionException(Class, request, since, BoundVersion);
     }
 
-    void Release()
+    private void Release()
     {
         IsDisposed = true;
-        if (self.IsAllocated)
-            self.Free();
+        if (_self.IsAllocated)
+            _self.Free();
     }
 
     [Conditional("DEBUG")]
-    void CheckThread()
+    private void CheckThread()
     {
-        if (Environment.CurrentManagedThreadId != ownerThread)
+        if (Environment.CurrentManagedThreadId != _ownerThread)
             throw new InvalidOperationException($"{Class} was used from thread {Environment.CurrentManagedThreadId}; Wayland objects belong to the thread that created them.");
     }
 
     /// <summary>The managed proxy for a native one, or null if it is null or not created by oopshell.</summary>
     public static T? FromHandle<T>(nint handle) where T : WlProxy
     {
-        if (handle == 0 || wl_proxy_get_tag(handle) != Tag)
+        if (handle == 0 || wl_proxy_get_tag(handle) != s_tag)
             return null;
         return GCHandle.FromIntPtr((nint)wl_proxy_get_user_data(handle)).Target as T;
     }
@@ -134,13 +134,13 @@ public abstract unsafe class WlProxy : IDisposable
 
     public static void ThrowPendingException()
     {
-        var pending = pendingException;
-        pendingException = null;
+        var pending = s_pendingException;
+        s_pendingException = null;
         pending?.Throw();
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    static int DispatchNative(void* implementation, nint proxy, uint opcode, WlMessage* message, WlArgument* args)
+    private static int DispatchNative(void* implementation, nint proxy, uint opcode, WlMessage* message, WlArgument* args)
     {
         // Exceptions must not unwind into libwayland: park them and rethrow on the loop thread.
         try
@@ -150,12 +150,12 @@ public abstract unsafe class WlProxy : IDisposable
         }
         catch (Exception e) when (UnhandledException?.Invoke(e) != true)
         {
-            pendingException ??= ExceptionDispatchInfo.Capture(e);
+            s_pendingException ??= ExceptionDispatchInfo.Capture(e);
         }
         return 0;
     }
 
-    static byte** CreateTag()
+    private static byte** CreateTag()
     {
         byte** slot = (byte**)NativeMemory.Alloc((nuint)sizeof(byte*));
         *slot = WlInterfaceTable.Utf8("oopshell");
@@ -166,10 +166,10 @@ public abstract unsafe class WlProxy : IDisposable
 /// <summary>Implemented by every generated proxy; gives generic, reflection-free access to interface metadata.</summary>
 public unsafe interface IWaylandProxy<TSelf> where TSelf : WlProxy, IWaylandProxy<TSelf>
 {
-    static abstract string InterfaceName { get; }
+    public abstract static string InterfaceName { get; }
     /// <summary>The highest version these bindings know.</summary>
-    static abstract uint MaxVersion { get; }
-    static abstract WlInterface* NativeInterface { get; }
+    public abstract static uint MaxVersion { get; }
+    public abstract static WlInterface* NativeInterface { get; }
     /// <summary>Wraps a native proxy of this interface and starts dispatching its events.</summary>
-    static abstract TSelf Wrap(nint handle);
+    public abstract static TSelf Wrap(nint handle);
 }

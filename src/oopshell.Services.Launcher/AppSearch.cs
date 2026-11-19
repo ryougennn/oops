@@ -74,9 +74,9 @@ public static class AppSearch
     /// Everything search needs from one entry, computed on first use and kept as long as the entry lives (a
     /// catalog reload makes new entries, so stale ones are collected with their caches).
     /// </summary>
-    sealed class Prepared
+    private sealed class Prepared
     {
-        static readonly System.Runtime.CompilerServices.ConditionalWeakTable<DesktopEntry, Prepared> Cache = new();
+        private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<DesktopEntry, Prepared> s_cache = new();
 
         public readonly FieldText Name;
         public readonly FieldText? DefaultName, Generic, Program, IdTail;
@@ -84,9 +84,9 @@ public static class AppSearch
         public readonly string? Comment;
         public readonly (DesktopAction Action, FieldText Label, FieldText? DefaultLabel)[] Actions;
 
-        public static Prepared For(DesktopEntry app) => Cache.GetValue(app, a => new Prepared(a));
+        public static Prepared For(DesktopEntry app) => s_cache.GetValue(app, a => new Prepared(a));
 
-        Prepared(DesktopEntry app)
+        private Prepared(DesktopEntry app)
         {
             Name = new FieldText(app.Name);
             DefaultName = app.DefaultName != app.Name && app.DefaultName.Length > 0 ? new FieldText(app.DefaultName) : null;
@@ -102,7 +102,7 @@ public static class AppSearch
         }
     }
 
-    static double ScoreApp(Prepared app, string q, string[] terms, string compact)
+    private static double ScoreApp(Prepared app, string q, string[] terms, string compact)
     {
         double best = Field(app.Name, q, terms, compact);
         if (app.DefaultName is { } defaultName)
@@ -123,14 +123,14 @@ public static class AppSearch
     }
 
     /// <summary>The program in Exec, skipping env and VAR=value (e.g. snap and flatpak wrappers keep their names elsewhere).</summary>
-    static string? Program(DesktopEntry app) =>
+    private static string? Program(DesktopEntry app) =>
         app.Exec?.Split(' ', StringSplitOptions.RemoveEmptyEntries).SkipWhile(t => t == "env" || t.Contains('='))
             .FirstOrDefault() is { } p ? Path.GetFileName(p.Trim('"')) : null;
 
     /// <summary>0..100 for one field (raw text; tests use this).</summary>
     internal static double Field(string text, string q, string[] terms) => Field(new FieldText(text), q, terms, q.Replace(" ", ""));
 
-    static double Field(FieldText field, string q, string[] terms, string compact)
+    private static double Field(FieldText field, string q, string[] terms, string compact)
     {
         string f = field.Folded;
         if (f.Length == 0)
@@ -149,7 +149,7 @@ public static class AppSearch
         return Subsequence(f, compact);
     }
 
-    static bool AllTermsStartWords(List<string> words, string[] terms)
+    private static bool AllTermsStartWords(List<string> words, string[] terms)
     {
         foreach (var term in terms)
         {
@@ -169,7 +169,7 @@ public static class AppSearch
     }
 
     /// <summary>Substring match on folded text.</summary>
-    static double Contains(string folded, string q, string[] terms)
+    private static double Contains(string folded, string q, string[] terms)
     {
         if (folded.Contains(q, StringComparison.Ordinal))
             return 62;
@@ -184,7 +184,7 @@ public static class AppSearch
     }
 
     /// <summary>All letters of the query in order; fewer gaps and an early start score higher (10..40).</summary>
-    static double Subsequence(string f, string q)
+    private static double Subsequence(string f, string q)
     {
         if (q.Length < 2)
             return 0;

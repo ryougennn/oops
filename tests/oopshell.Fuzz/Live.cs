@@ -12,36 +12,36 @@ using Tmds.DBus.Protocol;
 namespace oopshell.Fuzz;
 
 /// <summary>Targets that need a running oopshell app: a private headless sway and a private D-Bus daemon.</summary>
-static class Live
+internal static class Live
 {
     /// <summary>The app's event loop died: what would have killed a shell.</summary>
     public sealed class FatalException(Exception inner) : Exception("The app crashed.", inner);
 
-    static readonly List<Process> processes = new();
-    static string? runtimeDir, waylandSocket, busAddress;
+    private static readonly List<Process> s_processes = new();
+    private static string? s_runtimeDir, s_waylandSocket, s_busAddress;
 
-    static void Start()
+    private static void Start()
     {
-        if (runtimeDir is not null)
+        if (s_runtimeDir is not null)
             return;
-        runtimeDir = Directory.CreateTempSubdirectory("oopsfz.").FullName;
-        File.WriteAllText(Path.Combine(runtimeDir, "sway.conf"), "output HEADLESS-1 resolution 800x600\n");
-        Spawn("sway", ["-c", Path.Combine(runtimeDir, "sway.conf")], new() { ["WLR_BACKENDS"] = "headless", ["WLR_LIBINPUT_NO_DEVICES"] = "1", ["WLR_RENDERER"] = "pixman" });
-        for (int i = 0; i < 100 && waylandSocket is null; i++, Thread.Sleep(50))
-            waylandSocket = Directory.GetFiles(runtimeDir, "wayland-*").FirstOrDefault(f => !f.EndsWith(".lock"));
+        s_runtimeDir = Directory.CreateTempSubdirectory("oopsfz.").FullName;
+        File.WriteAllText(Path.Combine(s_runtimeDir, "sway.conf"), "output HEADLESS-1 resolution 800x600\n");
+        Spawn("sway", ["-c", Path.Combine(s_runtimeDir, "sway.conf")], new() { ["WLR_BACKENDS"] = "headless", ["WLR_LIBINPUT_NO_DEVICES"] = "1", ["WLR_RENDERER"] = "pixman" });
+        for (int i = 0; i < 100 && s_waylandSocket is null; i++, Thread.Sleep(50))
+            s_waylandSocket = Directory.GetFiles(s_runtimeDir, "wayland-*").FirstOrDefault(f => !f.EndsWith(".lock"));
         var bus = Spawn("dbus-daemon", ["--session", "--nofork", "--print-address=1"], new(), readOutput: false);
-        busAddress = bus.StandardOutput.ReadLine();
-        if (waylandSocket is null || busAddress is null)
+        s_busAddress = bus.StandardOutput.ReadLine();
+        if (s_waylandSocket is null || s_busAddress is null)
             throw new InvalidOperationException("Could not start headless sway or dbus-daemon.");
     }
 
-    static Process Spawn(string program, string[] args, Dictionary<string, string> env, bool readOutput = true)
+    private static Process Spawn(string program, string[] args, Dictionary<string, string> env, bool readOutput = true)
     {
         var start = new ProcessStartInfo(program, args) { RedirectStandardOutput = true, RedirectStandardError = true };
         start.Environment.Clear();
         start.Environment["PATH"] = Environment.GetEnvironmentVariable("PATH");
         start.Environment["HOME"] = Environment.GetEnvironmentVariable("HOME");
-        start.Environment["XDG_RUNTIME_DIR"] = runtimeDir;
+        start.Environment["XDG_RUNTIME_DIR"] = s_runtimeDir;
         foreach (var (k, v) in env)
             start.Environment[k] = v;
         var p = Process.Start(start)!;
@@ -56,29 +56,29 @@ static class Live
                 File.AppendAllText(log, $"{program}: {line}\n");
         };
         p.BeginErrorReadLine();
-        processes.Add(p);
+        s_processes.Add(p);
         return p;
     }
 
     public static void Shutdown()
     {
-        foreach (var p in Enumerable.Reverse(processes))
+        foreach (var p in Enumerable.Reverse(s_processes))
         {
             if (!p.HasExited)
                 p.Kill();
         }
-        if (runtimeDir is not null)
-            Directory.Delete(runtimeDir, recursive: true);
+        if (s_runtimeDir is not null)
+            Directory.Delete(s_runtimeDir, recursive: true);
     }
 
-    static OopsApp NewApp()
+    private static OopsApp NewApp()
     {
         Start();
-        return OopsApp.Connect(new OopsOptions { Display = waylandSocket });
+        return OopsApp.Connect(new OopsOptions { Display = s_waylandSocket });
     }
 
     /// <summary>Runs the app's loop until <paramref name="done"/> or the timeout; an exception out of the loop is a crash.</summary>
-    static void Pump(OopsApp app, Func<bool> done, int timeoutMs = 300)
+    private static void Pump(OopsApp app, Func<bool> done, int timeoutMs = 300)
     {
         var deadline = Stopwatch.StartNew();
         while (!done() && deadline.ElapsedMilliseconds < timeoutMs)
@@ -97,7 +97,7 @@ static class Live
         }
     }
 
-    static T Await<T>(OopsApp app, Task<T> task, int timeoutMs = 2000)
+    private static T Await<T>(OopsApp app, Task<T> task, int timeoutMs = 2000)
     {
         Pump(app, () => task.IsCompleted, timeoutMs);
         return task.IsCompleted ? task.GetAwaiter().GetResult() : throw new TimeoutException("No answer.");
@@ -106,10 +106,10 @@ static class Live
     // ---- random D-Bus values --------------------------------------------------------------------
 
     /// <summary>A mutated string a peer could really send: the bus refuses NUL and invalid UTF-8 (and disconnects the sender).</summary>
-    static string Wire(string s) => new(Encoding.UTF8.GetString(Encoding.UTF8.GetBytes(s.Replace('\0', ' ')))
+    private static string Wire(string s) => new(Encoding.UTF8.GetString(Encoding.UTF8.GetBytes(s.Replace('\0', ' ')))
         .Where(c => c is not ('\uFFFE' or '\uFFFF') && c is not (>= '\uFDD0' and <= '\uFDEF')).ToArray()); // libdbus also refuses noncharacters
 
-    static VariantValue RandomVariant(Mutator m, int depth = 0)
+    private static VariantValue RandomVariant(Mutator m, int depth = 0)
     {
         switch (m.Random.Next(depth > 1 ? 8 : 12))
         {
@@ -133,7 +133,7 @@ static class Live
     }
 
     /// <summary>A peer's object that answers Properties.Get/GetAll with whatever the fuzzer decided.</summary>
-    sealed class FakeObject(OopsApp app, string path) : ExportedObject(app, path)
+    private sealed class FakeObject(OopsApp app, string path) : ExportedObject(app, path)
     {
         public Dictionary<string, VariantValue> Properties = new();
 
@@ -205,14 +205,15 @@ static class Live
             {
             }
             server.Wait(500);
-        });
+        }
+        );
 
         OopsApp? ipcApp = null;
         IpcServer? ipc = null;
         yield return ("ipc", m =>
         {
             ipcApp ??= NewApp();
-            string name = Path.Combine(runtimeDir!, "fuzz.sock");
+            string name = Path.Combine(s_runtimeDir!, "fuzz.sock");
             ipc ??= IpcServer.Listen(ipcApp, name, a => a.Count > 0 && a[0] == "boom" ? throw new InvalidOperationException("handler") : string.Join("|", a));
             var bytes = m.MutateBytes(Encoding.UTF8.GetBytes("toggle\0arg\0" + Wire(m.Mutate("x"))));
             findings.Input = Convert.ToHexString(bytes);
@@ -233,7 +234,8 @@ static class Live
             Pump(ipcApp, () => send.IsCompleted, 3000);
             if (!Await(ipcApp, Task.Run(() => IpcServer.IsRunning(name))))
                 throw new InvalidOperationException("The IPC server stopped answering.");
-        });
+        }
+        );
 
         OopsApp? nApp = null;
         DBusConnection? nClient = null;
@@ -243,9 +245,9 @@ static class Live
             if (nApp is null)
             {
                 nApp = NewApp();
-                var serverBus = Await(nApp, OopsDBus.ConnectAsync(nApp, busAddress));
+                var serverBus = Await(nApp, OopsDBus.ConnectAsync(nApp, s_busAddress));
                 notifications = Await(nApp, NotificationServer.StartAsync(nApp, serverBus));
-                nClient = Await(nApp, OopsDBus.ConnectAsync(nApp, busAddress));
+                nClient = Await(nApp, OopsDBus.ConnectAsync(nApp, s_busAddress));
             }
             var hints = new Dictionary<string, VariantValue>();
             for (int i = m.Random.Next(6); i > 0; i--)
@@ -277,7 +279,8 @@ static class Live
                 if (m.Random.Next(3) == 0)
                     notifications.Close(n);
             }
-        });
+        }
+        );
 
         OopsApp? mApp = null;
         FakeObject? player = null;
@@ -288,11 +291,11 @@ static class Live
             if (mApp is null)
             {
                 mApp = NewApp();
-                playerBus = Await(mApp, OopsDBus.ConnectAsync(mApp, busAddress));
+                playerBus = Await(mApp, OopsDBus.ConnectAsync(mApp, s_busAddress));
                 player = new FakeObject(mApp, "/org/mpris/MediaPlayer2");
                 playerBus.AddMethodHandler(player);
                 Await(mApp, playerBus.RequestNameOrThrowAsync("org.mpris.MediaPlayer2.fuzz").ContinueWith(_ => true));
-                media = Await(mApp, MediaService.StartAsync(mApp, Await(mApp, OopsDBus.ConnectAsync(mApp, busAddress))));
+                media = Await(mApp, MediaService.StartAsync(mApp, Await(mApp, OopsDBus.ConnectAsync(mApp, s_busAddress))));
             }
             var props = new Dictionary<string, VariantValue>();
             foreach (var key in new[] { "Metadata", "PlaybackStatus", "CanPlay", "CanPause", "CanGoNext", "CanGoPrevious", "Identity", "DesktopEntry", "Position", "LoopStatus" })
@@ -301,8 +304,11 @@ static class Live
                     props[key] = key == "Metadata" && m.Random.Next(2) == 0
                         ? new Dict<string, VariantValue>(new Dictionary<string, VariantValue>
                         {
-                            ["xesam:title"] = RandomVariant(m), ["xesam:artist"] = RandomVariant(m), ["mpris:artUrl"] = RandomVariant(m),
-                            ["mpris:length"] = RandomVariant(m), ["xesam:album"] = RandomVariant(m),
+                            ["xesam:title"] = RandomVariant(m),
+                            ["xesam:artist"] = RandomVariant(m),
+                            ["mpris:artUrl"] = RandomVariant(m),
+                            ["mpris:length"] = RandomVariant(m),
+                            ["xesam:album"] = RandomVariant(m),
                         })
                         : RandomVariant(m);
             }
@@ -316,7 +322,8 @@ static class Live
             });
             Pump(mApp, () => false, 30);
             _ = media!.Active?.Title;
-        });
+        }
+        );
 
         OopsApp? tApp = null;
         FakeObject? item = null;
@@ -327,8 +334,8 @@ static class Live
             if (tApp is null)
             {
                 tApp = NewApp();
-                tray = Await(tApp, TrayHost.StartAsync(tApp, Await(tApp, OopsDBus.ConnectAsync(tApp, busAddress))));
-                itemBus = Await(tApp, OopsDBus.ConnectAsync(tApp, busAddress));
+                tray = Await(tApp, TrayHost.StartAsync(tApp, Await(tApp, OopsDBus.ConnectAsync(tApp, s_busAddress))));
+                itemBus = Await(tApp, OopsDBus.ConnectAsync(tApp, s_busAddress));
                 item = new FakeObject(tApp, "/StatusNotifierItem");
                 itemBus.AddMethodHandler(item);
             }
@@ -355,6 +362,7 @@ static class Live
             Pump(tApp, () => false, 30);
             foreach (var i in tray!.Items)
                 _ = i.Title;
-        });
+        }
+        );
     }
 }

@@ -13,17 +13,17 @@ public sealed class TrayHost : IDisposable
     public const string WatcherName = "org.kde.StatusNotifierWatcher";
     public const string WatcherPath = "/StatusNotifierWatcher";
 
-    readonly OopsApp app;
-    readonly DBusConnection connection;
-    readonly ObservableCollection<TrayItem> items = new();
-    readonly List<IDisposable> watches = new();
-    StatusNotifierWatcher? watcher;
+    private readonly OopsApp _app;
+    private readonly DBusConnection _connection;
+    private readonly ObservableCollection<TrayItem> _items = new();
+    private readonly List<IDisposable> _watches = new();
+    private StatusNotifierWatcher? _watcher;
 
-    TrayHost(OopsApp app, DBusConnection connection)
+    private TrayHost(OopsApp app, DBusConnection connection)
     {
-        this.app = app;
-        this.connection = connection;
-        Items = new ReadOnlyObservableCollection<TrayItem>(items);
+        _app = app;
+        _connection = connection;
+        Items = new ReadOnlyObservableCollection<TrayItem>(_items);
     }
 
     public static async Task<TrayHost> StartAsync(OopsApp app, DBusConnection connection)
@@ -37,92 +37,92 @@ public sealed class TrayHost : IDisposable
     public ReadOnlyObservableCollection<TrayItem> Items { get; }
 
     /// <summary>True if this process is the StatusNotifierWatcher.</summary>
-    public bool IsWatcher => watcher is not null;
+    public bool IsWatcher => _watcher is not null;
 
-    async Task InitializeAsync()
+    private async Task InitializeAsync()
     {
         string hostName = $"org.kde.StatusNotifierHost-{Environment.ProcessId}";
-        await connection.TryRequestNameAsync(hostName, RequestNameOptions.Default);
+        await _connection.TryRequestNameAsync(hostName, RequestNameOptions.Default);
 
-        var candidate = new StatusNotifierWatcher(app, connection);
-        connection.AddMethodHandler(candidate);
-        if (await connection.TryRequestNameAsync(WatcherName, RequestNameOptions.Default))
+        var candidate = new StatusNotifierWatcher(_app, _connection);
+        _connection.AddMethodHandler(candidate);
+        if (await _connection.TryRequestNameAsync(WatcherName, RequestNameOptions.Default))
         {
-            watcher = candidate;
-            watcher.ItemRegistered += service => _ = AddAsync(service);
-            watcher.ItemUnregistered += Remove;
-            watcher.RegisterHost(hostName);
+            _watcher = candidate;
+            _watcher.ItemRegistered += service => _ = AddAsync(service);
+            _watcher.ItemUnregistered += Remove;
+            _watcher.RegisterHost(hostName);
             return;
         }
 
         // Someone else is the watcher: follow its signals.
-        connection.RemoveMethodHandler(WatcherPath);
-        watches.Add(await connection.WatchSignalAsync(app, WatcherName, WatcherPath, WatcherName, "StatusNotifierItemRegistered",
+        _connection.RemoveMethodHandler(WatcherPath);
+        _watches.Add(await _connection.WatchSignalAsync(_app, WatcherName, WatcherPath, WatcherName, "StatusNotifierItemRegistered",
             (message, _) => message.GetBodyReader().ReadString(), service => _ = AddAsync(service)));
-        watches.Add(await connection.WatchSignalAsync(app, WatcherName, WatcherPath, WatcherName, "StatusNotifierItemUnregistered",
+        _watches.Add(await _connection.WatchSignalAsync(_app, WatcherName, WatcherPath, WatcherName, "StatusNotifierItemUnregistered",
             (message, _) => message.GetBodyReader().ReadString(), Remove));
-        await connection.CallAsync(WatcherName, WatcherPath, WatcherName, "RegisterStatusNotifierHost", (ref MessageWriter w) => w.WriteString(hostName), "s");
-        var registered = await connection.GetPropertyAsync(WatcherName, WatcherPath, WatcherName, "RegisteredStatusNotifierItems");
+        await _connection.CallAsync(WatcherName, WatcherPath, WatcherName, "RegisterStatusNotifierHost", (ref MessageWriter w) => w.WriteString(hostName), "s");
+        var registered = await _connection.GetPropertyAsync(WatcherName, WatcherPath, WatcherName, "RegisteredStatusNotifierItems");
         await Task.WhenAll((registered.AsStrings() ?? []).Select(AddAsync));
     }
 
     /// <summary>How long an item may take to answer before it is left out.</summary>
-    static readonly TimeSpan PeerTimeout = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan s_peerTimeout = TimeSpan.FromSeconds(3);
 
-    async Task AddAsync(string service)
+    private async Task AddAsync(string service)
     {
-        if (items.Any(i => i.Service == service))
+        if (_items.Any(i => i.Service == service))
             return;
-        var item = new TrayItem(app, connection, service);
+        var item = new TrayItem(_app, _connection, service);
         try
         {
-            await item.StartAsync().WaitAsync(PeerTimeout);
+            await item.StartAsync().WaitAsync(s_peerTimeout);
         }
         catch (Exception)
         {
             return; // registered but not answering, or answering nonsense: one bad item must not stop the tray
         }
-        await app.InvokeAsync(() =>
+        await _app.InvokeAsync(() =>
         {
-            if (!items.Any(i => i.Service == service))
-                items.Add(item);
+            if (!_items.Any(i => i.Service == service))
+                _items.Add(item);
             return Task.CompletedTask;
         });
     }
 
-    void Remove(string service)
+    private void Remove(string service)
     {
-        var item = items.FirstOrDefault(i => i.Service == service);
+        var item = _items.FirstOrDefault(i => i.Service == service);
         if (item is null)
             return;
         item.Stop();
-        items.Remove(item);
+        _items.Remove(item);
     }
 
     public void Dispose()
     {
-        foreach (var watch in watches)
+        foreach (var watch in _watches)
             watch.Dispose();
-        foreach (var item in items)
+        foreach (var item in _items)
             item.Stop();
-        watcher?.Dispose();
+        _watcher?.Dispose();
     }
 }
 
 /// <summary>The <c>org.kde.StatusNotifierWatcher</c> service: the registry apps announce their tray items to.</summary>
 internal sealed class StatusNotifierWatcher(OopsApp app, DBusConnection connection) : ExportedObject(app, TrayHost.WatcherPath), IDisposable
 {
-    readonly List<string> items = new();
-    readonly List<string> hosts = new();
-    IDisposable? nameWatch;
+    private readonly List<string> _items = new();
+    private readonly List<string> _hosts = new();
+    private IDisposable? _nameWatch;
 
     public event Action<string>? ItemRegistered;
     public event Action<string>? ItemUnregistered;
 
     public void RegisterHost(string name)
     {
-        if (!hosts.Contains(name))
-            hosts.Add(name);
+        if (!_hosts.Contains(name))
+            _hosts.Add(name);
         connection.EmitSignal(TrayHost.WatcherPath, TrayHost.WatcherName, "StatusNotifierHostRegistered");
     }
 
@@ -132,64 +132,64 @@ internal sealed class StatusNotifierWatcher(OopsApp app, DBusConnection connecti
         switch ((request.InterfaceAsString, request.MemberAsString))
         {
             case (TrayHost.WatcherName, "RegisterStatusNotifierItem"):
-            {
-                string arg = request.GetBodyReader().ReadString();
-                string sender = request.SenderAsString ?? "";
-                // Apps pass either their bus name or (Ayatana style) just an object path.
-                string service = arg.StartsWith('/') ? sender + arg : arg;
-                // A unique name must be the caller's own; anything registered lives only as long as its caller.
-                if (!arg.StartsWith(':') || arg == sender || arg.StartsWith(sender + "/"))
-                    RegisterItem(service, sender);
-                ReplyEmpty(context);
-                break;
-            }
+                {
+                    string arg = request.GetBodyReader().ReadString();
+                    string sender = request.SenderAsString ?? "";
+                    // Apps pass either their bus name or (Ayatana style) just an object path.
+                    string service = arg.StartsWith('/') ? sender + arg : arg;
+                    // A unique name must be the caller's own; anything registered lives only as long as its caller.
+                    if (!arg.StartsWith(':') || arg == sender || arg.StartsWith(sender + "/"))
+                        RegisterItem(service, sender);
+                    ReplyEmpty(context);
+                    break;
+                }
             case (TrayHost.WatcherName, "RegisterStatusNotifierHost"):
                 RegisterHost(request.GetBodyReader().ReadString());
                 ReplyEmpty(context);
                 break;
             case ("org.freedesktop.DBus.Properties", "Get"):
-            {
-                var reader = request.GetBodyReader();
-                reader.ReadString();
-                string property = reader.ReadString();
-                var writer = context.CreateReplyWriter("v");
-                try
                 {
-                    WriteProperty(ref writer, property, items, hosts);
-                    context.Reply(writer.CreateMessage());
-                }
-                finally
-                {
-                    writer.Dispose();
-                }
-                break;
-            }
-            case ("org.freedesktop.DBus.Properties", "GetAll"):
-            {
-                var writer = context.CreateReplyWriter("a{sv}");
-                try
-                {
-                    var dict = writer.WriteDictionaryStart();
-                    foreach (var name in new[] { "RegisteredStatusNotifierItems", "IsStatusNotifierHostRegistered", "ProtocolVersion" })
+                    var reader = request.GetBodyReader();
+                    reader.ReadString();
+                    string property = reader.ReadString();
+                    var writer = context.CreateReplyWriter("v");
+                    try
                     {
-                        writer.WriteDictionaryEntryStart();
-                        writer.WriteString(name);
-                        WriteProperty(ref writer, name, items, hosts);
+                        WriteProperty(ref writer, property, _items, _hosts);
+                        context.Reply(writer.CreateMessage());
                     }
-                    writer.WriteDictionaryEnd(dict);
-                    context.Reply(writer.CreateMessage());
+                    finally
+                    {
+                        writer.Dispose();
+                    }
+                    break;
                 }
-                finally
+            case ("org.freedesktop.DBus.Properties", "GetAll"):
                 {
-                    writer.Dispose();
+                    var writer = context.CreateReplyWriter("a{sv}");
+                    try
+                    {
+                        var dict = writer.WriteDictionaryStart();
+                        foreach (var name in new[] { "RegisteredStatusNotifierItems", "IsStatusNotifierHostRegistered", "ProtocolVersion" })
+                        {
+                            writer.WriteDictionaryEntryStart();
+                            writer.WriteString(name);
+                            WriteProperty(ref writer, name, _items, _hosts);
+                        }
+                        writer.WriteDictionaryEnd(dict);
+                        context.Reply(writer.CreateMessage());
+                    }
+                    finally
+                    {
+                        writer.Dispose();
+                    }
+                    break;
                 }
-                break;
-            }
         }
     }
 
     // By ref: MessageWriter is a struct, and writes to a copy would be lost.
-    static void WriteProperty(ref MessageWriter writer, string property, List<string> items, List<string> hosts)
+    private static void WriteProperty(ref MessageWriter writer, string property, List<string> items, List<string> hosts)
     {
         switch (property)
         {
@@ -199,21 +199,21 @@ internal sealed class StatusNotifierWatcher(OopsApp app, DBusConnection connecti
         }
     }
 
-    readonly Dictionary<string, string> registeredBy = new();
+    private readonly Dictionary<string, string> _registeredBy = new();
 
-    void RegisterItem(string service, string sender)
+    private void RegisterItem(string service, string sender)
     {
-        if (items.Contains(service) || registeredBy.Values.Count(s => s == sender) >= 16)
+        if (_items.Contains(service) || _registeredBy.Values.Count(s => s == sender) >= 16)
             return;
-        items.Add(service);
-        registeredBy[service] = sender;
-        nameWatch ??= WatchOwners();
+        _items.Add(service);
+        _registeredBy[service] = sender;
+        _nameWatch ??= WatchOwners();
         connection.EmitSignal(TrayHost.WatcherPath, TrayHost.WatcherName, "StatusNotifierItemRegistered", "s", (ref MessageWriter w) => w.WriteString(service));
         ItemRegistered?.Invoke(service);
     }
 
     /// <summary>Unregisters items whose bus name disappears (the app exited).</summary>
-    IDisposable WatchOwners()
+    private IDisposable WatchOwners()
     {
         var subscription = connection.WatchSignalAsync(App, "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "NameOwnerChanged",
             (message, _) =>
@@ -227,15 +227,15 @@ internal sealed class StatusNotifierWatcher(OopsApp app, DBusConnection connecti
             {
                 if (change.NewOwner.Length > 0)
                     return;
-                foreach (var service in items.Where(s => s == change.Name || s.StartsWith(change.Name + "/")
-                    || registeredBy.GetValueOrDefault(s) == change.Name).ToList())
+                foreach (var service in _items.Where(s => s == change.Name || s.StartsWith(change.Name + "/")
+                    || _registeredBy.GetValueOrDefault(s) == change.Name).ToList())
                 {
-                    items.Remove(service);
-                    registeredBy.Remove(service);
+                    _items.Remove(service);
+                    _registeredBy.Remove(service);
                     connection.EmitSignal(TrayHost.WatcherPath, TrayHost.WatcherName, "StatusNotifierItemUnregistered", "s", (ref MessageWriter w) => w.WriteString(service));
                     ItemUnregistered?.Invoke(service);
                 }
-                hosts.Remove(change.Name);
+                _hosts.Remove(change.Name);
             });
         return new DeferredDisposable(subscription);
     }
@@ -255,12 +255,12 @@ internal sealed class StatusNotifierWatcher(OopsApp app, DBusConnection connecti
 
     public void Dispose()
     {
-        nameWatch?.Dispose();
+        _nameWatch?.Dispose();
         connection.RemoveMethodHandler(TrayHost.WatcherPath);
     }
 
     /// <summary>Disposes a subscription that may still be in flight.</summary>
-    sealed class DeferredDisposable(Task<IDisposable> pending) : IDisposable
+    private sealed class DeferredDisposable(Task<IDisposable> pending) : IDisposable
     {
         public void Dispose() => pending.ContinueWith(t => t.Result.Dispose(), TaskContinuationOptions.OnlyOnRanToCompletion);
     }

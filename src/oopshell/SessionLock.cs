@@ -6,15 +6,15 @@ namespace oopshell;
 /// <summary>A lock screen surface on one output (<c>ext_session_lock_surface_v1</c>). Created by <see cref="SessionLock"/>.</summary>
 public sealed class LockSurface : Surface
 {
-    readonly ExtSessionLockSurfaceV1 role;
+    private readonly ExtSessionLockSurfaceV1 _role;
 
     internal LockSurface(OopsApp app, ExtSessionLockV1 sessionLock, Output output) : base(app)
     {
         Output = output;
-        role = sessionLock.GetLockSurface(Proxy, output.Proxy);
-        role.Configure += e =>
+        _role = sessionLock.GetLockSurface(Proxy, output.Proxy);
+        _role.Configure += e =>
         {
-            role.AckConfigure(e.Serial);
+            _role.AckConfigure(e.Serial);
             ApplyConfigure(new Size((int)e.Width, (int)e.Height));
         };
     }
@@ -28,7 +28,7 @@ public sealed class LockSurface : Surface
 
     internal void RaiseFinished() => RaiseClosed();
 
-    private protected override void DestroyRole() => role.Dispose();
+    private protected override void DestroyRole() => _role.Dispose();
 }
 
 /// <summary>
@@ -42,36 +42,36 @@ public sealed class LockSurface : Surface
 /// </remarks>
 public sealed class SessionLock
 {
-    readonly OopsApp app;
-    readonly ExtSessionLockV1 proxy;
-    readonly Action<LockSurface> configure;
-    readonly Dictionary<Output, LockSurface> surfaces = new();
-    readonly TaskCompletionSource<SessionLock> locked = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    bool ended;
+    private readonly OopsApp _app;
+    private readonly ExtSessionLockV1 _proxy;
+    private readonly Action<LockSurface> _configure;
+    private readonly Dictionary<Output, LockSurface> _surfaces = new();
+    private readonly TaskCompletionSource<SessionLock> _locked = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private bool _ended;
 
     internal SessionLock(OopsApp app, Action<LockSurface> configure)
     {
-        this.app = app;
-        this.configure = configure;
-        proxy = app.Get<ExtSessionLockManagerV1>().Lock();
-        proxy.Locked += () =>
+        _app = app;
+        _configure = configure;
+        _proxy = app.Get<ExtSessionLockManagerV1>().Lock();
+        _proxy.Locked += () =>
         {
             IsLocked = true;
-            locked.TrySetResult(this);
+            _locked.TrySetResult(this);
         };
-        proxy.Finished += OnFinished;
+        _proxy.Finished += OnFinished;
         foreach (var output in app.Outputs)
             AddSurface(output);
         app.OutputAdded += AddSurface;
         app.OutputRemoved += RemoveSurface;
     }
 
-    internal Task<SessionLock> LockedTask => locked.Task;
+    internal Task<SessionLock> LockedTask => _locked.Task;
 
     /// <summary>True once the compositor confirmed the lock (every output shows a lock surface or is blanked).</summary>
     public bool IsLocked { get; private set; }
 
-    public IReadOnlyCollection<LockSurface> Surfaces => surfaces.Values;
+    public IReadOnlyCollection<LockSurface> Surfaces => _surfaces.Values;
 
     /// <summary>The compositor ended the lock without an unlock (another locker took over, or it refused to lock).</summary>
     public event Action? Finished;
@@ -79,50 +79,50 @@ public sealed class SessionLock
     /// <summary>Unlocks the session and destroys the lock surfaces.</summary>
     public void Unlock()
     {
-        if (ended)
+        if (_ended)
             return;
         if (!IsLocked)
             throw new InvalidOperationException("The session is not locked yet.");
-        proxy.UnlockAndDestroy();
+        _proxy.UnlockAndDestroy();
         End();
     }
 
-    void AddSurface(Output output)
+    private void AddSurface(Output output)
     {
-        if (ended || surfaces.ContainsKey(output))
+        if (_ended || _surfaces.ContainsKey(output))
             return;
-        var surface = new LockSurface(app, proxy, output);
-        surfaces[output] = surface;
-        configure(surface);
+        var surface = new LockSurface(_app, _proxy, output);
+        _surfaces[output] = surface;
+        _configure(surface);
     }
 
-    void RemoveSurface(Output output)
+    private void RemoveSurface(Output output)
     {
-        if (surfaces.Remove(output, out var surface))
+        if (_surfaces.Remove(output, out var surface))
             surface.Dispose();
     }
 
-    void OnFinished()
+    private void OnFinished()
     {
-        if (ended)
+        if (_ended)
             return;
-        foreach (var surface in surfaces.Values)
+        foreach (var surface in _surfaces.Values)
             surface.RaiseFinished();
-        proxy.Dispose();
+        _proxy.Dispose();
         End();
-        locked.TrySetException(new InvalidOperationException("The compositor refused to lock the session (is another locker running?)."));
+        _locked.TrySetException(new InvalidOperationException("The compositor refused to lock the session (is another locker running?)."));
         Finished?.Invoke();
     }
 
-    void End()
+    private void End()
     {
-        ended = true;
+        _ended = true;
         IsLocked = false;
-        app.OutputAdded -= AddSurface;
-        app.OutputRemoved -= RemoveSurface;
-        foreach (var surface in surfaces.Values)
+        _app.OutputAdded -= AddSurface;
+        _app.OutputRemoved -= RemoveSurface;
+        foreach (var surface in _surfaces.Values)
             surface.Dispose();
-        surfaces.Clear();
+        _surfaces.Clear();
     }
 }
 

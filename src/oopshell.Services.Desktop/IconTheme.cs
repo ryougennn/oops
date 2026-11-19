@@ -6,18 +6,18 @@ namespace oopshell.Services.Desktop;
 /// </summary>
 public sealed class IconTheme
 {
-    static readonly string[] Extensions = [".png", ".svg"];
+    private static readonly string[] s_extensions = [".png", ".svg"];
 
-    readonly List<ThemeData> chain = new();
-    readonly IReadOnlyList<string> baseDirs;
-    readonly Dictionary<(string, int, int), string?> cache = new();
+    private readonly List<ThemeData> _chain = new();
+    private readonly IReadOnlyList<string> _baseDirs;
+    private readonly Dictionary<(string, int, int), string?> _cache = new();
     // File names per directory (null = missing), read once: probing hundreds of theme directories with
     // stat() per lookup cost ~2 ms per icon.
-    readonly Dictionary<string, HashSet<string>?> listings = new();
+    private readonly Dictionary<string, HashSet<string>?> _listings = new();
 
-    sealed record ThemeData(string Name, List<string> Roots, List<ThemeDirectory> Directories);
+    private sealed record ThemeData(string Name, List<string> Roots, List<ThemeDirectory> Directories);
 
-    sealed record ThemeDirectory(string Path, int Size, int Scale, string Type, int MinSize, int MaxSize, int Threshold)
+    private sealed record ThemeDirectory(string Path, int Size, int Scale, string Type, int MinSize, int MaxSize, int Threshold)
     {
         public bool Matches(int size, int scale) => Scale == scale && Type switch
         {
@@ -40,7 +40,7 @@ public sealed class IconTheme
     /// <param name="baseDirs">Icon base directories; defaults to <c>~/.icons</c>, <c>$XDG_DATA_DIRS/icons</c>, <c>/usr/share/pixmaps</c>.</param>
     public IconTheme(string? themeName = null, IReadOnlyList<string>? baseDirs = null)
     {
-        this.baseDirs = baseDirs ?? DefaultBaseDirs();
+        _baseDirs = baseDirs ?? DefaultBaseDirs();
         var visited = new HashSet<string>();
         var pending = new Queue<string>();
         pending.Enqueue(themeName ?? "hicolor");
@@ -48,15 +48,15 @@ public sealed class IconTheme
         {
             if (!visited.Add(name) || LoadTheme(name) is not { } theme)
                 continue;
-            chain.Add(theme);
+            _chain.Add(theme);
             foreach (var parent in ReadInherits(name))
                 pending.Enqueue(parent);
         }
         if (!visited.Contains("hicolor") && LoadTheme("hicolor") is { } hicolor)
-            chain.Add(hicolor);
+            _chain.Add(hicolor);
     }
 
-    public IReadOnlyList<string> ThemeNames => chain.Select(t => t.Name).ToList();
+    public IReadOnlyList<string> ThemeNames => _chain.Select(t => t.Name).ToList();
 
     /// <summary>
     /// The file for <paramref name="icon"/> at <paramref name="size"/> logical pixels and integer
@@ -75,22 +75,22 @@ public sealed class IconTheme
         }
         if (icon.Contains('/') || icon.Length > 255)
             return null; // not an icon name
-        if (cache.TryGetValue((icon, size, scale), out var cached))
+        if (_cache.TryGetValue((icon, size, scale), out var cached))
             return cached;
-        if (cache.Count > 4096)
-            cache.Clear(); // names from other apps are unbounded
+        if (_cache.Count > 4096)
+            _cache.Clear(); // names from other apps are unbounded
         string? result = null;
-        foreach (var theme in chain)
+        foreach (var theme in _chain)
         {
             if ((result = FindInTheme(theme, icon, size, scale)) is not null)
                 break;
         }
         result ??= FindUnthemed(icon);
-        cache[(icon, size, scale)] = result;
+        _cache[(icon, size, scale)] = result;
         return result;
     }
 
-    string? FindInTheme(ThemeData theme, string icon, int size, int scale)
+    private string? FindInTheme(ThemeData theme, string icon, int size, int scale)
     {
         foreach (var dir in theme.Directories.Where(d => d.Matches(size, scale)))
         {
@@ -111,9 +111,9 @@ public sealed class IconTheme
         return best;
     }
 
-    string? FindUnthemed(string icon)
+    private string? FindUnthemed(string icon)
     {
-        foreach (var dir in baseDirs)
+        foreach (var dir in _baseDirs)
         {
             if (Existing(dir, icon) is { } found)
                 return found;
@@ -121,13 +121,13 @@ public sealed class IconTheme
         return null;
     }
 
-    string? Existing(string dir, string icon)
+    private string? Existing(string dir, string icon)
     {
-        if (!listings.TryGetValue(dir, out var names))
-            listings[dir] = names = List(dir);
+        if (!_listings.TryGetValue(dir, out var names))
+            _listings[dir] = names = List(dir);
         if (names is null)
             return null;
-        foreach (var ext in Extensions)
+        foreach (var ext in s_extensions)
         {
             if (names.Contains(icon + ext))
                 return System.IO.Path.Combine(dir, icon + ext);
@@ -135,7 +135,7 @@ public sealed class IconTheme
         return null;
     }
 
-    static HashSet<string>? List(string dir)
+    private static HashSet<string>? List(string dir)
     {
         try
         {
@@ -147,9 +147,9 @@ public sealed class IconTheme
         }
     }
 
-    ThemeData? LoadTheme(string name)
+    private ThemeData? LoadTheme(string name)
     {
-        var roots = baseDirs.Select(b => System.IO.Path.Combine(b, name)).Where(Directory.Exists).ToList();
+        var roots = _baseDirs.Select(b => System.IO.Path.Combine(b, name)).Where(Directory.Exists).ToList();
         var file = roots.Select(r => KeyFile.TryLoad(System.IO.Path.Combine(r, "index.theme"))).FirstOrDefault(f => f is not null);
         if (file is null)
             return null;
@@ -167,15 +167,15 @@ public sealed class IconTheme
         return new ThemeData(name, roots, directories);
     }
 
-    IEnumerable<string> ReadInherits(string name)
+    private IEnumerable<string> ReadInherits(string name)
     {
-        var file = baseDirs.Select(b => KeyFile.TryLoad(System.IO.Path.Combine(b, name, "index.theme"))).FirstOrDefault(f => f is not null);
+        var file = _baseDirs.Select(b => KeyFile.TryLoad(System.IO.Path.Combine(b, name, "index.theme"))).FirstOrDefault(f => f is not null);
         return file is null ? [] : file.GetList("Icon Theme", "Inherits", ',');
     }
 
-    static int Int(string? value, int fallback) => int.TryParse(value, out int v) ? v : fallback;
+    private static int Int(string? value, int fallback) => int.TryParse(value, out int v) ? v : fallback;
 
-    static IReadOnlyList<string> DefaultBaseDirs()
+    private static IReadOnlyList<string> DefaultBaseDirs()
     {
         string home = Environment.GetEnvironmentVariable("HOME") ?? "/";
         return new[] { System.IO.Path.Combine(home, ".icons") }

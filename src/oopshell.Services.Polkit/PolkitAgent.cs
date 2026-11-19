@@ -38,23 +38,23 @@ public sealed class PolkitAgent : ExportedObject, IDisposable
     public const string AuthorityInterface = "org.freedesktop.PolicyKit1.Authority";
     public const string AgentInterface = "org.freedesktop.PolicyKit1.AuthenticationAgent";
 
-    static readonly string[] HelperPaths =
+    private static readonly string[] s_helperPaths =
     [
         "/usr/lib/polkit-1/polkit-agent-helper-1", "/usr/libexec/polkit-agent-helper-1",
         "/usr/lib/polkit-agent-helper-1", "/usr/libexec/polkit-1/polkit-agent-helper-1",
     ];
 
-    readonly DBusConnection connection;
-    readonly PolkitAgentOptions options;
-    readonly Dictionary<string, PolkitRequest> requests = new(); // by cookie
-    (string Kind, Dictionary<string, VariantValue> Details) subject;
-    string? polkitd;
-    bool disposed;
+    private readonly DBusConnection _connection;
+    private readonly PolkitAgentOptions _options;
+    private readonly Dictionary<string, PolkitRequest> _requests = new(); // by cookie
+    private (string Kind, Dictionary<string, VariantValue> Details) _subject;
+    private string? _polkitd;
+    private bool _disposed;
 
-    PolkitAgent(OopsApp app, DBusConnection connection, PolkitAgentOptions options) : base(app, options.ObjectPath)
+    private PolkitAgent(OopsApp app, DBusConnection connection, PolkitAgentOptions options) : base(app, options.ObjectPath)
     {
-        this.connection = connection;
-        this.options = options;
+        _connection = connection;
+        _options = options;
     }
 
     /// <summary>
@@ -64,8 +64,8 @@ public sealed class PolkitAgent : ExportedObject, IDisposable
     public static async Task<PolkitAgent> StartAsync(OopsApp app, DBusConnection systemBus, PolkitAgentOptions? options = null)
     {
         var agent = new PolkitAgent(app, systemBus, options ?? new PolkitAgentOptions());
-        agent.subject = await agent.SubjectAsync();
-        agent.polkitd = await systemBus.GetNameOwnerAsync(AuthorityName);
+        agent._subject = await agent.SubjectAsync();
+        agent._polkitd = await systemBus.GetNameOwnerAsync(AuthorityName);
         systemBus.AddMethodHandler(agent);
         try
         {
@@ -89,15 +89,15 @@ public sealed class PolkitAgent : ExportedObject, IDisposable
     public event Action<PolkitRequest>? AuthenticationRequested;
 
     /// <summary>Requests not finished yet.</summary>
-    public IReadOnlyCollection<PolkitRequest> Pending => requests.Values;
+    public IReadOnlyCollection<PolkitRequest> Pending => _requests.Values;
 
     internal string HelperPath =>
-        options.HelperPath ?? HelperPaths.FirstOrDefault(File.Exists)
+        _options.HelperPath ?? s_helperPaths.FirstOrDefault(File.Exists)
         ?? throw new InvalidOperationException("polkit-agent-helper-1 was not found (is polkit installed?).");
 
-    async Task<(string, Dictionary<string, VariantValue>)> SubjectAsync()
+    private async Task<(string, Dictionary<string, VariantValue>)> SubjectAsync()
     {
-        if (options.Process is int pid)
+        if (_options.Process is int pid)
         {
             // start-time guards against the pid being reused: field 22 of /proc/pid/stat, after the ")" of the name.
             string stat = File.ReadAllText($"/proc/{pid}/stat");
@@ -107,23 +107,23 @@ public sealed class PolkitAgent : ExportedObject, IDisposable
         string? session = Environment.GetEnvironmentVariable("XDG_SESSION_ID");
         if (string.IsNullOrEmpty(session))
         {
-            string path = await connection.CallAsync("org.freedesktop.login1", "/org/freedesktop/login1", "org.freedesktop.login1.Manager",
+            string path = await _connection.CallAsync("org.freedesktop.login1", "/org/freedesktop/login1", "org.freedesktop.login1.Manager",
                 "GetSessionByPID", (m, _) => m.GetBodyReader().ReadObjectPathAsString(), (ref MessageWriter w) => w.WriteUInt32((uint)Environment.ProcessId), "u");
-            session = (await connection.GetPropertyAsync("org.freedesktop.login1", path, "org.freedesktop.login1.Session", "Id")).GetString();
+            session = (await _connection.GetPropertyAsync("org.freedesktop.login1", path, "org.freedesktop.login1.Session", "Id")).GetString();
         }
         return ("unix-session", new() { ["session-id"] = session });
     }
 
-    void WriteSubject(ref MessageWriter w)
+    private void WriteSubject(ref MessageWriter w)
     {
         w.WriteStructureStart();
-        w.WriteString(subject.Kind);
-        w.WriteDictionary(subject.Details);
+        w.WriteString(_subject.Kind);
+        w.WriteDictionary(_subject.Details);
     }
 
     protected override void HandleMethod(MethodContext context)
     {
-        if (context.Request.InterfaceAsString != AgentInterface || RefuseUnlessFrom(context, polkitd))
+        if (context.Request.InterfaceAsString != AgentInterface || RefuseUnlessFrom(context, _polkitd))
             return;
         switch (context.Request.MemberAsString)
         {
@@ -132,14 +132,14 @@ public sealed class PolkitAgent : ExportedObject, IDisposable
                 break;
             case "CancelAuthentication":
                 string cookie = context.Request.GetBodyReader().ReadString();
-                if (requests.TryGetValue(cookie, out var request))
+                if (_requests.TryGetValue(cookie, out var request))
                     request.Finish(cancelledByPolkit: true);
                 ReplyEmpty(context);
                 break;
         }
     }
 
-    void Begin(MethodContext context)
+    private void Begin(MethodContext context)
     {
         var reader = context.Request.GetBodyReader();
         string actionId = reader.ReadString(), message = reader.ReadString(), icon = reader.ReadString();
@@ -164,10 +164,10 @@ public sealed class PolkitAgent : ExportedObject, IDisposable
         users = users.DistinctBy(u => u.Uid).OrderBy(u => u.Name == Environment.UserName ? 0 : 1).ToList();
 
         Defer(context);
-        if (requests.TryGetValue(cookie, out var previous))
+        if (_requests.TryGetValue(cookie, out var previous))
             previous.Finish(cancelledByPolkit: true); // polkitd started over with the same cookie: answer the old call
         var request = new PolkitRequest(this, context, actionId, message, icon, details, cookie, users);
-        requests[cookie] = request;
+        _requests[cookie] = request;
         if (users.Count == 0)
         {
             request.Finish(cancelledByPolkit: false, error: "No user may authenticate this action.");
@@ -178,7 +178,7 @@ public sealed class PolkitAgent : ExportedObject, IDisposable
 
     internal void Finished(PolkitRequest request, MethodContext context, string? error)
     {
-        requests.Remove(request.Cookie);
+        _requests.Remove(request.Cookie);
         if (error is null)
             ReplyDeferred(context);
         else
@@ -187,14 +187,14 @@ public sealed class PolkitAgent : ExportedObject, IDisposable
 
     public void Dispose()
     {
-        if (disposed)
+        if (_disposed)
             return;
-        disposed = true;
-        foreach (var request in requests.Values.ToList())
+        _disposed = true;
+        foreach (var request in _requests.Values.ToList())
             request.Cancel();
-        connection.RemoveMethodHandler(Path);
+        _connection.RemoveMethodHandler(Path);
         // Best effort: polkit also forgets the agent when this connection closes.
-        _ = connection.CallAsync(AuthorityName, AuthorityPath, AuthorityInterface, "UnregisterAuthenticationAgent", (ref MessageWriter w) =>
+        _ = _connection.CallAsync(AuthorityName, AuthorityPath, AuthorityInterface, "UnregisterAuthenticationAgent", (ref MessageWriter w) =>
         {
             WriteSubject(ref w);
             w.WriteString(Path);
@@ -228,15 +228,15 @@ public sealed record PolkitPrompt(PolkitPromptKind Kind, string Text)
 /// </summary>
 public sealed class PolkitRequest
 {
-    readonly PolkitAgent agent;
-    readonly MethodContext context;
-    Process? helper;
+    private readonly PolkitAgent _agent;
+    private readonly MethodContext _context;
+    private Process? _helper;
 
     internal PolkitRequest(PolkitAgent agent, MethodContext context, string actionId, string message, string iconName,
         IReadOnlyDictionary<string, string> details, string cookie, IReadOnlyList<PolkitUser> users)
     {
-        this.agent = agent;
-        this.context = context;
+        _agent = agent;
+        _context = context;
         ActionId = actionId;
         Message = message;
         IconName = iconName;
@@ -286,9 +286,9 @@ public sealed class PolkitRequest
     {
         if (IsFinished)
             throw new InvalidOperationException("The request has finished.");
-        if (helper is not null)
+        if (_helper is not null)
             throw new InvalidOperationException("An authentication attempt is already running.");
-        var start = new ProcessStartInfo(agent.HelperPath, [user.Name])
+        var start = new ProcessStartInfo(_agent.HelperPath, [user.Name])
         {
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
@@ -296,7 +296,7 @@ public sealed class PolkitRequest
             StandardOutputEncoding = Encoding.UTF8,
         };
         using var process = Process.Start(start) ?? throw new InvalidOperationException("Could not start polkit's helper.");
-        helper = process;
+        _helper = process;
         try
         {
             await process.StandardInput.WriteLineAsync(Cookie);
@@ -327,13 +327,13 @@ public sealed class PolkitRequest
         }
         finally
         {
-            helper = null;
+            _helper = null;
             if (!process.HasExited)
                 process.Kill();
         }
     }
 
-    static PolkitPrompt? Parse(string line)
+    private static PolkitPrompt? Parse(string line)
     {
         (string Prefix, PolkitPromptKind Kind)[] kinds =
         [
@@ -386,9 +386,9 @@ public sealed class PolkitRequest
             return;
         IsFinished = true;
         Succeeded = succeeded;
-        if (helper is { HasExited: false } running)
+        if (_helper is { HasExited: false } running)
             running.Kill();
-        agent.Finished(this, context, succeeded ? null : error ?? (cancelledByPolkit ? "Cancelled by polkit." : "Not authenticated."));
+        _agent.Finished(this, _context, succeeded ? null : error ?? (cancelledByPolkit ? "Cancelled by polkit." : "Not authenticated."));
         Finished?.Invoke();
     }
 }

@@ -44,26 +44,26 @@ public enum PamResult
 /// </summary>
 public static unsafe partial class PamAuthenticator
 {
-    const string Lib = "libpam.so.0";
-    const int PAM_SUCCESS = 0, PAM_BUF_ERR = 5, PAM_PERM_DENIED = 6, PAM_AUTH_ERR = 7, PAM_USER_UNKNOWN = 10,
+    private const string Lib = "libpam.so.0";
+    private const int PAM_SUCCESS = 0, PAM_BUF_ERR = 5, PAM_PERM_DENIED = 6, PAM_AUTH_ERR = 7, PAM_USER_UNKNOWN = 10,
         PAM_MAXTRIES = 11, PAM_NEW_AUTHTOK_REQD = 12, PAM_ACCT_EXPIRED = 13, PAM_CONV_ERR = 19;
 
     [StructLayout(LayoutKind.Sequential)]
-    struct Message
+    private struct Message
     {
         public int Style;
         public byte* Text;
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    struct Response
+    private struct Response
     {
         public byte* Text;
         public int ReturnCode;
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    struct Conversation
+    private struct Conversation
     {
         public delegate* unmanaged[Cdecl]<int, Message**, Response**, void*, int> Function;
         public void* AppData;
@@ -90,13 +90,13 @@ public static unsafe partial class PamAuthenticator
     public static Task<PamResult> AuthenticateAsync(string user, Func<PamMessage, string?> converse, string service = "login", string? configDirectory = null) =>
         Task.Run(() => Authenticate(user, converse, service, configDirectory));
 
-    sealed class State(Func<PamMessage, string?> converse)
+    private sealed class State(Func<PamMessage, string?> converse)
     {
         public readonly Func<PamMessage, string?> Converse = converse;
         public bool Aborted;
     }
 
-    static PamResult Authenticate(string user, Func<PamMessage, string?> converse, string service, string? configDirectory)
+    private static PamResult Authenticate(string user, Func<PamMessage, string?> converse, string service, string? configDirectory)
     {
         var state = new State(converse);
         var handle = GCHandle.Alloc(state);
@@ -135,7 +135,7 @@ public static unsafe partial class PamAuthenticator
 
     /// <summary>PAM's conversation callback. PAM frees the answers (and the array) with free().</summary>
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    static int Converse(int count, Message** messages, Response** responses, void* appData)
+    private static int Converse(int count, Message** messages, Response** responses, void* appData)
     {
         if (count <= 0 || GCHandle.FromIntPtr((nint)appData).Target is not State state)
             return PAM_CONV_ERR;
@@ -172,7 +172,7 @@ public static unsafe partial class PamAuthenticator
         return PAM_SUCCESS;
     }
 
-    static void Wipe(byte* s)
+    private static void Wipe(byte* s)
     {
         if (s == null)
             return;
@@ -184,7 +184,7 @@ public static unsafe partial class PamAuthenticator
     }
 
     /// <summary>A malloc'ed UTF-8 copy (PAM frees answers with free(), which NativeMemory.Alloc matches on Linux).</summary>
-    static byte* Utf8(string s)
+    private static byte* Utf8(string s)
     {
         int length = Encoding.UTF8.GetByteCount(s);
         var buffer = (byte*)NativeMemory.Alloc((nuint)length + 1);

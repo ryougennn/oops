@@ -9,10 +9,10 @@ namespace oopshell.Services.Launcher;
 /// </summary>
 public sealed class MimeDatabase
 {
-    readonly Dictionary<string, (int Weight, string Mime)> extensions = new();   // "*.ext" patterns, lower case
-    readonly List<(int Weight, string Mime, string Pattern, bool CaseSensitive)> patterns = new();
-    readonly Dictionary<string, List<string>> parents = new();
-    readonly Dictionary<string, string> aliases = new();
+    private readonly Dictionary<string, (int Weight, string Mime)> _extensions = new();   // "*.ext" patterns, lower case
+    private readonly List<(int Weight, string Mime, string Pattern, bool CaseSensitive)> _patterns = new();
+    private readonly Dictionary<string, List<string>> _parents = new();
+    private readonly Dictionary<string, string> _aliases = new();
 
     public static MimeDatabase Load(IEnumerable<string>? dataDirs = null)
     {
@@ -23,19 +23,19 @@ public sealed class MimeDatabase
             db.ReadGlobs(Path.Combine(mime, "globs2"));
             foreach (var (child, parent) in Pairs(Path.Combine(mime, "subclasses")))
             {
-                if (!db.parents.TryGetValue(child, out var list))
-                    db.parents[child] = list = new();
+                if (!db._parents.TryGetValue(child, out var list))
+                    db._parents[child] = list = new();
                 if (!list.Contains(parent))
                     list.Add(parent);
             }
             foreach (var (alias, canonical) in Pairs(Path.Combine(mime, "aliases")))
-                db.aliases.TryAdd(alias, canonical);
+                db._aliases.TryAdd(alias, canonical);
         }
         return db;
     }
 
     /// <summary>A file's lines, or none if it is missing or unreadable.</summary>
-    static string[] Lines(string path)
+    private static string[] Lines(string path)
     {
         try
         {
@@ -47,7 +47,7 @@ public sealed class MimeDatabase
         }
     }
 
-    static IEnumerable<(string, string)> Pairs(string path)
+    private static IEnumerable<(string, string)> Pairs(string path)
     {
         foreach (var line in Lines(path))
         {
@@ -57,7 +57,7 @@ public sealed class MimeDatabase
         }
     }
 
-    void ReadGlobs(string path)
+    private void ReadGlobs(string path)
     {
         foreach (var line in Lines(path))
         {
@@ -72,11 +72,11 @@ public sealed class MimeDatabase
             {
                 string ext = pattern[1..].ToLowerInvariant();
                 // Data dirs are read in priority order; keep the first, unless a later one weighs more.
-                if (!extensions.TryGetValue(ext, out var existing) || weight > existing.Weight)
-                    extensions[ext] = (weight, mime);
+                if (!_extensions.TryGetValue(ext, out var existing) || weight > existing.Weight)
+                    _extensions[ext] = (weight, mime);
             }
             else
-                patterns.Add((weight, mime, pattern, caseSensitive));
+                _patterns.Add((weight, mime, pattern, caseSensitive));
         }
     }
 
@@ -85,7 +85,7 @@ public sealed class MimeDatabase
     {
         fileName = Path.GetFileName(fileName);
         (int Weight, string Mime, int Length) best = (-1, "application/octet-stream", 0);
-        foreach (var (weight, mime, pattern, caseSensitive) in patterns)
+        foreach (var (weight, mime, pattern, caseSensitive) in _patterns)
         {
             if (Glob(pattern, fileName, caseSensitive) && (weight > best.Weight || weight == best.Weight && pattern.Length > best.Length))
                 best = (weight, mime, pattern.Length);
@@ -94,7 +94,7 @@ public sealed class MimeDatabase
         string lower = fileName.ToLowerInvariant();
         for (int dot = lower.IndexOf('.'); dot >= 0; dot = lower.IndexOf('.', dot + 1))
         {
-            if (extensions.TryGetValue(lower[dot..], out var hit))
+            if (_extensions.TryGetValue(lower[dot..], out var hit))
             {
                 if (hit.Weight > best.Weight || hit.Weight == best.Weight && lower.Length - dot + 1 > best.Length)
                     best = (hit.Weight, hit.Mime, lower.Length - dot + 1);
@@ -147,13 +147,13 @@ public sealed class MimeDatabase
     {
         var seen = new HashSet<string>();
         var queue = new Queue<string>();
-        queue.Enqueue(aliases.GetValueOrDefault(mime, mime));
+        queue.Enqueue(_aliases.GetValueOrDefault(mime, mime));
         while (queue.TryDequeue(out var current))
         {
             if (!seen.Add(current))
                 continue;
             yield return current;
-            foreach (var parent in parents.GetValueOrDefault(current) ?? [])
+            foreach (var parent in _parents.GetValueOrDefault(current) ?? [])
                 queue.Enqueue(parent);
         }
         if (mime.StartsWith("text/", StringComparison.Ordinal) && seen.Add("text/plain"))
@@ -163,7 +163,7 @@ public sealed class MimeDatabase
     }
 
     /// <summary>Shell-style * and ? (character classes are rare in globs2 and treated literally).</summary>
-    static bool Glob(string pattern, string name, bool caseSensitive)
+    private static bool Glob(string pattern, string name, bool caseSensitive)
     {
         if (!caseSensitive)
         {

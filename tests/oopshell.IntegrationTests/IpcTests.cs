@@ -5,7 +5,7 @@ namespace oopshell.IntegrationTests;
 [Collection("sway")]
 public class IpcTests(SwayFixture sway)
 {
-    string Name => Path.Combine(sway.RuntimeDir, $"ipc-{Guid.NewGuid():N}.sock");
+    private string Name => Path.Combine(sway.RuntimeDir, $"ipc-{Guid.NewGuid():N}.sock");
 
     [Fact]
     public void Commands_reach_the_running_instance_and_replies_come_back()

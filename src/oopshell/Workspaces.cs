@@ -10,14 +10,14 @@ namespace oopshell;
 /// </summary>
 public sealed class Workspace
 {
-    readonly OopsApp app;
-    internal readonly ExtWorkspaceHandleV1 Handle;
-    internal WorkspaceGroup? Group;
+    private readonly OopsApp _app;
+    internal readonly ExtWorkspaceHandleV1 _handle;
+    internal WorkspaceGroup? _group;
 
     internal Workspace(OopsApp app, ExtWorkspaceHandleV1 handle)
     {
-        this.app = app;
-        Handle = handle;
+        _app = app;
+        _handle = handle;
         handle.IdEvent += e => Id = e.Id;
         handle.Name += e => Name = e.Name;
         handle.Coordinates += e => Coordinates = ReadCoordinates(e.Coordinates);
@@ -25,7 +25,7 @@ public sealed class Workspace
         handle.Capabilities += e => Abilities = (uint)e.Capabilities;
     }
 
-    static uint[] ReadCoordinates(ReadOnlySpan<byte> bytes) =>
+    private static uint[] ReadCoordinates(ReadOnlySpan<byte> bytes) =>
         System.Runtime.InteropServices.MemoryMarshal.Cast<byte, uint>(bytes).ToArray();
 
     /// <summary>A stable id across sessions, if the compositor has one ("" otherwise).</summary>
@@ -45,7 +45,7 @@ public sealed class Workspace
     public bool IsHidden => (State & 4) != 0;
 
     /// <summary>The outputs its group spans (usually one).</summary>
-    public IReadOnlyList<Output> Outputs => Group?.Outputs ?? [];
+    public IReadOnlyList<Output> Outputs => _group?.Outputs ?? [];
 
     public bool CanActivate => (Abilities & (uint)ExtWorkspaceHandleV1WorkspaceCapabilities.Activate) != 0;
     public bool CanDeactivate => (Abilities & (uint)ExtWorkspaceHandleV1WorkspaceCapabilities.Deactivate) != 0;
@@ -59,29 +59,29 @@ public sealed class Workspace
     /// <summary>Shows this workspace.</summary>
     public void Activate()
     {
-        Handle.Activate();
-        app.CommitWorkspaces();
+        _handle.Activate();
+        _app.CommitWorkspaces();
     }
 
     /// <summary>Hides it, where the compositor allows several active workspaces (tags).</summary>
     public void Deactivate()
     {
-        Handle.Deactivate();
-        app.CommitWorkspaces();
+        _handle.Deactivate();
+        _app.CommitWorkspaces();
     }
 
     /// <summary>Asks the compositor to remove it.</summary>
     public void Remove()
     {
-        Handle.Remove();
-        app.CommitWorkspaces();
+        _handle.Remove();
+        _app.CommitWorkspaces();
     }
 
     public override string ToString() => $"{Name}{(IsActive ? " (active)" : "")}";
 }
 
 /// <summary>Workspaces that share outputs (ext-workspace's group). Internal: exposed as <see cref="Workspace.Outputs"/>.</summary>
-sealed class WorkspaceGroup
+internal sealed class WorkspaceGroup
 {
     public readonly ExtWorkspaceGroupHandleV1 Handle;
     public readonly List<Output> Outputs = new();
@@ -107,12 +107,12 @@ sealed class WorkspaceGroup
 
 public sealed partial class OopsApp
 {
-    ExtWorkspaceManagerV1? workspaceManager;
-    ObservableCollection<Workspace>? workspaces;
-    ReadOnlyObservableCollection<Workspace>? workspacesView;
-    readonly List<WorkspaceGroup> workspaceGroups = new();
-    readonly List<Workspace> pendingWorkspaces = new();
-    bool workspacesBound;
+    private ExtWorkspaceManagerV1? _workspaceManager;
+    private ObservableCollection<Workspace>? _workspaces;
+    private ReadOnlyObservableCollection<Workspace>? _workspacesView;
+    private readonly List<WorkspaceGroup> _workspaceGroups = new();
+    private readonly List<Workspace> _pendingWorkspaces = new();
+    private bool _workspacesBound;
 
     /// <summary>
     /// The compositor's workspaces in layout order, or null if it offers no ext-workspace-v1 (sway, for one,
@@ -122,81 +122,81 @@ public sealed partial class OopsApp
     {
         get
         {
-            if (!workspacesBound)
+            if (!_workspacesBound)
             {
-                workspacesBound = true;
+                _workspacesBound = true;
                 BindWorkspaces();
             }
-            return workspacesView;
+            return _workspacesView;
         }
     }
 
     /// <summary>Workspaces were added, removed or changed (after each batch of changes from the compositor).</summary>
     public event Action? WorkspacesChanged;
 
-    void BindWorkspaces()
+    private void BindWorkspaces()
     {
         if (TryGet<ExtWorkspaceManagerV1>() is not { } manager)
             return;
-        workspaceManager = manager;
-        workspaces = new ObservableCollection<Workspace>();
-        workspacesView = new ReadOnlyObservableCollection<Workspace>(workspaces);
+        _workspaceManager = manager;
+        _workspaces = new ObservableCollection<Workspace>();
+        _workspacesView = new ReadOnlyObservableCollection<Workspace>(_workspaces);
         manager.WorkspaceGroup += e =>
         {
             var group = new WorkspaceGroup(this, e.WorkspaceGroup);
-            workspaceGroups.Add(group);
+            _workspaceGroups.Add(group);
             e.WorkspaceGroup.WorkspaceEnter += w =>
             {
                 if (FindWorkspace(w.Workspace) is { } workspace)
-                    workspace.Group = group;
+                    workspace._group = group;
             };
             e.WorkspaceGroup.WorkspaceLeave += w =>
             {
-                if (FindWorkspace(w.Workspace) is { } workspace && workspace.Group == group)
-                    workspace.Group = null;
+                if (FindWorkspace(w.Workspace) is { } workspace && workspace._group == group)
+                    workspace._group = null;
             };
             e.WorkspaceGroup.Removed += () =>
             {
-                workspaceGroups.Remove(group);
+                _workspaceGroups.Remove(group);
                 group.Handle.Dispose();
             };
         };
         manager.Workspace += e =>
         {
             var workspace = new Workspace(this, e.Workspace);
-            pendingWorkspaces.Add(workspace);
+            _pendingWorkspaces.Add(workspace);
             e.Workspace.Removed += () =>
             {
-                pendingWorkspaces.Remove(workspace);
-                workspaces.Remove(workspace);
-                workspace.Handle.Dispose();
+                _pendingWorkspaces.Remove(workspace);
+                _workspaces.Remove(workspace);
+                workspace._handle.Dispose();
             };
         };
         // Everything above is one atomic batch, ended by done.
         manager.Done += () =>
         {
-            foreach (var workspace in pendingWorkspaces)
-                workspaces.Add(workspace);
-            pendingWorkspaces.Clear();
-            var ordered = workspaces.OrderBy(w => w.Outputs.FirstOrDefault()?.Name ?? "", StringComparer.Ordinal)
+            foreach (var workspace in _pendingWorkspaces)
+                _workspaces.Add(workspace);
+            _pendingWorkspaces.Clear();
+            var ordered = _workspaces.OrderBy(w => w.Outputs.FirstOrDefault()?.Name ?? "", StringComparer.Ordinal)
                 .ThenBy(w => w.Coordinates.Count > 0 ? w.Coordinates[0] : uint.MaxValue)
                 .ThenBy(w => w.Coordinates.Count > 1 ? w.Coordinates[1] : 0).ToList();
             for (int i = 0; i < ordered.Count; i++)
             {
-                int at = workspaces.IndexOf(ordered[i]);
+                int at = _workspaces.IndexOf(ordered[i]);
                 if (at != i)
-                    workspaces.Move(at, i);
+                    _workspaces.Move(at, i);
             }
-            foreach (var workspace in workspaces)
+            foreach (var workspace in _workspaces)
                 workspace.RaiseChanged();
             WorkspacesChanged?.Invoke();
         };
     }
 
-    Workspace? FindWorkspace(ExtWorkspaceHandleV1 handle) =>
-        workspaces?.FirstOrDefault(w => w.Handle == handle) ?? pendingWorkspaces.FirstOrDefault(w => w.Handle == handle);
+    private Workspace? FindWorkspace(ExtWorkspaceHandleV1 handle) =>
+        _workspaces?.FirstOrDefault(w => w._handle == handle) ?? _pendingWorkspaces.FirstOrDefault(w => w._handle == handle);
 
-    internal void CommitWorkspaces() => workspaceManager?.Commit();
+    internal void CommitWorkspaces() => _workspaceManager?.Commit();
 
     /// <summary>
     /// Asks the compositor for a new workspace named <paramref name="name"/> on <paramref name="output"/> (default:
@@ -205,7 +205,7 @@ public sealed partial class OopsApp
     public bool CreateWorkspace(string name, Output? output = null)
     {
         _ = Workspaces;
-        var group = workspaceGroups.FirstOrDefault(g => g.CanCreate && (output is null || g.Outputs.Contains(output)));
+        var group = _workspaceGroups.FirstOrDefault(g => g.CanCreate && (output is null || g.Outputs.Contains(output)));
         if (group is null)
             return false;
         group.Handle.CreateWorkspace(name);

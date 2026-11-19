@@ -8,7 +8,7 @@ namespace oopshell.IntegrationTests;
 /// org.freedesktop.DBus.Properties) and method handlers by name. Change a property with <see cref="Set"/>, which
 /// also emits PropertiesChanged, as real services do.
 /// </summary>
-sealed class FakeDBusObject(OopsApp app, string path) : ExportedObject(app, path)
+internal sealed class FakeDBusObject(OopsApp app, string path) : ExportedObject(app, path)
 {
     public readonly Dictionary<string, Dictionary<string, VariantValue>> Interfaces = new();
     public readonly Dictionary<string, Action<MethodContext>> Methods = new();

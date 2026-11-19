@@ -29,8 +29,8 @@ namespace oopshell
 {
     public sealed partial class OopsApp
     {
-        static readonly TimeSpan ReloadFlashDuration = TimeSpan.FromMilliseconds(600);
-        long reloadFlashUntil;
+        private static readonly TimeSpan s_reloadFlashDuration = TimeSpan.FromMilliseconds(600);
+        private long _reloadFlashUntil;
 
         /// <summary>
         /// Raised on the UI thread after a hot reload applied code changes (with the updated types, if known).
@@ -49,23 +49,23 @@ namespace oopshell
             HotReloaded?.Invoke(types);
             if (Options.DevOverlay)
             {
-                reloadFlashUntil = Stopwatch.GetTimestamp() + (long)(ReloadFlashDuration.TotalSeconds * Stopwatch.Frequency);
+                _reloadFlashUntil = Stopwatch.GetTimestamp() + (long)(s_reloadFlashDuration.TotalSeconds * Stopwatch.Frequency);
                 // Redraw once more when the flash ends, so the marker disappears.
-                SetTimer(ReloadFlashDuration, null, InvalidateAll);
+                SetTimer(s_reloadFlashDuration, null, InvalidateAll);
             }
             InvalidateAll();
         }
 
-        void InvalidateAll()
+        private void InvalidateAll()
         {
-            foreach (var surface in surfaces)
+            foreach (var surface in _surfaces)
                 surface.Invalidate();
         }
 
         /// <summary>The corner marker to draw this frame (buffer pixels), or empty when no reload flash is active.</summary>
         internal Rectangle ReloadFlashRect(Size bufferSize, double scale)
         {
-            if (!Options.DevOverlay || Stopwatch.GetTimestamp() > reloadFlashUntil)
+            if (!Options.DevOverlay || Stopwatch.GetTimestamp() > _reloadFlashUntil)
                 return Rectangle.Empty;
             int size = (int)Math.Ceiling(10 * scale);
             return new Rectangle(bufferSize.Width - size - 2, 2, size, size);

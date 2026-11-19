@@ -3,7 +3,7 @@ namespace oopshell.Services.Desktop;
 /// <summary>Parser for the freedesktop "key file" format (.desktop files, index.theme).</summary>
 public sealed class KeyFile
 {
-    readonly Dictionary<string, Dictionary<string, string>> groups = new();
+    private readonly Dictionary<string, Dictionary<string, string>> _groups = new();
 
     public static KeyFile Parse(string text)
     {
@@ -21,7 +21,7 @@ public sealed class KeyFile
             {
                 string name = line[1..^1];
                 // The spec forbids duplicate groups; keep the first.
-                group = file.groups.TryAdd(name, new()) ? file.groups[name] : null;
+                group = file._groups.TryAdd(name, new()) ? file._groups[name] : null;
                 continue;
             }
             int eq = line.IndexOf('=');
@@ -47,10 +47,10 @@ public sealed class KeyFile
         }
     }
 
-    public IEnumerable<string> Groups => groups.Keys;
+    public IEnumerable<string> Groups => _groups.Keys;
 
     public string? Get(string group, string key) =>
-        groups.TryGetValue(group, out var g) && g.TryGetValue(key, out var value) ? Unescape(value) : null;
+        _groups.TryGetValue(group, out var g) && g.TryGetValue(key, out var value) ? Unescape(value) : null;
 
     /// <summary>A localized value: tries <c>key[lang_COUNTRY@MODIFIER]</c>, <c>key[lang_COUNTRY]</c>, <c>key[lang@MODIFIER]</c>, <c>key[lang]</c>, then <c>key</c>.</summary>
     public string? GetLocalized(string group, string key, string? locale)
@@ -68,7 +68,7 @@ public sealed class KeyFile
     /// <summary>A list separated by <paramref name="separator"/> (';' in desktop files, ',' in icon themes); the separator can be escaped.</summary>
     public IReadOnlyList<string> GetList(string group, string key, char separator = ';')
     {
-        if (!groups.TryGetValue(group, out var g) || !g.TryGetValue(key, out var raw))
+        if (!_groups.TryGetValue(group, out var g) || !g.TryGetValue(key, out var raw))
             return [];
         var items = new List<string>();
         var current = new System.Text.StringBuilder();
@@ -94,7 +94,7 @@ public sealed class KeyFile
         return items;
     }
 
-    static string Unescape(string value)
+    private static string Unescape(string value)
     {
         if (!value.Contains('\\'))
             return value;

@@ -10,18 +10,18 @@ namespace oopshell.Services.Notifications;
 /// </summary>
 public sealed class NotificationServer : ExportedObject, IDisposable
 {
-    const string Interface = "org.freedesktop.Notifications";
-    const string ObjectPath = "/org/freedesktop/Notifications";
+    private const string Interface = "org.freedesktop.Notifications";
+    private const string ObjectPath = "/org/freedesktop/Notifications";
 
-    readonly DBusConnection connection;
-    readonly ObservableCollection<Notification> notifications = new();
-    readonly Dictionary<uint, IDisposable> expiryTimers = new();
-    uint nextId = 1;
+    private readonly DBusConnection _connection;
+    private readonly ObservableCollection<Notification> _notifications = new();
+    private readonly Dictionary<uint, IDisposable> _expiryTimers = new();
+    private uint _nextId = 1;
 
-    NotificationServer(OopsApp app, DBusConnection connection) : base(app, ObjectPath)
+    private NotificationServer(OopsApp app, DBusConnection connection) : base(app, ObjectPath)
     {
-        this.connection = connection;
-        Notifications = new ReadOnlyObservableCollection<Notification>(notifications);
+        _connection = connection;
+        Notifications = new ReadOnlyObservableCollection<Notification>(_notifications);
     }
 
     /// <summary>Exports the server and takes the bus name. Fails if another notification daemon runs.</summary>
@@ -59,19 +59,19 @@ public sealed class NotificationServer : ExportedObject, IDisposable
     public void InvokeAction(Notification notification, string actionKey, Surface? from = null) =>
         _ = InvokeActionAsync(notification, actionKey, from);
 
-    async Task InvokeActionAsync(Notification notification, string actionKey, Surface? from)
+    private async Task InvokeActionAsync(Notification notification, string actionKey, Surface? from)
     {
         string? token = from is null ? null
             : await App.RequestActivationTokenAsync(new LaunchOptions { Surface = from, AppId = notification.DesktopEntry });
         if (token is not null)
         {
-            connection.EmitSignal(ObjectPath, Interface, "ActivationToken", "us", (ref MessageWriter w) =>
+            _connection.EmitSignal(ObjectPath, Interface, "ActivationToken", "us", (ref MessageWriter w) =>
             {
                 w.WriteUInt32(notification.Id);
                 w.WriteString(token);
             });
         }
-        connection.EmitSignal(ObjectPath, Interface, "ActionInvoked", "us", (ref MessageWriter w) =>
+        _connection.EmitSignal(ObjectPath, Interface, "ActionInvoked", "us", (ref MessageWriter w) =>
         {
             w.WriteUInt32(notification.Id);
             w.WriteString(actionKey);
@@ -87,52 +87,52 @@ public sealed class NotificationServer : ExportedObject, IDisposable
         switch (context.Request.MemberAsString)
         {
             case "GetCapabilities":
-            {
-                using var writer = context.CreateReplyWriter("as");
-                writer.WriteArray(Capabilities.ToArray());
-                context.Reply(writer.CreateMessage());
-                break;
-            }
+                {
+                    using var writer = context.CreateReplyWriter("as");
+                    writer.WriteArray(Capabilities.ToArray());
+                    context.Reply(writer.CreateMessage());
+                    break;
+                }
             case "GetServerInformation":
-            {
-                using var writer = context.CreateReplyWriter("ssss");
-                writer.WriteString(ServerName);
-                writer.WriteString("oopshell");
-                writer.WriteString("1.0");
-                writer.WriteString("1.2");
-                context.Reply(writer.CreateMessage());
-                break;
-            }
+                {
+                    using var writer = context.CreateReplyWriter("ssss");
+                    writer.WriteString(ServerName);
+                    writer.WriteString("oopshell");
+                    writer.WriteString("1.0");
+                    writer.WriteString("1.2");
+                    context.Reply(writer.CreateMessage());
+                    break;
+                }
             case "Notify":
-            {
-                uint id = Notify(context.Request.GetBodyReader());
-                using var writer = context.CreateReplyWriter("u");
-                writer.WriteUInt32(id);
-                context.Reply(writer.CreateMessage());
-                break;
-            }
+                {
+                    uint id = Notify(context.Request.GetBodyReader());
+                    using var writer = context.CreateReplyWriter("u");
+                    writer.WriteUInt32(id);
+                    context.Reply(writer.CreateMessage());
+                    break;
+                }
             case "CloseNotification":
-            {
-                uint id = context.Request.GetBodyReader().ReadUInt32();
-                Close(id, CloseReason.ClosedByCall);
-                ReplyEmpty(context);
-                break;
-            }
+                {
+                    uint id = context.Request.GetBodyReader().ReadUInt32();
+                    Close(id, CloseReason.ClosedByCall);
+                    ReplyEmpty(context);
+                    break;
+                }
         }
     }
 
     /// <summary>The next id; 0 means "new" in the protocol, so it is skipped when the counter wraps.</summary>
-    uint NextId()
+    private uint NextId()
     {
-        if (nextId == 0)
-            nextId = 1;
-        return nextId++;
+        if (_nextId == 0)
+            _nextId = 1;
+        return _nextId++;
     }
 
     /// <summary>At most this many notifications are kept; beyond it the oldest expires (one app could flood the shell).</summary>
     public int MaxNotifications { get; set; } = 200;
 
-    uint Notify(Reader reader)
+    private uint Notify(Reader reader)
     {
         // Everything comes from another app: read into locals with type checks, then apply all at once, so a
         // malformed notification is refused without half-changing the one it replaces.
@@ -148,7 +148,7 @@ public sealed class NotificationServer : ExportedObject, IDisposable
             .Select(i => new NotificationAction(actionStrings[2 * i].Clip(256), actionStrings[2 * i + 1].Clip(256))).ToList();
         var parsed = Hints.Parse(hints);
 
-        var existing = replacesId == 0 ? null : notifications.FirstOrDefault(n => n.Id == replacesId);
+        var existing = replacesId == 0 ? null : _notifications.FirstOrDefault(n => n.Id == replacesId);
         var notification = existing ?? new Notification(NextId());
         notification.AppName = appName;
         notification.AppIcon = appIcon;
@@ -160,9 +160,9 @@ public sealed class NotificationServer : ExportedObject, IDisposable
 
         if (existing is null)
         {
-            notifications.Add(notification);
-            while (notifications.Count > Math.Max(1, MaxNotifications))
-                Close(notifications[0].Id, CloseReason.Expired);
+            _notifications.Add(notification);
+            while (_notifications.Count > Math.Max(1, MaxNotifications))
+                Close(_notifications[0].Id, CloseReason.Expired);
             Added?.Invoke(notification);
         }
         else
@@ -174,7 +174,7 @@ public sealed class NotificationServer : ExportedObject, IDisposable
     }
 
     /// <summary>The hints oopshell understands, read with type checks (a wrong type is ignored, not fatal).</summary>
-    readonly record struct Hints(Urgency Urgency, string? Category, string? DesktopEntry, bool Resident, bool Transient, string? ImagePath, NotificationImage? Image)
+    private readonly record struct Hints(Urgency Urgency, string? Category, string? DesktopEntry, bool Resident, bool Transient, string? ImagePath, NotificationImage? Image)
     {
         public static Hints Parse(Dictionary<string, VariantValue> hints)
         {
@@ -217,7 +217,7 @@ public sealed class NotificationServer : ExportedObject, IDisposable
     /// Decodes the <c>(iiibiiay)</c> image struct. Null unless it is consistent: 1..1024 pixels per side, 8 bits
     /// per sample, 3 or 4 channels matching HasAlpha, a row stride that fits a row, and enough data for every row.
     /// </summary>
-    static NotificationImage? ReadImage(VariantValue value)
+    private static NotificationImage? ReadImage(VariantValue value)
     {
         if (value.Field(0)?.AsInt32() is not int width || value.Field(1)?.AsInt32() is not int height
             || value.Field(2)?.AsInt32() is not int stride || value.Field(3)?.AsBool() is not bool alpha
@@ -230,28 +230,28 @@ public sealed class NotificationServer : ExportedObject, IDisposable
         return new NotificationImage(width, height, stride, alpha, bits, channels, data);
     }
 
-    void ScheduleExpiry(Notification notification)
+    private void ScheduleExpiry(Notification notification)
     {
-        if (expiryTimers.Remove(notification.Id, out var old))
+        if (_expiryTimers.Remove(notification.Id, out var old))
             old.Dispose();
         var timeout = notification.ExpireTimeout ?? DefaultTimeout;
         if (timeout == TimeSpan.Zero || notification.Urgency == Urgency.Critical && notification.ExpireTimeout is null)
             return; // never expires (critical notifications stay until dismissed)
         uint id = notification.Id;
-        expiryTimers[id] = App.SetTimer(timeout, null, () => Close(id, CloseReason.Expired));
+        _expiryTimers[id] = App.SetTimer(timeout, null, () => Close(id, CloseReason.Expired));
     }
 
-    void Close(uint id, CloseReason reason)
+    private void Close(uint id, CloseReason reason)
     {
-        var notification = notifications.FirstOrDefault(n => n.Id == id);
+        var notification = _notifications.FirstOrDefault(n => n.Id == id);
         if (notification is null)
             return;
-        if (expiryTimers.Remove(id, out var timer))
+        if (_expiryTimers.Remove(id, out var timer))
             timer.Dispose();
-        notifications.Remove(notification);
+        _notifications.Remove(notification);
         notification.IsClosed = true;
         notification.RaiseClosed(reason);
-        connection.EmitSignal(ObjectPath, Interface, "NotificationClosed", "uu", (ref MessageWriter w) =>
+        _connection.EmitSignal(ObjectPath, Interface, "NotificationClosed", "uu", (ref MessageWriter w) =>
         {
             w.WriteUInt32(id);
             w.WriteUInt32((uint)reason);
@@ -278,9 +278,9 @@ public sealed class NotificationServer : ExportedObject, IDisposable
 
     public void Dispose()
     {
-        foreach (var timer in expiryTimers.Values)
+        foreach (var timer in _expiryTimers.Values)
             timer.Dispose();
-        expiryTimers.Clear();
-        connection.RemoveMethodHandler(ObjectPath);
+        _expiryTimers.Clear();
+        _connection.RemoveMethodHandler(ObjectPath);
     }
 }

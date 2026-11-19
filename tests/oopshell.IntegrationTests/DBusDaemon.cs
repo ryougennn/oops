@@ -5,16 +5,16 @@ namespace oopshell.IntegrationTests;
 /// <summary>A private session bus for one test (what <c>dbus-run-session</c> does, but with the address in hand).</summary>
 public sealed class DBusDaemon : IDisposable
 {
-    readonly Process process;
+    private readonly Process _process;
 
     public DBusDaemon()
     {
         Assert.SkipUnless(File.Exists("/usr/bin/dbus-daemon"), "dbus-daemon is not installed.");
-        process = Process.Start(new ProcessStartInfo("dbus-daemon", ["--session", "--nofork", "--print-address=1"])
+        _process = Process.Start(new ProcessStartInfo("dbus-daemon", ["--session", "--nofork", "--print-address=1"])
         {
             RedirectStandardOutput = true,
         })!;
-        Address = process.StandardOutput.ReadLine() ?? throw new InvalidOperationException("dbus-daemon printed no address.");
+        Address = _process.StandardOutput.ReadLine() ?? throw new InvalidOperationException("dbus-daemon printed no address.");
     }
 
     public string Address { get; }
@@ -29,8 +29,8 @@ public sealed class DBusDaemon : IDisposable
 
     public void Dispose()
     {
-        process.Kill();
-        process.WaitForExit();
-        process.Dispose();
+        _process.Kill();
+        _process.WaitForExit();
+        _process.Dispose();
     }
 }

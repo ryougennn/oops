@@ -55,27 +55,27 @@ public sealed class NetworkService : IDisposable
 {
     public const string BusName = "org.freedesktop.NetworkManager";
     public const string ObjectPath = "/org/freedesktop/NetworkManager";
-    const string Manager = "org.freedesktop.NetworkManager";
-    const string DeviceInterface = "org.freedesktop.NetworkManager.Device";
-    const string WirelessInterface = "org.freedesktop.NetworkManager.Device.Wireless";
-    const string AccessPointInterface = "org.freedesktop.NetworkManager.AccessPoint";
-    const string ActiveInterface = "org.freedesktop.NetworkManager.Connection.Active";
-    const string SettingsPath = "/org/freedesktop/NetworkManager/Settings";
-    const string SettingsInterface = "org.freedesktop.NetworkManager.Settings";
-    const string ConnectionInterface = "org.freedesktop.NetworkManager.Settings.Connection";
+    private const string Manager = "org.freedesktop.NetworkManager";
+    private const string DeviceInterface = "org.freedesktop.NetworkManager.Device";
+    private const string WirelessInterface = "org.freedesktop.NetworkManager.Device.Wireless";
+    private const string AccessPointInterface = "org.freedesktop.NetworkManager.AccessPoint";
+    private const string ActiveInterface = "org.freedesktop.NetworkManager.Connection.Active";
+    private const string SettingsPath = "/org/freedesktop/NetworkManager/Settings";
+    private const string SettingsInterface = "org.freedesktop.NetworkManager.Settings";
+    private const string ConnectionInterface = "org.freedesktop.NetworkManager.Settings.Connection";
 
-    readonly OopsApp app;
-    readonly DBusConnection connection;
-    readonly ObservableCollection<NetworkDevice> devices = new();
-    readonly List<IDisposable> watches = new();
-    IDisposable? refreshTimer;
-    bool refreshing, refreshAgain, disposed;
+    private readonly OopsApp _app;
+    private readonly DBusConnection _connection;
+    private readonly ObservableCollection<NetworkDevice> _devices = new();
+    private readonly List<IDisposable> _watches = new();
+    private IDisposable? _refreshTimer;
+    private bool _refreshing, _refreshAgain, _disposed;
 
-    NetworkService(OopsApp app, DBusConnection connection)
+    private NetworkService(OopsApp app, DBusConnection connection)
     {
-        this.app = app;
-        this.connection = connection;
-        Devices = new ReadOnlyObservableCollection<NetworkDevice>(devices);
+        _app = app;
+        _connection = connection;
+        Devices = new ReadOnlyObservableCollection<NetworkDevice>(_devices);
     }
 
     /// <summary>Reads NetworkManager on <paramref name="connection"/> (the system bus). Throws if it is not running.</summary>
@@ -90,7 +90,7 @@ public sealed class NetworkService : IDisposable
             (WirelessInterface, "AccessPointAdded"), (WirelessInterface, "AccessPointRemoved"),
         })
         {
-            service.watches.Add(await connection.WatchSignalAsync(app, BusName, null, iface, member, (_, _) => true, _ => service.ScheduleRefresh()));
+            service._watches.Add(await connection.WatchSignalAsync(app, BusName, null, iface, member, (_, _) => true, _ => service.ScheduleRefresh()));
         }
         await service.RefreshAsync();
         return service;
@@ -100,7 +100,7 @@ public sealed class NetworkService : IDisposable
     public ReadOnlyObservableCollection<NetworkDevice> Devices { get; }
 
     /// <summary>The first Wi-Fi device, if any.</summary>
-    public NetworkDevice? Wifi => devices.FirstOrDefault(d => d.Type == NetworkDeviceType.Wifi);
+    public NetworkDevice? Wifi => _devices.FirstOrDefault(d => d.Type == NetworkDeviceType.Wifi);
 
     public NetworkConnectivity Connectivity { get; private set; }
     public bool NetworkingEnabled { get; private set; }
@@ -116,7 +116,7 @@ public sealed class NetworkService : IDisposable
     /// <summary>Something above changed (UI thread).</summary>
     public event Action? Changed;
 
-    SecretAgent? secretAgent;
+    private SecretAgent? _secretAgent;
 
     /// <summary>
     /// NetworkManager needs a Wi-Fi password (UI thread): show a dialog and answer the request. Only raised after
@@ -135,51 +135,51 @@ public sealed class NetworkService : IDisposable
     /// </summary>
     public async Task RegisterSecretAgentAsync(string identifier = "org.oopshell.SecretAgent")
     {
-        if (secretAgent is not null)
+        if (_secretAgent is not null)
             return;
-        var agent = new SecretAgent(app, this, await connection.GetNameOwnerAsync(BusName));
-        connection.AddMethodHandler(agent);
+        var agent = new SecretAgent(_app, this, await _connection.GetNameOwnerAsync(BusName));
+        _connection.AddMethodHandler(agent);
         try
         {
-            await connection.CallAsync(BusName, "/org/freedesktop/NetworkManager/AgentManager", "org.freedesktop.NetworkManager.AgentManager",
+            await _connection.CallAsync(BusName, "/org/freedesktop/NetworkManager/AgentManager", "org.freedesktop.NetworkManager.AgentManager",
                 "Register", (ref MessageWriter w) => w.WriteString(identifier), "s");
         }
         catch
         {
-            connection.RemoveMethodHandler(agent.Path);
+            _connection.RemoveMethodHandler(agent.Path);
             throw;
         }
-        secretAgent = agent;
+        _secretAgent = agent;
     }
 
-    void ScheduleRefresh()
+    private void ScheduleRefresh()
     {
-        if (disposed)
+        if (_disposed)
             return;
-        refreshTimer?.Dispose();
-        refreshTimer = app.SetTimer(TimeSpan.FromMilliseconds(150), null, () =>
+        _refreshTimer?.Dispose();
+        _refreshTimer = _app.SetTimer(TimeSpan.FromMilliseconds(150), null, () =>
         {
-            refreshTimer = null;
+            _refreshTimer = null;
             _ = RefreshAsync();
         });
     }
 
-    async Task RefreshAsync()
+    private async Task RefreshAsync()
     {
-        if (refreshing)
+        if (_refreshing)
         {
-            refreshAgain = true;
+            _refreshAgain = true;
             return;
         }
-        refreshing = true;
+        _refreshing = true;
         try
         {
             do
             {
-                refreshAgain = false;
+                _refreshAgain = false;
                 await ReadAllAsync();
             }
-            while (refreshAgain && !disposed);
+            while (_refreshAgain && !_disposed);
         }
         catch (DBusErrorReplyException)
         {
@@ -187,13 +187,13 @@ public sealed class NetworkService : IDisposable
         }
         finally
         {
-            refreshing = false;
+            _refreshing = false;
         }
     }
 
-    async Task ReadAllAsync()
+    private async Task ReadAllAsync()
     {
-        var manager = await connection.GetAllPropertiesAsync(BusName, ObjectPath, Manager);
+        var manager = await _connection.GetAllPropertiesAsync(BusName, ObjectPath, Manager);
         string? primaryName = null;
         var primaryType = NetworkDeviceType.Other;
         if (Path(manager, "PrimaryConnection") is { } primary)
@@ -202,13 +202,13 @@ public sealed class NetworkService : IDisposable
         var read = new List<(NetworkDevice Device, Dictionary<string, VariantValue> Props, string? Name, List<AccessPoint> AccessPoints)>();
         foreach (var path in manager.TryGetValue("Devices", out var list) ? list.AsObjectPaths() ?? [] : [])
         {
-            var props = await connection.GetAllPropertiesAsync(BusName, path, DeviceInterface);
+            var props = await _connection.GetAllPropertiesAsync(BusName, path, DeviceInterface);
             var type = DeviceType(props.TryGetValue("DeviceType", out var t) ? t.AsUInt32() ?? 0 : 0);
             if (type == NetworkDeviceType.Loopback)
                 continue;
             string? name = Path(props, "ActiveConnection") is { } active ? (await ActiveConnectionAsync(active)).Name : null;
             var accessPoints = type == NetworkDeviceType.Wifi ? await AccessPointsAsync(path) : [];
-            read.Add((devices.FirstOrDefault(d => d.Path == path) ?? new NetworkDevice(path), props, name, accessPoints));
+            read.Add((_devices.FirstOrDefault(d => d.Path == path) ?? new NetworkDevice(path), props, name, accessPoints));
         }
 
         // Apply in one step on the UI thread (we are on it: continuations resume there).
@@ -226,22 +226,22 @@ public sealed class NetworkService : IDisposable
             device.ConnectionName = name;
             device.AccessPoints = accessPoints;
         }
-        for (int i = devices.Count - 1; i >= 0; i--)
+        for (int i = _devices.Count - 1; i >= 0; i--)
         {
-            if (!read.Any(r => r.Device == devices[i]))
-                devices.RemoveAt(i);
+            if (!read.Any(r => r.Device == _devices[i]))
+                _devices.RemoveAt(i);
         }
         foreach (var (device, _, _, _) in read)
         {
-            if (!devices.Contains(device))
-                devices.Add(device);
+            if (!_devices.Contains(device))
+                _devices.Add(device);
         }
         Changed?.Invoke();
     }
 
-    async Task<(string? Name, NetworkDeviceType Type)> ActiveConnectionAsync(string path)
+    private async Task<(string? Name, NetworkDeviceType Type)> ActiveConnectionAsync(string path)
     {
-        var props = await connection.GetAllPropertiesAsync(BusName, path, ActiveInterface);
+        var props = await _connection.GetAllPropertiesAsync(BusName, path, ActiveInterface);
         string? id = props.TryGetValue("Id", out var v) ? v.AsString() : null;
         var type = (props.TryGetValue("Type", out var t) ? t.AsString() : "") switch
         {
@@ -256,14 +256,14 @@ public sealed class NetworkService : IDisposable
         return (id, type);
     }
 
-    async Task<List<AccessPoint>> AccessPointsAsync(string devicePath)
+    private async Task<List<AccessPoint>> AccessPointsAsync(string devicePath)
     {
-        var wireless = await connection.GetAllPropertiesAsync(BusName, devicePath, WirelessInterface);
+        var wireless = await _connection.GetAllPropertiesAsync(BusName, devicePath, WirelessInterface);
         string? active = Path(wireless, "ActiveAccessPoint");
         var all = new List<AccessPoint>();
         foreach (var path in wireless.TryGetValue("AccessPoints", out var list) ? list.AsObjectPaths() ?? [] : [])
         {
-            var p = await connection.GetAllPropertiesAsync(BusName, path, AccessPointInterface);
+            var p = await _connection.GetAllPropertiesAsync(BusName, path, AccessPointInterface);
             string ssid = p.TryGetValue("Ssid", out var s) && s.AsBytes() is { } ssidBytes ? Encoding.UTF8.GetString(ssidBytes) : "";
             if (ssid.Length == 0)
                 continue; // hidden network
@@ -279,12 +279,12 @@ public sealed class NetworkService : IDisposable
             .OrderByDescending(a => a.IsActive).ThenByDescending(a => a.Strength).ToList();
     }
 
-    static string? Path(Dictionary<string, VariantValue> props, string name) =>
+    private static string? Path(Dictionary<string, VariantValue> props, string name) =>
         props.TryGetValue(name, out var v) && v.AsString() is { } p && p != "/" ? p : null;
 
-    static bool Bool(Dictionary<string, VariantValue> props, string name) => props.TryGetValue(name, out var v) && v.AsBool() == true;
+    private static bool Bool(Dictionary<string, VariantValue> props, string name) => props.TryGetValue(name, out var v) && v.AsBool() == true;
 
-    static NetworkDeviceType DeviceType(uint nm) => nm switch
+    private static NetworkDeviceType DeviceType(uint nm) => nm switch
     {
         1 => NetworkDeviceType.Ethernet,
         2 => NetworkDeviceType.Wifi,
@@ -297,7 +297,7 @@ public sealed class NetworkService : IDisposable
         _ => NetworkDeviceType.Other,
     };
 
-    static NetworkDeviceState DeviceState(uint nm) => nm switch
+    private static NetworkDeviceState DeviceState(uint nm) => nm switch
     {
         10 => NetworkDeviceState.Unmanaged,
         20 => NetworkDeviceState.Unavailable,
@@ -311,7 +311,7 @@ public sealed class NetworkService : IDisposable
 
     /// <summary>Switches Wi-Fi on or off (all Wi-Fi devices; NetworkManager remembers it).</summary>
     public Task SetWifiEnabledAsync(bool enabled) =>
-        connection.CallAsync(BusName, ObjectPath, "org.freedesktop.DBus.Properties", "Set", (ref MessageWriter w) =>
+        _connection.CallAsync(BusName, ObjectPath, "org.freedesktop.DBus.Properties", "Set", (ref MessageWriter w) =>
         {
             w.WriteString(Manager);
             w.WriteString("WirelessEnabled");
@@ -320,7 +320,7 @@ public sealed class NetworkService : IDisposable
 
     /// <summary>Asks a Wi-Fi device to look for networks now (NetworkManager also scans by itself).</summary>
     public Task ScanAsync(NetworkDevice wifi) =>
-        connection.CallAsync(BusName, wifi.Path, WirelessInterface, "RequestScan",
+        _connection.CallAsync(BusName, wifi.Path, WirelessInterface, "RequestScan",
             (ref MessageWriter w) => w.WriteDictionary(new Dictionary<string, VariantValue>()), "a{sv}");
 
     /// <summary>
@@ -336,7 +336,7 @@ public sealed class NetworkService : IDisposable
     {
         if (await SavedConnectionAsync(network.Ssid) is { } saved)
         {
-            await connection.CallAsync(BusName, ObjectPath, Manager, "ActivateConnection", (ref MessageWriter w) =>
+            await _connection.CallAsync(BusName, ObjectPath, Manager, "ActivateConnection", (ref MessageWriter w) =>
             {
                 w.WriteObjectPath(saved);
                 w.WriteObjectPath(wifi.Path);
@@ -351,7 +351,7 @@ public sealed class NetworkService : IDisposable
         };
         if (network.Secured && password is not null)
             settings["802-11-wireless-security"] = new() { ["key-mgmt"] = "wpa-psk", ["psk"] = password };
-        await connection.CallAsync(BusName, ObjectPath, Manager, "AddAndActivateConnection", (ref MessageWriter w) =>
+        await _connection.CallAsync(BusName, ObjectPath, Manager, "AddAndActivateConnection", (ref MessageWriter w) =>
         {
             var dict = w.WriteDictionaryStart();
             foreach (var (group, values) in settings)
@@ -367,13 +367,13 @@ public sealed class NetworkService : IDisposable
     }
 
     /// <summary>The saved Wi-Fi connection for a network name, if any.</summary>
-    async Task<string?> SavedConnectionAsync(string ssid)
+    private async Task<string?> SavedConnectionAsync(string ssid)
     {
-        var paths = await connection.CallAsync(BusName, SettingsPath, SettingsInterface, "ListConnections",
+        var paths = await _connection.CallAsync(BusName, SettingsPath, SettingsInterface, "ListConnections",
             (m, _) => m.GetBodyReader().ReadArrayOfObjectPath());
         foreach (var path in paths.Select(p => p.ToString()))
         {
-            var settings = await connection.CallAsync(BusName, path, ConnectionInterface, "GetSettings", (m, _) =>
+            var settings = await _connection.CallAsync(BusName, path, ConnectionInterface, "GetSettings", (m, _) =>
             {
                 var reader = m.GetBodyReader();
                 var result = new Dictionary<string, Dictionary<string, VariantValue>>();
@@ -390,21 +390,21 @@ public sealed class NetworkService : IDisposable
     }
 
     /// <summary>Disconnects a device (it stays down until something connects it again).</summary>
-    public Task DisconnectAsync(NetworkDevice device) => connection.CallAsync(BusName, device.Path, DeviceInterface, "Disconnect");
+    public Task DisconnectAsync(NetworkDevice device) => _connection.CallAsync(BusName, device.Path, DeviceInterface, "Disconnect");
 
     public void Dispose()
     {
-        disposed = true;
-        if (secretAgent is not null)
+        _disposed = true;
+        if (_secretAgent is not null)
         {
-            secretAgent.CancelAll();
-            connection.RemoveMethodHandler(secretAgent.Path);
-            _ = connection.CallAsync(BusName, "/org/freedesktop/NetworkManager/AgentManager", "org.freedesktop.NetworkManager.AgentManager", "Unregister")
+            _secretAgent.CancelAll();
+            _connection.RemoveMethodHandler(_secretAgent.Path);
+            _ = _connection.CallAsync(BusName, "/org/freedesktop/NetworkManager/AgentManager", "org.freedesktop.NetworkManager.AgentManager", "Unregister")
                 .ContinueWith(t => _ = t.Exception, TaskScheduler.Default);
         }
-        refreshTimer?.Dispose();
-        foreach (var watch in watches)
+        _refreshTimer?.Dispose();
+        foreach (var watch in _watches)
             watch.Dispose();
-        watches.Clear();
+        _watches.Clear();
     }
 }

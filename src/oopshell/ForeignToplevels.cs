@@ -11,26 +11,26 @@ namespace oopshell;
 /// </summary>
 public sealed class ForeignToplevel
 {
-    readonly OopsApp app;
-    readonly ZwlrForeignToplevelHandleV1? wlr;
-    ExtForeignToplevelHandleV1? ext;
-    readonly List<Output> outputs = new();
+    private readonly OopsApp _app;
+    private readonly ZwlrForeignToplevelHandleV1? _wlr;
+    private ExtForeignToplevelHandleV1? _ext;
+    private readonly List<Output> _outputs = new();
 
     internal ForeignToplevel(OopsApp app, ZwlrForeignToplevelHandleV1 handle)
     {
-        this.app = app;
-        wlr = handle;
+        _app = app;
+        _wlr = handle;
         handle.Title += e => Title = e.Title;
         handle.AppId += e => AppId = e.AppId;
         handle.OutputEnter += e =>
         {
-            if (app.FindOutput(e.Output) is { } o && !outputs.Contains(o))
-                outputs.Add(o);
+            if (app.FindOutput(e.Output) is { } o && !_outputs.Contains(o))
+                _outputs.Add(o);
         };
         handle.OutputLeave += e =>
         {
             if (app.FindOutput(e.Output) is { } o)
-                outputs.Remove(o);
+                _outputs.Remove(o);
         };
         handle.State += e =>
         {
@@ -46,8 +46,8 @@ public sealed class ForeignToplevel
 
     internal ForeignToplevel(OopsApp app, ExtForeignToplevelHandleV1 handle)
     {
-        this.app = app;
-        ext = handle;
+        _app = app;
+        _ext = handle;
         handle.Title += e => Title = e.Title;
         handle.AppId += e => AppId = e.AppId;
         handle.Identifier += e => Identifier = e.Identifier;
@@ -63,15 +63,15 @@ public sealed class ForeignToplevel
     public bool IsMinimized { get; private set; }
     public bool IsMaximized { get; private set; }
     public bool IsFullscreen { get; private set; }
-    public IReadOnlyList<Output> Outputs => outputs;
+    public IReadOnlyList<Output> Outputs => _outputs;
 
     /// <summary>The ext-foreign-toplevel handle, for capture (paired with the wlr handle when both protocols are in use).</summary>
-    internal ExtForeignToplevelHandleV1? CaptureHandle => ext;
+    internal ExtForeignToplevelHandleV1? CaptureHandle => _ext;
 
-    internal void AttachCaptureHandle(ExtForeignToplevelHandleV1? handle) => ext = handle;
+    internal void AttachCaptureHandle(ExtForeignToplevelHandleV1? handle) => _ext = handle;
 
     /// <summary>False with the read-only ext-foreign-toplevel-list fallback.</summary>
-    public bool CanActivate => wlr is not null;
+    public bool CanActivate => _wlr is not null;
 
     /// <summary>Raised after a batch of property changes.</summary>
     public event Action? Changed;
@@ -81,24 +81,24 @@ public sealed class ForeignToplevel
 
     internal event Action<ForeignToplevel>? FirstDone;
     internal event Action<ForeignToplevel>? Removed;
-    bool announced;
+    private bool _announced;
 
-    public void Activate(Seat seat) => wlr?.Activate(seat.Proxy);
-    public void Minimize() => wlr?.SetMinimized();
-    public void Unminimize() => wlr?.UnsetMinimized();
-    public void Maximize() => wlr?.SetMaximized();
-    public void Unmaximize() => wlr?.UnsetMaximized();
-    public void Close() => wlr?.Close();
+    public void Activate(Seat seat) => _wlr?.Activate(seat.Proxy);
+    public void Minimize() => _wlr?.SetMinimized();
+    public void Unminimize() => _wlr?.UnsetMinimized();
+    public void Maximize() => _wlr?.SetMaximized();
+    public void Unmaximize() => _wlr?.UnsetMaximized();
+    public void Close() => _wlr?.Close();
 
     /// <summary>Tells the compositor where this window's taskbar button is (for minimize animations).</summary>
     public void SetRectangle(Surface surface, Rectangle rectangle) =>
-        wlr?.SetRectangle(surface.Proxy, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height);
+        _wlr?.SetRectangle(surface.Proxy, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height);
 
-    void OnDone()
+    private void OnDone()
     {
-        if (!announced)
+        if (!_announced)
         {
-            announced = true;
+            _announced = true;
             FirstDone?.Invoke(this);
         }
         else
@@ -107,12 +107,12 @@ public sealed class ForeignToplevel
         }
     }
 
-    void OnClosed()
+    private void OnClosed()
     {
         Removed?.Invoke(this);
         Closed?.Invoke();
-        wlr?.Dispose();
-        ext?.Dispose();
+        _wlr?.Dispose();
+        _ext?.Dispose();
     }
 
     public override string ToString() => $"{AppId}: {Title}";
@@ -120,9 +120,9 @@ public sealed class ForeignToplevel
 
 public sealed partial class OopsApp
 {
-    ObservableCollection<ForeignToplevel>? toplevels;
-    ReadOnlyObservableCollection<ForeignToplevel>? toplevelsView;
-    bool toplevelsBound;
+    private ObservableCollection<ForeignToplevel>? _toplevels;
+    private ReadOnlyObservableCollection<ForeignToplevel>? _toplevelsView;
+    private bool _toplevelsBound;
 
     /// <summary>
     /// Other applications' windows (for a taskbar), or null if the compositor offers no foreign toplevel
@@ -132,16 +132,16 @@ public sealed partial class OopsApp
     {
         get
         {
-            if (!toplevelsBound)
+            if (!_toplevelsBound)
             {
-                toplevelsBound = true;
+                _toplevelsBound = true;
                 BindToplevels();
             }
-            return toplevelsView;
+            return _toplevelsView;
         }
     }
 
-    void BindToplevels()
+    private void BindToplevels()
     {
         var list = new ObservableCollection<ForeignToplevel>();
         void Track(ForeignToplevel toplevel)
@@ -160,11 +160,11 @@ public sealed partial class OopsApp
             ext.Toplevel += e => Track(new ForeignToplevel(this, e.Toplevel));
         else
             return;
-        toplevels = list;
-        toplevelsView = new ReadOnlyObservableCollection<ForeignToplevel>(list);
+        _toplevels = list;
+        _toplevelsView = new ReadOnlyObservableCollection<ForeignToplevel>(list);
     }
 
-    sealed class CaptureHandle(ExtForeignToplevelHandleV1 handle)
+    private sealed class CaptureHandle(ExtForeignToplevelHandleV1 handle)
     {
         public readonly ExtForeignToplevelHandleV1 Handle = handle;
         public string Title = "", AppId = "";
@@ -177,7 +177,7 @@ public sealed partial class OopsApp
     /// pair each ext handle with the wlr window that has the same app id and title (both lists announce a
     /// window when it maps, so identical windows pair in order).
     /// </summary>
-    static void PairCaptureHandles(ObservableCollection<ForeignToplevel> windows, ExtForeignToplevelListV1 extList)
+    private static void PairCaptureHandles(ObservableCollection<ForeignToplevel> windows, ExtForeignToplevelListV1 extList)
     {
         var unpaired = new List<CaptureHandle>();
         void Pair()

@@ -28,11 +28,11 @@ public enum BluetoothPairingKind
 /// </summary>
 public sealed class BluetoothPairingRequest
 {
-    readonly MethodContext? context;
+    private readonly MethodContext? _context;
 
     internal BluetoothPairingRequest(MethodContext? context, BluetoothPairingKind kind, string devicePath, BluetoothDevice? device)
     {
-        this.context = context;
+        _context = context;
         Kind = kind;
         DevicePath = devicePath;
         Device = device;
@@ -49,7 +49,7 @@ public sealed class BluetoothPairingRequest
     public string? PinCode { get; internal init; }
     /// <summary>The service a device wants to use (<see cref="BluetoothPairingKind.AuthorizeService"/>).</summary>
     public string? ServiceUuid { get; internal init; }
-    public bool NeedsAnswer => context is not null;
+    public bool NeedsAnswer => _context is not null;
     public bool IsFinished { get; private set; }
 
     /// <summary>The request ended: answered, or cancelled by BlueZ (pairing failed or finished) (UI thread).</summary>
@@ -63,15 +63,15 @@ public sealed class BluetoothPairingRequest
 
     public void Provide(uint passkey) => Reply("u", (ref MessageWriter w) => w.WriteUInt32(passkey));
 
-    void Reply(string? signature, BodyWriter write)
+    private void Reply(string? signature, BodyWriter write)
     {
-        if (IsFinished || context is null)
+        if (IsFinished || _context is null)
             return;
-        var w = context.CreateReplyWriter(signature);
+        var w = _context.CreateReplyWriter(signature);
         try
         {
             write(ref w);
-            context.Reply(w.CreateMessage());
+            _context.Reply(w.CreateMessage());
         }
         finally
         {
@@ -80,24 +80,24 @@ public sealed class BluetoothPairingRequest
         End();
     }
 
-    void Error(string name, string message)
+    private void Error(string name, string message)
     {
-        if (IsFinished || context is null)
+        if (IsFinished || _context is null)
             return;
-        context.ReplyError(name, message);
+        _context.ReplyError(name, message);
         End();
     }
 
-    void End()
+    private void End()
     {
         IsFinished = true;
-        context!.Dispose();
+        _context!.Dispose();
         Finished?.Invoke();
     }
 
     internal void CancelledByBlueZ()
     {
-        if (context is null)
+        if (_context is null)
         {
             Finished?.Invoke(); // a Show request ends with the pairing
             return;
@@ -107,10 +107,10 @@ public sealed class BluetoothPairingRequest
 }
 
 /// <summary>The org.bluez.Agent1 object BlueZ calls while pairing.</summary>
-sealed class PairingAgent(OopsApp app, BluetoothService service, string? bluez) : ExportedObject(app, "/org/oopshell/bluez/agent")
+internal sealed class PairingAgent(OopsApp app, BluetoothService service, string? bluez) : ExportedObject(app, "/org/oopshell/bluez/agent")
 {
-    const string Interface = "org.bluez.Agent1";
-    readonly List<BluetoothPairingRequest> pending = new();
+    private const string Interface = "org.bluez.Agent1";
+    private readonly List<BluetoothPairingRequest> _pending = new();
 
     protected override void HandleMethod(MethodContext context)
     {
@@ -120,9 +120,9 @@ sealed class PairingAgent(OopsApp app, BluetoothService service, string? bluez) 
         string member = context.Request.MemberAsString ?? "";
         if (member is "Release" or "Cancel")
         {
-            foreach (var request in pending.ToList())
+            foreach (var request in _pending.ToList())
                 request.CancelledByBlueZ();
-            pending.Clear();
+            _pending.Clear();
             ReplyEmpty(context);
             return;
         }
@@ -156,15 +156,15 @@ sealed class PairingAgent(OopsApp app, BluetoothService service, string? bluez) 
         };
         if (created is null)
             return;
-        pending.Add(created);
-        created.Finished += () => pending.Remove(created);
+        _pending.Add(created);
+        created.Finished += () => _pending.Remove(created);
         service.RaisePairingRequested(created);
     }
 
     public void CancelAll()
     {
-        foreach (var request in pending.ToList())
+        foreach (var request in _pending.ToList())
             request.CancelledByBlueZ();
-        pending.Clear();
+        _pending.Clear();
     }
 }

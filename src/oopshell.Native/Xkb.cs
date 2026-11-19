@@ -5,7 +5,7 @@ namespace oopshell.Native;
 /// <summary>P/Invoke surface of <c>libxkbcommon.so.0</c> (keymaps, state, compose).</summary>
 public static unsafe partial class Xkb
 {
-    const string Lib = "libxkbcommon.so.0";
+    private const string Lib = "libxkbcommon.so.0";
 
     public const int KeymapFormatTextV1 = 1;
     public const int ComposeFormatTextV1 = 1;

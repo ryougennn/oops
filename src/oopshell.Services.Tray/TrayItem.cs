@@ -10,15 +10,15 @@ public sealed record TrayPixmap(int Width, int Height, byte[] Argb);
 /// <summary>A tray icon (<c>org.kde.StatusNotifierItem</c>). Properties refresh when the item signals changes.</summary>
 public sealed class TrayItem
 {
-    const string Interface = "org.kde.StatusNotifierItem";
-    readonly DBusConnection connection;
-    readonly OopsApp app;
-    readonly List<IDisposable> watches = new();
+    private const string Interface = "org.kde.StatusNotifierItem";
+    private readonly DBusConnection _connection;
+    private readonly OopsApp _app;
+    private readonly List<IDisposable> _watches = new();
 
     internal TrayItem(OopsApp app, DBusConnection connection, string service)
     {
-        this.app = app;
-        this.connection = connection;
+        _app = app;
+        _connection = connection;
         Service = service;
         int slash = service.IndexOf('/');
         BusName = slash < 0 ? service : service[..slash];
@@ -55,11 +55,11 @@ public sealed class TrayItem
     {
         await RefreshAsync();
         foreach (var signal in new[] { "NewTitle", "NewIcon", "NewAttentionIcon", "NewOverlayIcon", "NewToolTip", "NewStatus", "NewMenu" })
-            watches.Add(await connection.WatchSignalAsync(app, BusName, ObjectPath, Interface, signal, (_, _) => true, OnChangeSignal));
+            _watches.Add(await _connection.WatchSignalAsync(_app, BusName, ObjectPath, Interface, signal, (_, _) => true, OnChangeSignal));
     }
 
     // Fire and forget: a failed refresh keeps the previous state.
-    void OnChangeSignal(bool signal) => _ = RefreshAsync();
+    private void OnChangeSignal(bool signal) => _ = RefreshAsync();
 
     /// <summary>Re-reads every property (items signal changes without saying what changed).</summary>
     public async Task RefreshAsync()
@@ -67,13 +67,13 @@ public sealed class TrayItem
         Dictionary<string, VariantValue> properties;
         try
         {
-            properties = await connection.GetAllPropertiesAsync(BusName, ObjectPath, Interface);
+            properties = await _connection.GetAllPropertiesAsync(BusName, ObjectPath, Interface);
         }
         catch (DBusErrorReplyException)
         {
             return; // the item went away; the host removes it when its name vanishes
         }
-        await app.InvokeAsync(() =>
+        await _app.InvokeAsync(() =>
         {
             Apply(properties);
             Changed?.Invoke();
@@ -81,7 +81,7 @@ public sealed class TrayItem
         });
     }
 
-    void Apply(Dictionary<string, VariantValue> p)
+    private void Apply(Dictionary<string, VariantValue> p)
     {
         string? Str(string key) => p.TryGetValue(key, out var v) && v.Type == VariantValueType.String ? v.GetString() : null;
         Id = Str("Id") ?? "";
@@ -105,7 +105,7 @@ public sealed class TrayItem
     public const int MaxPixmapSide = 512;
 
     /// <summary>The a(iiay) icon list; entries that are malformed, oversized or whose data does not match width × height × 4 are dropped.</summary>
-    static List<TrayPixmap> ReadPixmaps(VariantValue value)
+    private static List<TrayPixmap> ReadPixmaps(VariantValue value)
     {
         var result = new List<TrayPixmap>();
         if (value.Type != VariantValueType.Array)
@@ -134,7 +134,7 @@ public sealed class TrayItem
     public Task ContextMenuAsync(int x = 0, int y = 0) => CallXY("ContextMenu", x, y);
 
     public Task ScrollAsync(int delta, bool horizontal = false) =>
-        connection.CallAsync(BusName, ObjectPath, Interface, "Scroll", (ref MessageWriter w) =>
+        _connection.CallAsync(BusName, ObjectPath, Interface, "Scroll", (ref MessageWriter w) =>
         {
             w.WriteInt32(delta);
             w.WriteString(horizontal ? "horizontal" : "vertical");
@@ -145,13 +145,13 @@ public sealed class TrayItem
     {
         if (MenuPath is null)
             return null;
-        var menu = new DBusMenu(app, connection, BusName, MenuPath);
+        var menu = new DBusMenu(_app, _connection, BusName, MenuPath);
         await menu.StartAsync();
         return menu;
     }
 
-    Task CallXY(string method, int x, int y) =>
-        connection.CallAsync(BusName, ObjectPath, Interface, method, (ref MessageWriter w) =>
+    private Task CallXY(string method, int x, int y) =>
+        _connection.CallAsync(BusName, ObjectPath, Interface, method, (ref MessageWriter w) =>
         {
             w.WriteInt32(x);
             w.WriteInt32(y);
@@ -159,9 +159,9 @@ public sealed class TrayItem
 
     internal void Stop()
     {
-        foreach (var watch in watches)
+        foreach (var watch in _watches)
             watch.Dispose();
-        watches.Clear();
+        _watches.Clear();
     }
 
     public override string ToString() => $"{Id} ({Service})";

@@ -11,16 +11,16 @@ namespace oopshell;
 /// </summary>
 internal sealed unsafe class CursorThemeFallback : IDisposable
 {
-    readonly OopsApp app;
-    readonly WlSurface cursorSurface;
-    readonly Dictionary<int, nint> themes = new();
+    private readonly OopsApp _app;
+    private readonly WlSurface _cursorSurface;
+    private readonly Dictionary<int, nint> _themes = new();
     // Buffers belong to the theme; we wrap each once (to pass it to attach) and never dispose the wrapper.
-    readonly Dictionary<nint, WlBuffer> buffers = new();
+    private readonly Dictionary<nint, WlBuffer> _buffers = new();
 
-    CursorThemeFallback(OopsApp app)
+    private CursorThemeFallback(OopsApp app)
     {
-        this.app = app;
-        cursorSurface = app.Compositor.CreateSurface();
+        _app = app;
+        _cursorSurface = app.Compositor.CreateSurface();
     }
 
     public static CursorThemeFallback? TryCreate(OopsApp app) => IsAvailable ? new CursorThemeFallback(app) : null;
@@ -43,31 +43,31 @@ internal sealed unsafe class CursorThemeFallback : IDisposable
 
         CursorImage* image = cursor->Images[0];
         nint bufferHandle = wl_cursor_image_get_buffer(image);
-        if (!buffers.TryGetValue(bufferHandle, out var buffer))
-            buffers[bufferHandle] = buffer = WlBuffer.Wrap(bufferHandle);
+        if (!_buffers.TryGetValue(bufferHandle, out var buffer))
+            _buffers[bufferHandle] = buffer = WlBuffer.Wrap(bufferHandle);
 
-        if (cursorSurface.BoundVersion >= 3)
-            cursorSurface.SetBufferScale(scale);
-        cursorSurface.Attach(buffer, 0, 0);
-        cursorSurface.Damage(0, 0, int.MaxValue, int.MaxValue);
-        cursorSurface.Commit();
-        pointer.SetCursor(serial, cursorSurface, (int)image->HotspotX / scale, (int)image->HotspotY / scale);
+        if (_cursorSurface.BoundVersion >= 3)
+            _cursorSurface.SetBufferScale(scale);
+        _cursorSurface.Attach(buffer, 0, 0);
+        _cursorSurface.Damage(0, 0, int.MaxValue, int.MaxValue);
+        _cursorSurface.Commit();
+        pointer.SetCursor(serial, _cursorSurface, (int)image->HotspotX / scale, (int)image->HotspotY / scale);
     }
 
-    nint Theme(int scale)
+    private nint Theme(int scale)
     {
-        if (themes.TryGetValue(scale, out var theme))
+        if (_themes.TryGetValue(scale, out var theme))
             return theme;
         string? name = Environment.GetEnvironmentVariable("XCURSOR_THEME");
         int size = int.TryParse(Environment.GetEnvironmentVariable("XCURSOR_SIZE"), out int s) && s is > 0 and <= 256 ? s : 24;
         using var nameUtf8 = new NativeUtf8(name);
-        theme = wl_cursor_theme_load(nameUtf8.Pointer, size * scale, app.Shm.Handle);
-        themes[scale] = theme;
+        theme = wl_cursor_theme_load(nameUtf8.Pointer, size * scale, _app.Shm.Handle);
+        _themes[scale] = theme;
         return theme;
     }
 
     /// <summary>The CSS name (e.g. <c>ne-resize</c>), then the legacy X11 name some themes still use.</summary>
-    static IEnumerable<string> CandidateNames(CursorShape shape)
+    private static IEnumerable<string> CandidateNames(CursorShape shape)
     {
         var css = new StringBuilder();
         foreach (char c in shape.ToString())
@@ -96,9 +96,9 @@ internal sealed unsafe class CursorThemeFallback : IDisposable
 
     public void Dispose()
     {
-        cursorSurface.Dispose();
-        foreach (var theme in themes.Values)
+        _cursorSurface.Dispose();
+        foreach (var theme in _themes.Values)
             wl_cursor_theme_destroy(theme);
-        themes.Clear();
+        _themes.Clear();
     }
 }

@@ -5,9 +5,9 @@ namespace oopshell;
 
 public abstract partial class Surface
 {
-    Region? blurRegion;
-    bool blurDirty;
-    ExtBackgroundEffectSurfaceV1? backgroundEffect;
+    private Region? _blurRegion;
+    private bool _blurDirty;
+    private ExtBackgroundEffectSurfaceV1? _backgroundEffect;
 
     /// <summary>
     /// Where the compositor should blur what is behind this surface (ext-background-effect), in logical
@@ -16,31 +16,31 @@ public abstract partial class Surface
     /// </summary>
     public Region? BlurRegion
     {
-        get => blurRegion;
+        get => _blurRegion;
         set
         {
-            blurRegion = value;
-            blurDirty = true;
+            _blurRegion = value;
+            _blurDirty = true;
             Invalidate(Rectangle.Empty);
         }
     }
 
     /// <summary>Sends a changed blur region with the next commit.</summary>
-    void ApplyBlurRegion()
+    private void ApplyBlurRegion()
     {
-        if (!blurDirty)
+        if (!_blurDirty)
             return;
-        blurDirty = false;
+        _blurDirty = false;
         if (App.BackgroundEffects is not { } manager)
             return;
-        if (backgroundEffect is null)
+        if (_backgroundEffect is null)
         {
-            if (blurRegion is null)
+            if (_blurRegion is null)
                 return;
-            backgroundEffect = manager.GetBackgroundEffect(Proxy);
+            _backgroundEffect = manager.GetBackgroundEffect(Proxy);
         }
-        using var region = blurRegion?.Create(App.Compositor);
-        backgroundEffect.SetBlurRegion(region);
+        using var region = _blurRegion?.Create(App.Compositor);
+        _backgroundEffect.SetBlurRegion(region);
     }
 }
 
@@ -55,7 +55,7 @@ public sealed partial class OopsApp
     /// <summary><see cref="CanBlurBehind"/> changed (e.g. blur was turned off in the compositor's settings).</summary>
     public event Action? CanBlurBehindChanged;
 
-    void BindBackgroundEffects()
+    private void BindBackgroundEffects()
     {
         if (TryGet<ExtBackgroundEffectManagerV1>() is not { } manager)
             return;

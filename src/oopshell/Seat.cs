@@ -6,31 +6,31 @@ namespace oopshell;
 /// <summary>A group of input devices (pointer, keyboard, touch). Routes their events to oopshell surfaces.</summary>
 public sealed class Seat
 {
-    readonly OopsApp app;
-    readonly KeyboardState xkb = new();
-    WlPointer? pointer;
-    WlKeyboard? keyboard;
-    WlTouch? touch;
-    WpCursorShapeDeviceV1? cursorShapeDevice;
-    CursorThemeFallback? cursorFallback;
+    private readonly OopsApp _app;
+    private readonly KeyboardState _xkb = new();
+    private WlPointer? _pointer;
+    private WlKeyboard? _keyboard;
+    private WlTouch? _touch;
+    private WpCursorShapeDeviceV1? _cursorShapeDevice;
+    private CursorThemeFallback? _cursorFallback;
 
     // Pointer state, plus what has accumulated since the last wl_pointer.frame.
-    uint pointerEnterSerial;
-    PendingPointerFrame frame;
-    readonly List<(PointerButton Button, bool Pressed, uint Time)> pendingButtons = new();
+    private uint _pointerEnterSerial;
+    private PendingPointerFrame _frame;
+    private readonly List<(PointerButton Button, bool Pressed, uint Time)> _pendingButtons = new();
 
     // Key repeat.
-    int repeatRate = 25;
-    int repeatDelay = 600;
-    IDisposable? repeatTimer;
+    private int _repeatRate = 25;
+    private int _repeatDelay = 600;
+    private IDisposable? _repeatTimer;
 
-    readonly Dictionary<int, Surface> touchPoints = new();
+    private readonly Dictionary<int, Surface> _touchPoints = new();
 
     internal Seat(OopsApp app, GlobalInfo global)
     {
-        this.app = app;
+        _app = app;
         Global = global;
-        xkb.LoadComposeFromLocale();
+        _xkb.LoadComposeFromLocale();
         Proxy = app.Bind<WlSeat>(global);
         Proxy.Name += e => Name = e.Name;
         Proxy.Capabilities += e => SetCapabilities(e.Capabilities);
@@ -64,59 +64,59 @@ public sealed class Seat
     public double PointerY { get; private set; }
 
     /// <summary>Modifiers currently held or locked on this seat's keyboard.</summary>
-    public Modifiers Modifiers => xkb.Modifiers;
+    public Modifiers Modifiers => _xkb.Modifiers;
 
     /// <summary>The active keyboard layout's name, e.g. "English (US)".</summary>
-    public string? KeymapLayoutName => xkb.LayoutName;
+    public string? KeymapLayoutName => _xkb.LayoutName;
 
     /// <summary>Raised when capabilities or the keymap change.</summary>
     public event Action? Changed;
 
-    public WlPointer? Pointer => pointer;
-    public WlKeyboard? Keyboard => keyboard;
+    public WlPointer? Pointer => _pointer;
+    public WlKeyboard? Keyboard => _keyboard;
 
-    void SetCapabilities(WlSeatCapability caps)
+    private void SetCapabilities(WlSeatCapability caps)
     {
         Capabilities = caps;
         bool hasPointer = (caps & WlSeatCapability.Pointer) != 0;
         bool hasKeyboard = (caps & WlSeatCapability.Keyboard) != 0;
         bool hasTouch = (caps & WlSeatCapability.Touch) != 0;
 
-        if (hasPointer && pointer is null)
+        if (hasPointer && _pointer is null)
             SetUpPointer();
-        else if (!hasPointer && pointer is not null)
+        else if (!hasPointer && _pointer is not null)
         {
-            cursorShapeDevice?.Dispose();
-            cursorShapeDevice = null;
-            pointer.Dispose();
-            pointer = null;
+            _cursorShapeDevice?.Dispose();
+            _cursorShapeDevice = null;
+            _pointer.Dispose();
+            _pointer = null;
             PointerFocus = null;
         }
 
-        if (hasKeyboard && keyboard is null)
+        if (hasKeyboard && _keyboard is null)
             SetUpKeyboard();
-        else if (!hasKeyboard && keyboard is not null)
+        else if (!hasKeyboard && _keyboard is not null)
         {
             StopRepeat();
-            keyboard.Dispose();
-            keyboard = null;
+            _keyboard.Dispose();
+            _keyboard = null;
             KeyboardFocus = null;
         }
 
-        if (hasTouch && touch is null)
+        if (hasTouch && _touch is null)
             SetUpTouch();
-        else if (!hasTouch && touch is not null)
+        else if (!hasTouch && _touch is not null)
         {
-            touch.Dispose();
-            touch = null;
-            touchPoints.Clear();
+            _touch.Dispose();
+            _touch = null;
+            _touchPoints.Clear();
         }
         Changed?.Invoke();
     }
 
     // ---- pointer ------------------------------------------------------------------------
 
-    struct PendingPointerFrame
+    private struct PendingPointerFrame
     {
         public Surface? Enter;
         public bool Leave;
@@ -129,61 +129,61 @@ public sealed class Seat
         public uint Time;
     }
 
-    void SetUpPointer()
+    private void SetUpPointer()
     {
-        var p = pointer = Proxy.GetPointer();
-        if (app.TryGet<WpCursorShapeManagerV1>() is { } shapes)
-            cursorShapeDevice = shapes.GetPointer(p);
-        else if (app.Options.CursorThemeFallback)
-            cursorFallback ??= CursorThemeFallback.TryCreate(app);
+        var p = _pointer = Proxy.GetPointer();
+        if (_app.TryGet<WpCursorShapeManagerV1>() is { } shapes)
+            _cursorShapeDevice = shapes.GetPointer(p);
+        else if (_app.Options.CursorThemeFallback)
+            _cursorFallback ??= CursorThemeFallback.TryCreate(_app);
 
         p.Enter += e =>
         {
-            pointerEnterSerial = e.Serial;
+            _pointerEnterSerial = e.Serial;
             if (PointerFocus is not null)
-                frame.Leave = true;
-            frame.Enter = app.FindSurface(e.Surface);
+                _frame.Leave = true;
+            _frame.Enter = _app.FindSurface(e.Surface);
             PointerX = e.SurfaceX;
             PointerY = e.SurfaceY;
             EndFrameIfUnframed();
         };
         p.Leave += e =>
         {
-            frame.Leave = true;
+            _frame.Leave = true;
             EndFrameIfUnframed();
         };
         p.Motion += e =>
         {
             PointerX = e.SurfaceX;
             PointerY = e.SurfaceY;
-            frame.Motion = true;
-            frame.Time = e.Time;
+            _frame.Motion = true;
+            _frame.Time = e.Time;
             EndFrameIfUnframed();
         };
         p.Button += e =>
         {
             LastSerial = e.Serial;
-            pendingButtons.Add(((PointerButton)e.Button, e.State == WlPointerButtonState.Pressed, e.Time));
+            _pendingButtons.Add(((PointerButton)e.Button, e.State == WlPointerButtonState.Pressed, e.Time));
             EndFrameIfUnframed();
         };
         p.Axis += e =>
         {
-            frame.Axis = true;
-            frame.Time = e.Time;
+            _frame.Axis = true;
+            _frame.Time = e.Time;
             if (e.Axis == WlPointerAxis.VerticalScroll)
-                frame.DeltaY += e.Value;
+                _frame.DeltaY += e.Value;
             else
-                frame.DeltaX += e.Value;
+                _frame.DeltaX += e.Value;
             EndFrameIfUnframed();
         };
-        p.AxisSource += e => frame.Source = e.AxisSource;
+        p.AxisSource += e => _frame.Source = e.AxisSource;
         p.AxisStop += e =>
         {
-            frame.Axis = true;
+            _frame.Axis = true;
             if (e.Axis == WlPointerAxis.VerticalScroll)
-                frame.StopY = true;
+                _frame.StopY = true;
             else
-                frame.StopX = true;
+                _frame.StopX = true;
         };
         p.AxisDiscrete += e =>
         {
@@ -191,31 +191,31 @@ public sealed class Seat
             if (p.BoundVersion >= 8)
                 return;
             if (e.Axis == WlPointerAxis.VerticalScroll)
-                frame.Value120Y += e.Discrete * 120;
+                _frame.Value120Y += e.Discrete * 120;
             else
-                frame.Value120X += e.Discrete * 120;
+                _frame.Value120X += e.Discrete * 120;
         };
         p.AxisValue120 += e =>
         {
             if (e.Axis == WlPointerAxis.VerticalScroll)
-                frame.Value120Y += e.Value120;
+                _frame.Value120Y += e.Value120;
             else
-                frame.Value120X += e.Value120;
+                _frame.Value120X += e.Value120;
         };
         p.Frame += FlushPointerFrame;
     }
 
     // wl_pointer before v5 has no frame event: every event is its own frame.
-    void EndFrameIfUnframed()
+    private void EndFrameIfUnframed()
     {
-        if (pointer!.BoundVersion < 5)
+        if (_pointer!.BoundVersion < 5)
             FlushPointerFrame();
     }
 
-    void FlushPointerFrame()
+    private void FlushPointerFrame()
     {
-        var f = frame;
-        frame = default;
+        var f = _frame;
+        _frame = default;
 
         if (f.Leave && PointerFocus is { } left)
         {
@@ -230,14 +230,14 @@ public sealed class Seat
         }
         if (PointerFocus is not { } target)
         {
-            pendingButtons.Clear();
+            _pendingButtons.Clear();
             return;
         }
         if (f.Motion)
             target.RaisePointerMove(new PointerEvent(this, PointerX, PointerY, f.Time));
-        foreach (var (button, pressed, time) in pendingButtons)
+        foreach (var (button, pressed, time) in _pendingButtons)
             target.RaisePointerButton(new PointerButtonEvent(this, PointerX, PointerY, button, pressed, time));
-        pendingButtons.Clear();
+        _pendingButtons.Clear();
         if (f.Axis)
         {
             target.RaisePointerScroll(new PointerScrollEvent(this, PointerX, PointerY, f.DeltaX, f.DeltaY,
@@ -248,19 +248,19 @@ public sealed class Seat
     /// <summary>Shows <paramref name="surface"/>'s cursor if the pointer is over it.</summary>
     internal void ApplyCursor(Surface surface)
     {
-        if (PointerFocus != surface || pointer is null)
+        if (PointerFocus != surface || _pointer is null)
             return;
-        if (cursorShapeDevice is not null)
-            cursorShapeDevice.SetShape(pointerEnterSerial, (WpCursorShapeDeviceV1Shape)surface.Cursor);
+        if (_cursorShapeDevice is not null)
+            _cursorShapeDevice.SetShape(_pointerEnterSerial, (WpCursorShapeDeviceV1Shape)surface.Cursor);
         else
-            cursorFallback?.Apply(pointer, pointerEnterSerial, surface.Cursor, (int)Math.Ceiling(surface.Scale));
+            _cursorFallback?.Apply(_pointer, _pointerEnterSerial, surface.Cursor, (int)Math.Ceiling(surface.Scale));
     }
 
     // ---- keyboard -----------------------------------------------------------------------
 
-    unsafe void SetUpKeyboard()
+    private unsafe void SetUpKeyboard()
     {
-        var k = keyboard = Proxy.GetKeyboard();
+        var k = _keyboard = Proxy.GetKeyboard();
         k.Keymap += e =>
         {
             if (e.Format != WlKeyboardKeymapFormat.XkbV1)
@@ -276,7 +276,7 @@ public sealed class Seat
                 return;
             try
             {
-                xkb.SetKeymap(new ReadOnlySpan<byte>((void*)map, (int)size));
+                _xkb.SetKeymap(new ReadOnlySpan<byte>((void*)map, (int)size));
             }
             finally
             {
@@ -286,7 +286,7 @@ public sealed class Seat
         };
         k.Enter += e =>
         {
-            KeyboardFocus = app.FindSurface(e.Surface);
+            KeyboardFocus = _app.FindSurface(e.Surface);
             KeyboardFocus?.RaiseKeyboardFocus(new KeyboardFocusEvent(this, true));
         };
         k.Leave += e =>
@@ -298,8 +298,8 @@ public sealed class Seat
         };
         k.Modifiers += e =>
         {
-            xkb.UpdateModifiers(e.ModsDepressed, e.ModsLatched, e.ModsLocked, e.Group);
-            KeyboardFocus?.RaiseModifiersChanged(new ModifiersEvent(this, xkb.Modifiers));
+            _xkb.UpdateModifiers(e.ModsDepressed, e.ModsLatched, e.ModsLocked, e.Group);
+            KeyboardFocus?.RaiseModifiersChanged(new ModifiersEvent(this, _xkb.Modifiers));
         };
         k.Key += e =>
         {
@@ -312,78 +312,78 @@ public sealed class Seat
             }
             else
             {
-                if (repeatKey == e.Key)
+                if (_repeatKey == e.Key)
                     StopRepeat();
-                KeyboardFocus?.RaiseKeyUp(new KeyEvent(this, e.Key, xkb.GetKeysym(e.Key), xkb.Modifiers, false, e.Time));
+                KeyboardFocus?.RaiseKeyUp(new KeyEvent(this, e.Key, _xkb.GetKeysym(e.Key), _xkb.Modifiers, false, e.Time));
             }
         };
         k.RepeatInfo += e =>
         {
-            repeatRate = e.Rate;
-            repeatDelay = e.Delay;
+            _repeatRate = e.Rate;
+            _repeatDelay = e.Delay;
         };
     }
 
-    void PressKey(uint key, uint time, bool isRepeat)
+    private void PressKey(uint key, uint time, bool isRepeat)
     {
         var target = KeyboardFocus;
         if (target is null)
             return;
-        target.RaiseKeyDown(new KeyEvent(this, key, xkb.GetKeysym(key), xkb.Modifiers, isRepeat, time));
+        target.RaiseKeyDown(new KeyEvent(this, key, _xkb.GetKeysym(key), _xkb.Modifiers, isRepeat, time));
         // Repeats bypass compose: the sequence already finished (or never started) on the first press.
-        if (xkb.GetText(key, useCompose: !isRepeat) is { } text)
+        if (_xkb.GetText(key, useCompose: !isRepeat) is { } text)
             target.RaiseTextInput(new TextInputEvent(this, text));
     }
 
-    uint repeatKey;
+    private uint _repeatKey;
 
-    void StartRepeat(uint key)
+    private void StartRepeat(uint key)
     {
         StopRepeat();
-        if (repeatRate <= 0 || !xkb.KeyRepeats(key))
+        if (_repeatRate <= 0 || !_xkb.KeyRepeats(key))
             return;
-        repeatKey = key;
+        _repeatKey = key;
         uint time = 0;
-        repeatTimer = app.SetTimer(TimeSpan.FromMilliseconds(repeatDelay), TimeSpan.FromMilliseconds(1000.0 / repeatRate),
+        _repeatTimer = _app.SetTimer(TimeSpan.FromMilliseconds(_repeatDelay), TimeSpan.FromMilliseconds(1000.0 / _repeatRate),
             () => PressKey(key, time++, isRepeat: true));
     }
 
-    void StopRepeat()
+    private void StopRepeat()
     {
-        repeatTimer?.Dispose();
-        repeatTimer = null;
-        repeatKey = 0;
+        _repeatTimer?.Dispose();
+        _repeatTimer = null;
+        _repeatKey = 0;
     }
 
     // ---- touch --------------------------------------------------------------------------
 
-    void SetUpTouch()
+    private void SetUpTouch()
     {
-        var t = touch = Proxy.GetTouch();
+        var t = _touch = Proxy.GetTouch();
         t.Down += e =>
         {
             LastSerial = e.Serial;
-            if (app.FindSurface(e.Surface) is not { } surface)
+            if (_app.FindSurface(e.Surface) is not { } surface)
                 return;
-            touchPoints[e.Id] = surface;
+            _touchPoints[e.Id] = surface;
             surface.RaiseTouchDown(new TouchEvent(this, e.Id, e.X, e.Y, e.Time));
         };
         t.Motion += e =>
         {
-            if (touchPoints.TryGetValue(e.Id, out var surface))
+            if (_touchPoints.TryGetValue(e.Id, out var surface))
                 surface.RaiseTouchMove(new TouchEvent(this, e.Id, e.X, e.Y, e.Time));
         };
         t.Up += e =>
         {
             LastSerial = e.Serial;
-            if (touchPoints.Remove(e.Id, out var surface))
+            if (_touchPoints.Remove(e.Id, out var surface))
                 surface.RaiseTouchUp(new TouchEvent(this, e.Id, 0, 0, e.Time));
         };
         t.Cancel += () =>
         {
-            foreach (var (id, surface) in touchPoints)
+            foreach (var (id, surface) in _touchPoints)
                 surface.RaiseTouchCancel(new TouchEvent(this, id, 0, 0, 0));
-            touchPoints.Clear();
+            _touchPoints.Clear();
         };
     }
 
@@ -397,21 +397,21 @@ public sealed class Seat
             StopRepeat();
             KeyboardFocus = null;
         }
-        if (frame.Enter == surface)
-            frame.Enter = null;
-        foreach (var id in touchPoints.Where(p => p.Value == surface).Select(p => p.Key).ToList())
-            touchPoints.Remove(id);
+        if (_frame.Enter == surface)
+            _frame.Enter = null;
+        foreach (var id in _touchPoints.Where(p => p.Value == surface).Select(p => p.Key).ToList())
+            _touchPoints.Remove(id);
     }
 
     internal void Remove()
     {
         StopRepeat();
-        cursorShapeDevice?.Dispose();
-        pointer?.Dispose();
-        keyboard?.Dispose();
-        touch?.Dispose();
-        cursorFallback?.Dispose();
-        xkb.Dispose();
+        _cursorShapeDevice?.Dispose();
+        _pointer?.Dispose();
+        _keyboard?.Dispose();
+        _touch?.Dispose();
+        _cursorFallback?.Dispose();
+        _xkb.Dispose();
         Proxy.Dispose();
     }
 
@@ -420,29 +420,29 @@ public sealed class Seat
 
 public sealed partial class OopsApp
 {
-    readonly List<Seat> seats = new();
+    private readonly List<Seat> _seats = new();
 
-    public IReadOnlyList<Seat> Seats => seats;
+    public IReadOnlyList<Seat> Seats => _seats;
 
     /// <summary>The first seat, or null on a compositor without input (rare).</summary>
-    public Seat? DefaultSeat => seats.Count > 0 ? seats[0] : null;
+    public Seat? DefaultSeat => _seats.Count > 0 ? _seats[0] : null;
 
     public event Action<Seat>? SeatAdded;
     public event Action<Seat>? SeatRemoved;
 
-    void AddSeat(GlobalInfo global)
+    private void AddSeat(GlobalInfo global)
     {
         var seat = new Seat(this, global);
-        seats.Add(seat);
+        _seats.Add(seat);
         SeatAdded?.Invoke(seat);
     }
 
-    void RemoveSeat(GlobalInfo global)
+    private void RemoveSeat(GlobalInfo global)
     {
-        var seat = seats.Find(s => s.Global == global);
+        var seat = _seats.Find(s => s.Global == global);
         if (seat is null)
             return;
-        seats.Remove(seat);
+        _seats.Remove(seat);
         SeatRemoved?.Invoke(seat);
         seat.Remove();
     }

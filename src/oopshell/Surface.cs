@@ -15,29 +15,29 @@ namespace oopshell;
 /// </remarks>
 public abstract partial class Surface : IDisposable
 {
-    readonly WpViewport? viewport;
-    readonly WpFractionalScaleV1? fractionalScale;
-    readonly List<Output> enteredOutputs = new();
-    int preferredBufferScale;    // from wl_surface.preferred_buffer_scale (v6); 0 = not sent
-    int fractionalScale120;      // from wp_fractional_scale_v1; 0 = not sent
+    private readonly WpViewport? _viewport;
+    private readonly WpFractionalScaleV1? _fractionalScale;
+    private readonly List<Output> _enteredOutputs = new();
+    private int _preferredBufferScale;    // from wl_surface.preferred_buffer_scale (v6); 0 = not sent
+    private int _fractionalScale120;      // from wp_fractional_scale_v1; 0 = not sent
 
-    bool needsInitialCommit = true;
-    bool dirty;
-    bool renderNow;              // render in the next phase even if a frame callback is in flight
-    bool presentedThisFrame;
-    bool inRender;
-    Rectangle damage;            // accumulated, in buffer coordinates
-    WlCallback? frameCallback;
-    Action<WlCallbackDoneEvent>? onFrameDone; // cached so each frame does not allocate a new delegate
-    uint lastFrameTime;
+    private bool _needsInitialCommit = true;
+    private bool _dirty;
+    private bool _renderNow;              // render in the next phase even if a frame callback is in flight
+    private bool _presentedThisFrame;
+    private bool _inRender;
+    private Rectangle _damage;            // accumulated, in buffer coordinates
+    private WlCallback? _frameCallback;
+    private Action<WlCallbackDoneEvent>? _onFrameDone; // cached so each frame does not allocate a new delegate
+    private uint _lastFrameTime;
 
     // State last sent to the compositor, so it is only re-sent when it changes.
-    int sentBufferScale = 1;
-    Size sentViewportSize;
-    bool regionsDirty = true;
-    Region? inputRegion;
-    Region? opaqueRegion;
-    CursorShape cursor = CursorShape.Default;
+    private int _sentBufferScale = 1;
+    private Size _sentViewportSize;
+    private bool _regionsDirty = true;
+    private Region? _inputRegion;
+    private Region? _opaqueRegion;
+    private CursorShape _cursor = CursorShape.Default;
 
     private protected Surface(OopsApp app)
     {
@@ -47,17 +47,17 @@ public abstract partial class Surface : IDisposable
         Proxy.Leave += e => OnOutputLeave(e.Output);
         Proxy.PreferredBufferScale += e =>
         {
-            preferredBufferScale = e.Factor;
+            _preferredBufferScale = e.Factor;
             OnScaleMaybeChanged();
         };
 
         if (app.TryGet<WpFractionalScaleManagerV1>() is { } fractionalManager && app.TryGet<WpViewporter>() is { } viewporter)
         {
-            viewport = viewporter.GetViewport(Proxy);
-            fractionalScale = fractionalManager.GetFractionalScale(Proxy);
-            fractionalScale.PreferredScale += e =>
+            _viewport = viewporter.GetViewport(Proxy);
+            _fractionalScale = fractionalManager.GetFractionalScale(Proxy);
+            _fractionalScale.PreferredScale += e =>
             {
-                fractionalScale120 = (int)e.Scale;
+                _fractionalScale120 = (int)e.Scale;
                 OnScaleMaybeChanged();
             };
         }
@@ -90,7 +90,7 @@ public abstract partial class Surface : IDisposable
     public bool IsDisposed { get; private set; }
 
     /// <summary>The outputs this surface is (partly) shown on.</summary>
-    public IReadOnlyList<Output> Outputs => enteredOutputs;
+    public IReadOnlyList<Output> Outputs => _enteredOutputs;
 
     /// <summary>Draw and present exactly once (via a swapchain, EGL, or <see cref="PrepareCommit"/> + your own commit).</summary>
     public event Action<RenderFrame>? Render;
@@ -119,24 +119,24 @@ public abstract partial class Surface : IDisposable
     /// <summary>Where the surface accepts input, in logical coordinates. Null = everywhere; <see cref="Region.Empty"/> = click-through.</summary>
     public Region? InputRegion
     {
-        get => inputRegion;
-        set { inputRegion = value; regionsDirty = true; Invalidate(Rectangle.Empty); }
+        get => _inputRegion;
+        set { _inputRegion = value; _regionsDirty = true; Invalidate(Rectangle.Empty); }
     }
 
     /// <summary>Area that is fully opaque (an optimization hint for the compositor).</summary>
     public Region? OpaqueRegion
     {
-        get => opaqueRegion;
-        set { opaqueRegion = value; regionsDirty = true; Invalidate(Rectangle.Empty); }
+        get => _opaqueRegion;
+        set { _opaqueRegion = value; _regionsDirty = true; Invalidate(Rectangle.Empty); }
     }
 
     /// <summary>The pointer cursor shown over this surface.</summary>
     public CursorShape Cursor
     {
-        get => cursor;
+        get => _cursor;
         set
         {
-            cursor = value;
+            _cursor = value;
             foreach (var seat in App.Seats)
                 seat.ApplyCursor(this);
         }
@@ -148,13 +148,13 @@ public abstract partial class Surface : IDisposable
     /// <summary>Requests a new frame that redraws <paramref name="logicalDamage"/> (logical coordinates).</summary>
     public void Invalidate(Rectangle logicalDamage) => Invalidate(logicalDamage, fullBuffer: false);
 
-    void Invalidate(Rectangle logicalDamage, bool fullBuffer)
+    private void Invalidate(Rectangle logicalDamage, bool fullBuffer)
     {
         if (IsDisposed)
             return;
         var bufferDamage = fullBuffer ? new Rectangle(Point.Empty, BufferSize) : ToBuffer(logicalDamage);
-        damage = damage.IsEmpty ? bufferDamage : bufferDamage.IsEmpty ? damage : Rectangle.Union(damage, bufferDamage);
-        dirty = true;
+        _damage = _damage.IsEmpty ? bufferDamage : bufferDamage.IsEmpty ? _damage : Rectangle.Union(_damage, bufferDamage);
+        _dirty = true;
     }
 
     /// <summary>
@@ -164,52 +164,52 @@ public abstract partial class Surface : IDisposable
     public void PrepareCommit()
     {
         ObjectDisposedException.ThrowIf(IsDisposed, this);
-        presentedThisFrame = true;
+        _presentedThisFrame = true;
         HasPresented = true;
-        if (frameCallback is null)
+        if (_frameCallback is null)
         {
-            frameCallback = Proxy.Frame();
-            frameCallback.Done += onFrameDone ??= e => OnFrameDone(e.CallbackData);
+            _frameCallback = Proxy.Frame();
+            _frameCallback.Done += _onFrameDone ??= e => OnFrameDone(e.CallbackData);
         }
         RequestPresentationFeedback();
         SendPendingState();
     }
 
-    void SendPendingState()
+    private void SendPendingState()
     {
-        if (fractionalScale is not null)
+        if (_fractionalScale is not null)
         {
-            if (sentBufferScale != 1 && Proxy.BoundVersion >= 3)
+            if (_sentBufferScale != 1 && Proxy.BoundVersion >= 3)
                 Proxy.SetBufferScale(1);
-            sentBufferScale = 1;
-            if (sentViewportSize != LogicalSize && !LogicalSize.IsEmpty)
+            _sentBufferScale = 1;
+            if (_sentViewportSize != LogicalSize && !LogicalSize.IsEmpty)
             {
-                viewport!.SetDestination(LogicalSize.Width, LogicalSize.Height);
-                sentViewportSize = LogicalSize;
+                _viewport!.SetDestination(LogicalSize.Width, LogicalSize.Height);
+                _sentViewportSize = LogicalSize;
             }
         }
-        else if (sentBufferScale != (int)Scale && Proxy.BoundVersion >= 3)
+        else if (_sentBufferScale != (int)Scale && Proxy.BoundVersion >= 3)
         {
             Proxy.SetBufferScale((int)Scale);
-            sentBufferScale = (int)Scale;
+            _sentBufferScale = (int)Scale;
         }
 
-        if (regionsDirty)
+        if (_regionsDirty)
         {
-            regionsDirty = false;
-            using (var input = inputRegion?.Create(App.Compositor))
+            _regionsDirty = false;
+            using (var input = _inputRegion?.Create(App.Compositor))
                 Proxy.SetInputRegion(input);
-            using (var opaque = opaqueRegion?.Create(App.Compositor))
+            using (var opaque = _opaqueRegion?.Create(App.Compositor))
                 Proxy.SetOpaqueRegion(opaque);
         }
         ApplyBlurRegion();
     }
 
-    void OnFrameDone(uint time)
+    private void OnFrameDone(uint time)
     {
-        frameCallback?.Dispose();
-        frameCallback = null;
-        lastFrameTime = time;
+        _frameCallback?.Dispose();
+        _frameCallback = null;
+        _lastFrameTime = time;
     }
 
     /// <summary>Called by the app's render phase.</summary>
@@ -217,9 +217,9 @@ public abstract partial class Surface : IDisposable
     {
         if (IsDisposed)
             return;
-        if (needsInitialCommit)
+        if (_needsInitialCommit)
         {
-            needsInitialCommit = false;
+            _needsInitialCommit = false;
             if (CommitsBeforeConfigure)
             {
                 BeforeInitialCommit();
@@ -227,29 +227,29 @@ public abstract partial class Surface : IDisposable
                 return;
             }
         }
-        if (!IsConfigured || !dirty || (frameCallback is not null && !renderNow) || BufferSize.IsEmpty)
+        if (!IsConfigured || !_dirty || (_frameCallback is not null && !_renderNow) || BufferSize.IsEmpty)
             return;
 
         var frame = new RenderFrame(BufferSize, LogicalSize, Scale,
-            Rectangle.Intersect(damage, new Rectangle(Point.Empty, BufferSize)), lastFrameTime);
-        dirty = false;
-        renderNow = false;
-        damage = Rectangle.Empty;
-        presentedThisFrame = false;
-        inRender = true;
+            Rectangle.Intersect(_damage, new Rectangle(Point.Empty, BufferSize)), _lastFrameTime);
+        _dirty = false;
+        _renderNow = false;
+        _damage = Rectangle.Empty;
+        _presentedThisFrame = false;
+        _inRender = true;
         try
         {
             Render?.Invoke(frame);
         }
         finally
         {
-            inRender = false;
+            _inRender = false;
         }
-        if (!presentedThisFrame && Render is not null)
+        if (!_presentedThisFrame && Render is not null)
             Debug.WriteLine($"oopshell: {GetType().Name} did not present during Render.");
     }
 
-    internal bool IsRendering => inRender;
+    internal bool IsRendering => _inRender;
 
     /// <summary>A buffer has been committed (so a state-only commit keeps the surface mapped).</summary>
     internal bool HasPresented { get; private set; }
@@ -269,26 +269,26 @@ public abstract partial class Surface : IDisposable
         IsConfigured = true;
         Scale = ComputeScale();
         if (first || sizeChanged)
-            sentViewportSize = Size.Empty;
+            _sentViewportSize = Size.Empty;
         Configured?.Invoke(new SurfaceConfiguredEventArgs(LogicalSize, Scale, BufferSize));
         // The first frame after a configure is drawn immediately, not after the next frame callback.
         Invalidate();
-        renderNow = true;
+        _renderNow = true;
     }
 
     /// <summary>Scale to assume before the compositor says anything (e.g. the layer surface's output).</summary>
     private protected virtual int InitialScaleHint => 1;
 
-    double ComputeScale()
+    private double ComputeScale()
     {
-        if (fractionalScale is not null && fractionalScale120 > 0)
-            return fractionalScale120 / 120.0;
-        if (preferredBufferScale > 0)
-            return preferredBufferScale;
-        return enteredOutputs.Count > 0 ? enteredOutputs.Max(o => o.Scale) : InitialScaleHint;
+        if (_fractionalScale is not null && _fractionalScale120 > 0)
+            return _fractionalScale120 / 120.0;
+        if (_preferredBufferScale > 0)
+            return _preferredBufferScale;
+        return _enteredOutputs.Count > 0 ? _enteredOutputs.Max(o => o.Scale) : InitialScaleHint;
     }
 
-    void OnScaleMaybeChanged()
+    private void OnScaleMaybeChanged()
     {
         double scale = ComputeScale();
         if (!IsConfigured || scale == Scale)
@@ -296,27 +296,27 @@ public abstract partial class Surface : IDisposable
         Scale = scale;
         Configured?.Invoke(new SurfaceConfiguredEventArgs(LogicalSize, Scale, BufferSize));
         Invalidate();
-        renderNow = true;
+        _renderNow = true;
     }
 
-    void OnOutputEnter(WlOutput wlOutput)
+    private void OnOutputEnter(WlOutput wlOutput)
     {
-        if (App.FindOutput(wlOutput) is { } output && !enteredOutputs.Contains(output))
+        if (App.FindOutput(wlOutput) is { } output && !_enteredOutputs.Contains(output))
         {
-            enteredOutputs.Add(output);
+            _enteredOutputs.Add(output);
             OnScaleMaybeChanged();
         }
     }
 
-    void OnOutputLeave(WlOutput wlOutput)
+    private void OnOutputLeave(WlOutput wlOutput)
     {
-        if (App.FindOutput(wlOutput) is { } output && enteredOutputs.Remove(output))
+        if (App.FindOutput(wlOutput) is { } output && _enteredOutputs.Remove(output))
             OnScaleMaybeChanged();
     }
 
     internal void OnOutputRemoved(Output output)
     {
-        if (enteredOutputs.Remove(output))
+        if (_enteredOutputs.Remove(output))
             OnScaleMaybeChanged();
     }
 
@@ -335,7 +335,7 @@ public abstract partial class Surface : IDisposable
     internal static Size ScaleSize(Size logical, double scale) =>
         new((int)Math.Round(logical.Width * scale), (int)Math.Round(logical.Height * scale));
 
-    Rectangle ToBuffer(Rectangle logical)
+    private Rectangle ToBuffer(Rectangle logical)
     {
         if (logical.IsEmpty)
             return Rectangle.Empty;
@@ -379,49 +379,49 @@ public abstract partial class Surface : IDisposable
         IsDisposed = true;
         App.RemoveSurface(this);
         DestroyRole();
-        frameCallback?.Dispose();
-        backgroundEffect?.Dispose();
+        _frameCallback?.Dispose();
+        _backgroundEffect?.Dispose();
         DisposeInhibitors();
-        fractionalScale?.Dispose();
-        viewport?.Dispose();
+        _fractionalScale?.Dispose();
+        _viewport?.Dispose();
         Proxy.Dispose();
     }
 }
 
 public sealed partial class OopsApp
 {
-    readonly List<Surface> surfaces = new();
-    readonly Dictionary<WlSurface, Surface> surfacesByProxy = new();
+    private readonly List<Surface> _surfaces = new();
+    private readonly Dictionary<WlSurface, Surface> _surfacesByProxy = new();
 
     /// <summary>Every live oopshell surface.</summary>
-    public IReadOnlyList<Surface> Surfaces => surfaces;
+    public IReadOnlyList<Surface> Surfaces => _surfaces;
 
     /// <summary>The oopshell surface for a raw <c>wl_surface</c>, if any.</summary>
-    public Surface? FindSurface(WlSurface? proxy) => proxy is not null && surfacesByProxy.TryGetValue(proxy, out var s) ? s : null;
+    public Surface? FindSurface(WlSurface? proxy) => proxy is not null && _surfacesByProxy.TryGetValue(proxy, out var s) ? s : null;
 
     internal void AddSurface(Surface surface)
     {
-        surfaces.Add(surface);
-        surfacesByProxy[surface.Proxy] = surface;
+        _surfaces.Add(surface);
+        _surfacesByProxy[surface.Proxy] = surface;
     }
 
     internal void RemoveSurface(Surface surface)
     {
-        surfaces.Remove(surface);
-        surfacesByProxy.Remove(surface.Proxy);
-        foreach (var seat in seats)
+        _surfaces.Remove(surface);
+        _surfacesByProxy.Remove(surface.Proxy);
+        foreach (var seat in _seats)
             seat.Forget(surface);
     }
 
     /// <summary>Initial commits and Render events for every surface that needs one.</summary>
-    void RenderPhase()
+    private void RenderPhase()
     {
         // Iterate a copy (render handlers may create or dispose surfaces), reusing one list to avoid garbage.
-        renderScratch.Clear();
-        renderScratch.AddRange(surfaces);
-        foreach (var surface in renderScratch)
+        _renderScratch.Clear();
+        _renderScratch.AddRange(_surfaces);
+        foreach (var surface in _renderScratch)
             surface.RunRenderPhase();
     }
 
-    readonly List<Surface> renderScratch = new();
+    private readonly List<Surface> _renderScratch = new();
 }

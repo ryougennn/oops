@@ -3,11 +3,11 @@ using System.Text;
 namespace oopshell.Fuzz;
 
 /// <summary>Mutates seed inputs: flips, inserts, deletes, duplicates, splices format tokens, truncates.</summary>
-sealed class Mutator(int seed, IReadOnlyList<string> tokens)
+internal sealed class Mutator(int seed, IReadOnlyList<string> tokens)
 {
     public readonly Random Random = new(seed);
 
-    static readonly string[] Generic =
+    private static readonly string[] s_generic =
     [
         "\n", "\r\n", "\0", "\\", "\"", "'", "=", ";", "[", "]", "%", "%f", "%F", "%u", "%U", "%i", "%c", "%k", "%%", "$", "$(", "`",
         "..", "/", "~", " ", "\t", "é", "日本", "😀", "\ud800", "\udc00", "‮", "﻿", "-", "--", "*", "?",
@@ -40,7 +40,7 @@ sealed class Mutator(int seed, IReadOnlyList<string> tokens)
         return s.ToString();
     }
 
-    string Token() => Random.Next(3) == 0 ? Generic[Random.Next(Generic.Length)] : tokens.Count > 0 ? tokens[Random.Next(tokens.Count)] : "x";
+    private string Token() => Random.Next(3) == 0 ? s_generic[Random.Next(s_generic.Length)] : tokens.Count > 0 ? tokens[Random.Next(tokens.Count)] : "x";
 
     public byte[] MutateBytes(byte[] input)
     {

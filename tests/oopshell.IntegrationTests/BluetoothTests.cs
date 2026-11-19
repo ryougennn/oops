@@ -8,7 +8,7 @@ namespace oopshell.IntegrationTests;
 public class BluetoothTests(SwayFixture sway)
 {
     /// <summary>BlueZ's root object: GetManagedObjects from the fake objects' current properties.</summary>
-    sealed class FakeObjectManager(OopsApp app, List<FakeDBusObject> objects) : ExportedObject(app, "/")
+    private sealed class FakeObjectManager(OopsApp app, List<FakeDBusObject> objects) : ExportedObject(app, "/")
     {
         protected override void HandleMethod(MethodContext context)
         {
@@ -34,7 +34,7 @@ public class BluetoothTests(SwayFixture sway)
         }
     }
 
-    static void ReplyEmpty(MethodContext c)
+    private static void ReplyEmpty(MethodContext c)
     {
         using var w = c.CreateReplyWriter(null);
         c.Reply(w.CreateMessage());
@@ -58,17 +58,31 @@ public class BluetoothTests(SwayFixture sway)
 
         var hci0 = Add("/org/bluez/hci0").With("org.bluez.Adapter1", new()
         {
-            ["Address"] = "00:11:22:33:44:55", ["Alias"] = "testhost", ["Powered"] = true, ["Discovering"] = false, ["Discoverable"] = false,
+            ["Address"] = "00:11:22:33:44:55",
+            ["Alias"] = "testhost",
+            ["Powered"] = true,
+            ["Discovering"] = false,
+            ["Discoverable"] = false,
         });
         var mouse = Add("/org/bluez/hci0/dev_AA").With("org.bluez.Device1", new()
         {
-            ["Address"] = "AA:AA:AA:AA:AA:AA", ["Alias"] = "Mouse", ["Icon"] = "input-mouse", ["Paired"] = true, ["Trusted"] = true,
-            ["Connected"] = false, ["Adapter"] = new ObjectPath("/org/bluez/hci0"),
+            ["Address"] = "AA:AA:AA:AA:AA:AA",
+            ["Alias"] = "Mouse",
+            ["Icon"] = "input-mouse",
+            ["Paired"] = true,
+            ["Trusted"] = true,
+            ["Connected"] = false,
+            ["Adapter"] = new ObjectPath("/org/bluez/hci0"),
         }).With("org.bluez.Battery1", new() { ["Percentage"] = (byte)76 });
         var headphones = Add("/org/bluez/hci0/dev_BB").With("org.bluez.Device1", new()
         {
-            ["Address"] = "BB:BB:BB:BB:BB:BB", ["Alias"] = "Headphones", ["Icon"] = "audio-headset", ["Paired"] = true, ["Trusted"] = true,
-            ["Connected"] = true, ["Adapter"] = new ObjectPath("/org/bluez/hci0"),
+            ["Address"] = "BB:BB:BB:BB:BB:BB",
+            ["Alias"] = "Headphones",
+            ["Icon"] = "audio-headset",
+            ["Paired"] = true,
+            ["Trusted"] = true,
+            ["Connected"] = true,
+            ["Adapter"] = new ObjectPath("/org/bluez/hci0"),
         });
         hci0.Methods["StartDiscovery"] = c =>
         {
@@ -77,8 +91,13 @@ public class BluetoothTests(SwayFixture sway)
             // A device shows up while discovering.
             var found = Add("/org/bluez/hci0/dev_CC").With("org.bluez.Device1", new()
             {
-                ["Address"] = "CC:CC:CC:CC:CC:CC", ["Alias"] = "CC-CC-CC-CC-CC-CC", ["Paired"] = false, ["Trusted"] = false,
-                ["Connected"] = false, ["RSSI"] = (VariantValue)(short)-60, ["Adapter"] = new ObjectPath("/org/bluez/hci0"),
+                ["Address"] = "CC:CC:CC:CC:CC:CC",
+                ["Alias"] = "CC-CC-CC-CC-CC-CC",
+                ["Paired"] = false,
+                ["Trusted"] = false,
+                ["Connected"] = false,
+                ["RSSI"] = (VariantValue)(short)-60,
+                ["Adapter"] = new ObjectPath("/org/bluez/hci0"),
             });
             bluez.EmitSignal("/", "org.freedesktop.DBus.ObjectManager", "InterfacesAdded", "oa{sa{sv}}", (ref MessageWriter w) =>
             {

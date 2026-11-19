@@ -8,13 +8,13 @@ namespace oopshell.IntegrationTests;
 [Collection("sway")]
 public class NetworkTests(SwayFixture sway)
 {
-    const string Nm = "org.freedesktop.NetworkManager";
-    const string Root = "/org/freedesktop/NetworkManager";
+    private const string Nm = "org.freedesktop.NetworkManager";
+    private const string Root = "/org/freedesktop/NetworkManager";
 
-    static VariantValue Paths(params string[] paths) => new Array<ObjectPath>(paths.Select(p => new ObjectPath(p)));
-    static VariantValue Ssid(string s) => new Array<byte>(Encoding.UTF8.GetBytes(s));
+    private static VariantValue Paths(params string[] paths) => new Array<ObjectPath>(paths.Select(p => new ObjectPath(p)));
+    private static VariantValue Ssid(string s) => new Array<byte>(Encoding.UTF8.GetBytes(s));
 
-    static void ReplyEmpty(MethodContext c)
+    private static void ReplyEmpty(MethodContext c)
     {
         using var w = c.CreateReplyWriter(null);
         c.Reply(w.CreateMessage());
@@ -36,7 +36,10 @@ public class NetworkTests(SwayFixture sway)
         var manager = Add(Root).With(Nm, new()
         {
             ["Devices"] = Paths($"{Root}/Devices/1", $"{Root}/Devices/2", $"{Root}/Devices/3"),
-            ["Connectivity"] = 4u, ["NetworkingEnabled"] = true, ["WirelessEnabled"] = true, ["WirelessHardwareEnabled"] = true,
+            ["Connectivity"] = 4u,
+            ["NetworkingEnabled"] = true,
+            ["WirelessEnabled"] = true,
+            ["WirelessHardwareEnabled"] = true,
             ["PrimaryConnection"] = new ObjectPath($"{Root}/ActiveConnection/1"),
         });
         Add($"{Root}/Devices/1").With($"{Nm}.Device", new() { ["Interface"] = "lo", ["DeviceType"] = 32u, ["State"] = 100u, ["ActiveConnection"] = new ObjectPath("/") });

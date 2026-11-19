@@ -9,7 +9,7 @@ namespace oopshell.IntegrationTests;
 public class PolkitTests(SwayFixture sway)
 {
     /// <summary>polkitd's Authority: records which agents register.</summary>
-    sealed class FakeAuthority(OopsApp app) : ExportedObject(app, PolkitAgent.AuthorityPath)
+    private sealed class FakeAuthority(OopsApp app) : ExportedObject(app, PolkitAgent.AuthorityPath)
     {
         public readonly List<(string Kind, string Path)> Registered = new();
         public int Unregistered;
@@ -36,7 +36,7 @@ public class PolkitTests(SwayFixture sway)
     }
 
     /// <summary>Stands in for the setuid helper: one password prompt; "correct-horse" with the right cookie succeeds.</summary>
-    static string FakeHelper(string dir)
+    private static string FakeHelper(string dir)
     {
         string path = Path.Combine(dir, "fake-polkit-helper");
         File.WriteAllText(path, """
@@ -111,10 +111,10 @@ public class PolkitTests(SwayFixture sway)
         app.RunUntil(() => authority.Unregistered == 1, what: "unregistered");
     }
 
-    static uint CurrentUid() => uint.Parse(File.ReadAllLines("/proc/self/status").First(l => l.StartsWith("Uid:")).Split('\t', StringSplitOptions.RemoveEmptyEntries)[1]);
+    private static uint CurrentUid() => uint.Parse(File.ReadAllLines("/proc/self/status").First(l => l.StartsWith("Uid:")).Split('\t', StringSplitOptions.RemoveEmptyEntries)[1]);
 
     /// <summary>What polkitd sends: BeginAuthentication with one unix-user identity.</summary>
-    static Task Begin(DBusConnection polkitd, string agentName, string cookie, uint uid) =>
+    private static Task Begin(DBusConnection polkitd, string agentName, string cookie, uint uid) =>
         polkitd.CallAsync(agentName, "/org/oopshell/PolicyKit1/AuthenticationAgent", PolkitAgent.AgentInterface, "BeginAuthentication", (ref MessageWriter w) =>
         {
             w.WriteString("org.example.reboot");
@@ -177,7 +177,7 @@ public class PolkitTests(SwayFixture sway)
     }
 }
 
-sealed class TempDir : IDisposable
+internal sealed class TempDir : IDisposable
 {
     public string Path { get; } = Directory.CreateTempSubdirectory("oopstest.").FullName;
     public void Dispose() => Directory.Delete(Path, recursive: true);

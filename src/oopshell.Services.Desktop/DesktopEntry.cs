@@ -5,7 +5,7 @@ namespace oopshell.Services.Desktop;
 /// <summary>An application from a <c>.desktop</c> file (Desktop Entry Specification 1.5).</summary>
 public sealed class DesktopEntry
 {
-    const string Group = "Desktop Entry";
+    private const string Group = "Desktop Entry";
 
     /// <summary>The desktop file id, e.g. <c>org.gnome.Nautilus.desktop</c> (subdirectories joined with '-').</summary>
     public required string Id { get; init; }
@@ -104,7 +104,7 @@ public sealed class DesktopEntry
     public IReadOnlyList<string> ExpandExec(DesktopAction action, IReadOnlyList<string>? filesOrUrls = null) =>
         ExpandExec(action.Exec ?? Exec ?? throw new InvalidOperationException($"{Id} action {action.Id} has no Exec key."), filesOrUrls);
 
-    IReadOnlyList<string> ExpandExec(string exec, IReadOnlyList<string>? filesOrUrls)
+    private IReadOnlyList<string> ExpandExec(string exec, IReadOnlyList<string>? filesOrUrls)
     {
         filesOrUrls ??= [];
         var result = new List<string>();
@@ -167,7 +167,7 @@ public sealed class DesktopEntry
     }
 
     /// <summary>Marks a field code that stood inside double quotes (its value will be shell-quoted).</summary>
-    const char QuotedCode = '\uE000';
+    private const char QuotedCode = '\uE000';
 
     /// <summary>Splits an Exec value into arguments following the spec's quoting rules.</summary>
     internal static List<string> SplitExec(string exec)

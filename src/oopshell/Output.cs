@@ -6,8 +6,8 @@ namespace oopshell;
 /// <summary>A monitor. Properties update atomically; <see cref="Changed"/> fires after each update.</summary>
 public sealed class Output
 {
-    readonly ZxdgOutputV1? xdgOutput;
-    Point geometryPosition;
+    private readonly ZxdgOutputV1? _xdgOutput;
+    private Point _geometryPosition;
 
     internal Output(OopsApp app, GlobalInfo global)
     {
@@ -15,7 +15,7 @@ public sealed class Output
         Proxy = app.Bind<WlOutput>(global);
         Proxy.Geometry += e =>
         {
-            geometryPosition = new Point(e.X, e.Y);
+            _geometryPosition = new Point(e.X, e.Y);
             Make = e.Make;
             Model = e.Model;
             Transform = e.Transform;
@@ -34,12 +34,12 @@ public sealed class Output
 
         if (app.TryGet<ZxdgOutputManagerV1>() is { } manager)
         {
-            xdgOutput = manager.GetXdgOutput(Proxy);
-            xdgOutput.LogicalPosition += e => LogicalPosition = new Point(e.X, e.Y);
-            xdgOutput.LogicalSize += e => LogicalSize = new Size(e.Width, e.Height);
+            _xdgOutput = manager.GetXdgOutput(Proxy);
+            _xdgOutput.LogicalPosition += e => LogicalPosition = new Point(e.X, e.Y);
+            _xdgOutput.LogicalSize += e => LogicalSize = new Size(e.Width, e.Height);
             // Before xdg_output v3 the xdg_output has its own done event, sent after wl_output.done.
-            if (xdgOutput.BoundVersion < 3)
-                xdgOutput.Done += OnDone;
+            if (_xdgOutput.BoundVersion < 3)
+                _xdgOutput.Done += OnDone;
         }
     }
 
@@ -77,11 +77,11 @@ public sealed class Output
 
     internal event Action<Output>? FirstDone;
 
-    void OnDone()
+    private void OnDone()
     {
-        if (xdgOutput is null)
+        if (_xdgOutput is null)
         {
-            LogicalPosition = geometryPosition;
+            LogicalPosition = _geometryPosition;
             var size = IsRotated(Transform) ? new Size(PixelSize.Height, PixelSize.Width) : PixelSize;
             LogicalSize = new Size(size.Width / Math.Max(Scale, 1), size.Height / Math.Max(Scale, 1));
         }
@@ -93,12 +93,12 @@ public sealed class Output
             Changed?.Invoke();
     }
 
-    static bool IsRotated(WlOutputTransform t) => ((uint)t & 1) == 1;
+    private static bool IsRotated(WlOutputTransform t) => ((uint)t & 1) == 1;
 
     internal void Remove()
     {
         Removed?.Invoke();
-        xdgOutput?.Dispose();
+        _xdgOutput?.Dispose();
         Proxy.Dispose();
     }
 
@@ -107,11 +107,11 @@ public sealed class Output
 
 public sealed partial class OopsApp
 {
-    readonly List<Output> outputs = new();
-    readonly List<Output> pendingOutputs = new();
+    private readonly List<Output> _outputs = new();
+    private readonly List<Output> _pendingOutputs = new();
 
     /// <summary>Outputs that are fully described. Ones still being announced are not listed yet.</summary>
-    public IReadOnlyList<Output> Outputs => outputs;
+    public IReadOnlyList<Output> Outputs => _outputs;
 
     public event Action<Output>? OutputAdded;
     public event Action<Output>? OutputRemoved;
@@ -129,7 +129,7 @@ public sealed partial class OopsApp
             if (created.Remove(output, out var resource))
                 resource?.Dispose();
         }
-        foreach (var output in outputs)
+        foreach (var output in _outputs)
             Add(output);
         OutputAdded += Add;
         OutputRemoved += Remove;
@@ -144,28 +144,28 @@ public sealed partial class OopsApp
     }
 
     /// <summary>Finds the oopshell output for a raw <c>wl_output</c>.</summary>
-    public Output? FindOutput(WlOutput? proxy) => outputs.Find(o => o.Proxy == proxy);
+    public Output? FindOutput(WlOutput? proxy) => _outputs.Find(o => o.Proxy == proxy);
 
-    void AddOutput(GlobalInfo global)
+    private void AddOutput(GlobalInfo global)
     {
         var output = new Output(this, global);
-        pendingOutputs.Add(output);
+        _pendingOutputs.Add(output);
         output.FirstDone += o =>
         {
-            pendingOutputs.Remove(o);
-            outputs.Add(o);
+            _pendingOutputs.Remove(o);
+            _outputs.Add(o);
             OutputAdded?.Invoke(o);
         };
     }
 
-    void RemoveOutput(GlobalInfo global)
+    private void RemoveOutput(GlobalInfo global)
     {
-        var output = outputs.Find(o => o.Global == global) ?? pendingOutputs.Find(o => o.Global == global);
+        var output = _outputs.Find(o => o.Global == global) ?? _pendingOutputs.Find(o => o.Global == global);
         if (output is null)
             return;
-        bool announced = outputs.Remove(output);
-        pendingOutputs.Remove(output);
-        foreach (var surface in surfaces)
+        bool announced = _outputs.Remove(output);
+        _pendingOutputs.Remove(output);
+        foreach (var surface in _surfaces)
             surface.OnOutputRemoved(output);
         if (announced)
             OutputRemoved?.Invoke(output);

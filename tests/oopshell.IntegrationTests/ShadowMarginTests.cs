@@ -6,10 +6,10 @@ namespace oopshell.IntegrationTests;
 [Collection("sway")]
 public class ShadowMarginTests(SwayFixture sway)
 {
-    const uint Margin = 0xFF00C000, Content = 0xFFC00000;
+    private const uint Margin = 0xFF00C000, Content = 0xFFC00000;
 
     /// <summary>Paints the margins green and the window geometry red.</summary>
-    static Func<int> PaintMargins(Surface surface, Func<Margins> margins)
+    private static Func<int> PaintMargins(Surface surface, Func<Margins> margins)
     {
         var chain = new ShmSwapchain(surface);
         int frames = 0;
@@ -66,7 +66,8 @@ public class ShadowMarginTests(SwayFixture sway)
             AnchorRect = new Rectangle(200, 150, 1, 1),
             Anchor = XdgPositionerAnchor.TopLeft,
             Gravity = XdgPositionerGravity.BottomRight,
-        }) { ShadowMargins = Margins.All(6) };
+        })
+        { ShadowMargins = Margins.All(6) };
         var frames = PaintMargins(popup, () => popup.ShadowMargins);
         app.RunUntil(() => frames() >= 1, what: "popup");
 

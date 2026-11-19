@@ -11,15 +11,15 @@ namespace oopshell;
 /// </summary>
 public sealed class ShmSwapchain : IDisposable
 {
-    readonly Surface surface;
-    readonly WlShmFormat format;
-    readonly int maxBuffers;
-    readonly List<ShmBuffer> buffers = new();
-    readonly DamageHistory damageHistory = new();
-    ShmPool? pool;
-    long frameCounter;
-    bool starved;
-    bool disposed;
+    private readonly Surface _surface;
+    private readonly WlShmFormat _format;
+    private readonly int _maxBuffers;
+    private readonly List<ShmBuffer> _buffers = new();
+    private readonly DamageHistory _damageHistory = new();
+    private ShmPool? _pool;
+    private long _frameCounter;
+    private bool _starved;
+    private bool _disposed;
 
     /// <param name="surface">The surface to present to.</param>
     /// <param name="format">A 32-bit <c>wl_shm</c> format.</param>
@@ -30,12 +30,12 @@ public sealed class ShmSwapchain : IDisposable
     public ShmSwapchain(Surface surface, WlShmFormat format = WlShmFormat.Argb8888, int maxBuffers = 3)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(maxBuffers, 2);
-        this.surface = surface;
-        this.format = format;
-        this.maxBuffers = maxBuffers;
+        _surface = surface;
+        _format = format;
+        _maxBuffers = maxBuffers;
     }
 
-    public WlShmFormat Format => format;
+    public WlShmFormat Format => _format;
 
     /// <summary>
     /// A buffer of <see cref="RenderFrame.BufferSize"/> to draw into, or null when all buffers are still in use
@@ -46,98 +46,98 @@ public sealed class ShmSwapchain : IDisposable
     /// <summary>Like <see cref="Acquire(RenderFrame)"/>, for presenting outside a render handler.</summary>
     public ShmBuffer? Acquire(Size size, Rectangle damage)
     {
-        ObjectDisposedException.ThrowIf(disposed, this);
+        ObjectDisposedException.ThrowIf(_disposed, this);
         if (size.Width <= 0 || size.Height <= 0)
             throw new ArgumentException("Buffer size must be positive.", nameof(size));
 
-        if (pool is null || pool.BufferSize != size)
+        if (_pool is null || _pool.BufferSize != size)
             Resize(size);
 
         ShmBuffer? buffer = null;
-        foreach (var candidate in buffers)
+        foreach (var candidate in _buffers)
         {
             if (!candidate.IsBusy && (buffer is null || candidate.LastPresentedFrame > buffer.LastPresentedFrame))
                 buffer = candidate; // the most recently presented free buffer has the youngest contents
         }
         if (buffer is null)
         {
-            if (buffers.Count >= maxBuffers)
+            if (_buffers.Count >= _maxBuffers)
             {
-                starved = true;
+                _starved = true;
                 return null;
             }
-            buffer = new ShmBuffer(this, pool!, pool!.AddSlot(), size);
-            buffers.Add(buffer);
+            buffer = new ShmBuffer(this, _pool!, _pool!.AddSlot(), size);
+            _buffers.Add(buffer);
         }
-        buffer.Lease(frameCounter, damageHistory.RepairArea(buffer.AgeAt(frameCounter), damage, size));
+        buffer.Lease(_frameCounter, _damageHistory.RepairArea(buffer.AgeAt(_frameCounter), damage, size));
         return buffer;
     }
 
     internal void OnPresented(ShmBuffer buffer, Rectangle damage)
     {
-        frameCounter++;
-        damageHistory.Add(damage);
-        buffer.LastPresentedFrame = frameCounter;
+        _frameCounter++;
+        _damageHistory.Add(damage);
+        buffer.LastPresentedFrame = _frameCounter;
     }
 
     internal void OnReleased(ShmBuffer buffer)
     {
-        if (buffer.Pool != pool)
+        if (buffer.Pool != _pool)
         {
-            buffers.Remove(buffer);
+            _buffers.Remove(buffer);
             buffer.Destroy();
         }
-        if (starved && !disposed)
+        if (_starved && !_disposed)
         {
-            starved = false;
-            surface.Invalidate();
+            _starved = false;
+            _surface.Invalidate();
         }
     }
 
-    internal Surface Surface => surface;
+    internal Surface Surface => _surface;
 
-    void Resize(Size size)
+    private void Resize(Size size)
     {
         // Buffers of the old size die as soon as the compositor lets go of them; their pool can go right away
         // (wl_shm_pool.destroy keeps existing buffers valid).
-        foreach (var buffer in buffers.Where(b => !b.IsBusy).ToList())
+        foreach (var buffer in _buffers.Where(b => !b.IsBusy).ToList())
         {
-            buffers.Remove(buffer);
+            _buffers.Remove(buffer);
             buffer.Destroy();
         }
-        pool?.Dispose();
-        pool = new ShmPool(surface.App.Shm, size, format);
-        damageHistory.Clear();
+        _pool?.Dispose();
+        _pool = new ShmPool(_surface.App.Shm, size, _format);
+        _damageHistory.Clear();
     }
 
     public void Dispose()
     {
-        if (disposed)
+        if (_disposed)
             return;
-        disposed = true;
-        foreach (var buffer in buffers)
+        _disposed = true;
+        foreach (var buffer in _buffers)
             buffer.Destroy();
-        buffers.Clear();
-        pool?.Dispose();
+        _buffers.Clear();
+        _pool?.Dispose();
     }
 }
 
 /// <summary>A buffer leased from a <see cref="ShmSwapchain"/> for one frame. Present it, or dispose it to give it back.</summary>
 public sealed unsafe class ShmBuffer : IDisposable
 {
-    readonly ShmSwapchain chain;
-    readonly int slot;
-    readonly WlBuffer proxy;
-    bool leased;
+    private readonly ShmSwapchain _chain;
+    private readonly int _slot;
+    private readonly WlBuffer _proxy;
+    private bool _leased;
 
     internal ShmBuffer(ShmSwapchain chain, ShmPool pool, int slot, Size size)
     {
-        this.chain = chain;
-        this.slot = slot;
+        _chain = chain;
+        _slot = slot;
         Pool = pool;
         Size = size;
-        proxy = pool.CreateBuffer(slot);
-        proxy.Release += () =>
+        _proxy = pool.CreateBuffer(slot);
+        _proxy.Release += () =>
         {
             IsBusy = false;
             chain.OnReleased(this);
@@ -151,7 +151,7 @@ public sealed unsafe class ShmBuffer : IDisposable
 
     internal long LastPresentedFrame { get; set; }
 
-    long leaseFrame;
+    private long _leaseFrame;
 
     public Size Size { get; }
 
@@ -159,13 +159,13 @@ public sealed unsafe class ShmBuffer : IDisposable
     public int Stride => Size.Width * 4;
 
     /// <summary>Start of the pixel memory.</summary>
-    public nint Pointer => Pool.SlotPointer(slot);
+    public nint Pointer => Pool.SlotPointer(_slot);
 
     /// <summary>Pixels, row-major, <see cref="Stride"/>/4 per row. For ARGB8888 each is premultiplied 0xAARRGGBB.</summary>
     public Span<uint> Pixels => new((void*)Pointer, Size.Width * Size.Height);
 
     /// <summary>0 = contents undefined; N = contents are what was presented N frames ago.</summary>
-    public int Age => AgeAt(leaseFrame);
+    public int Age => AgeAt(_leaseFrame);
 
     /// <summary>The area you must redraw for the buffer to be fully up to date (this frame's damage plus <see cref="Age"/> history).</summary>
     public Rectangle Damage { get; private set; }
@@ -174,19 +174,19 @@ public sealed unsafe class ShmBuffer : IDisposable
 
     internal void Lease(long frame, Rectangle damage)
     {
-        leased = true;
+        _leased = true;
         IsBusy = true;
-        leaseFrame = frame;
+        _leaseFrame = frame;
         Damage = damage;
     }
 
     /// <summary>Attaches the buffer, damages <paramref name="damage"/> (buffer pixels) and commits.</summary>
     public void Present(Rectangle damage)
     {
-        if (!leased)
+        if (!_leased)
             throw new InvalidOperationException("This buffer was already presented or returned.");
-        leased = false;
-        var surface = chain.Surface;
+        _leased = false;
+        var surface = _chain.Surface;
         var flash = surface.App.ReloadFlashRect(Size, surface.Scale);
         if (!flash.IsEmpty)
         {
@@ -196,13 +196,13 @@ public sealed unsafe class ShmBuffer : IDisposable
         }
         surface.PrepareCommit();
         var wl = surface.Proxy;
-        wl.Attach(proxy, 0, 0);
+        wl.Attach(_proxy, 0, 0);
         if (wl.BoundVersion >= 4)
             wl.DamageBuffer(damage.X, damage.Y, damage.Width, damage.Height);
         else
             wl.Damage(0, 0, int.MaxValue, int.MaxValue); // shortcut: pre-v4 surfaces get full damage
         wl.Commit();
-        chain.OnPresented(this, damage);
+        _chain.OnPresented(this, damage);
     }
 
     /// <summary>Presents with full damage.</summary>
@@ -211,37 +211,37 @@ public sealed unsafe class ShmBuffer : IDisposable
     /// <summary>Returns the buffer unpresented, if it was not presented. Safe to call after <see cref="Present(Rectangle)"/>.</summary>
     public void Dispose()
     {
-        if (!leased)
+        if (!_leased)
             return;
-        leased = false;
+        _leased = false;
         IsBusy = false;
     }
 
-    internal void Destroy() => proxy.Dispose();
+    internal void Destroy() => _proxy.Dispose();
 }
 
 /// <summary>A memfd-backed <c>wl_shm_pool</c> of equally sized slots that grows one slot at a time.</summary>
 internal sealed unsafe class ShmPool : IDisposable
 {
-    readonly int fd;
-    readonly WlShmPool pool;
-    readonly WlShmFormat format;
-    readonly int slotBytes;
-    int slots;
-    nint mapping;
-    long mappedBytes;
+    private readonly int _fd;
+    private readonly WlShmPool _pool;
+    private readonly WlShmFormat _format;
+    private readonly int _slotBytes;
+    private int _slots;
+    private nint _mapping;
+    private long _mappedBytes;
 
     public ShmPool(WlShm shm, Size bufferSize, WlShmFormat format)
     {
         BufferSize = bufferSize;
-        this.format = format;
-        slotBytes = SlotBytes(bufferSize);
+        _format = format;
+        _slotBytes = SlotBytes(bufferSize);
         using (var name = new NativeUtf8("oopshell-shm"))
-            fd = LibC.memfd_create(name.Pointer, LibC.MFD_CLOEXEC | LibC.MFD_ALLOW_SEALING);
-        if (fd < 0)
+            _fd = LibC.memfd_create(name.Pointer, LibC.MFD_CLOEXEC | LibC.MFD_ALLOW_SEALING);
+        if (_fd < 0)
             throw LibC.LastError("memfd_create");
         Grow(1);
-        pool = shm.CreatePool(fd, slotBytes);
+        _pool = shm.CreatePool(_fd, _slotBytes);
     }
 
     public Size BufferSize { get; }
@@ -257,36 +257,36 @@ internal sealed unsafe class ShmPool : IDisposable
 
     public int AddSlot()
     {
-        if (slots * (long)slotBytes >= mappedBytes)
+        if (_slots * (long)_slotBytes >= _mappedBytes)
         {
-            Grow(slots + 1);
-            pool.Resize(checked((int)mappedBytes));
+            Grow(_slots + 1);
+            _pool.Resize(checked((int)_mappedBytes));
         }
-        return slots++;
+        return _slots++;
     }
 
     public WlBuffer CreateBuffer(int slot) =>
-        pool.CreateBuffer(slot * slotBytes, BufferSize.Width, BufferSize.Height, BufferSize.Width * 4, format);
+        _pool.CreateBuffer(slot * _slotBytes, BufferSize.Width, BufferSize.Height, BufferSize.Width * 4, _format);
 
-    public nint SlotPointer(int slot) => mapping + slot * slotBytes;
+    public nint SlotPointer(int slot) => _mapping + slot * _slotBytes;
 
-    void Grow(int slotCount)
+    private void Grow(int slotCount)
     {
-        long bytes = (long)slotCount * slotBytes;
-        if (LibC.ftruncate(fd, bytes) < 0)
+        long bytes = (long)slotCount * _slotBytes;
+        if (LibC.ftruncate(_fd, bytes) < 0)
             throw LibC.LastError("ftruncate");
-        if (mapping != 0)
-            LibC.munmap(mapping, (nuint)mappedBytes);
-        mapping = LibC.mmap(0, (nuint)bytes, LibC.PROT_READ | LibC.PROT_WRITE, LibC.MAP_SHARED, fd, 0);
-        if (mapping == LibC.MAP_FAILED)
+        if (_mapping != 0)
+            LibC.munmap(_mapping, (nuint)_mappedBytes);
+        _mapping = LibC.mmap(0, (nuint)bytes, LibC.PROT_READ | LibC.PROT_WRITE, LibC.MAP_SHARED, _fd, 0);
+        if (_mapping == LibC.MAP_FAILED)
             throw LibC.LastError("mmap");
-        mappedBytes = bytes;
+        _mappedBytes = bytes;
     }
 
     public void Dispose()
     {
-        pool.Dispose();
-        LibC.munmap(mapping, (nuint)mappedBytes);
-        LibC.close(fd);
+        _pool.Dispose();
+        LibC.munmap(_mapping, (nuint)_mappedBytes);
+        LibC.close(_fd);
     }
 }

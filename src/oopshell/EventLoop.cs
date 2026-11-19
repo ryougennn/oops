@@ -22,18 +22,18 @@ public enum FdEvents
 /// </summary>
 internal sealed unsafe class EventLoop : IDisposable
 {
-    readonly int epoll;
-    readonly int wakeFd;
-    readonly ConcurrentQueue<Action> posted = new();
-    readonly Dictionary<int, Action<FdEvents>> watches = new();
-    readonly int ownerThread = Environment.CurrentManagedThreadId;
-    readonly HashSet<int> removedThisBatch = new();
-    bool running;
+    private readonly int _epoll;
+    private readonly int _wakeFd;
+    private readonly ConcurrentQueue<Action> _posted = new();
+    private readonly Dictionary<int, Action<FdEvents>> _watches = new();
+    private readonly int _ownerThread = Environment.CurrentManagedThreadId;
+    private readonly HashSet<int> _removedThisBatch = new();
+    private bool _running;
 
     /// <summary>Called with an exception a callback threw; true means it was dealt with and the loop goes on.</summary>
     public Func<Exception, bool>? ErrorHandler { get; set; }
 
-    void Guard(Action action)
+    private void Guard(Action action)
     {
         try
         {
@@ -46,43 +46,43 @@ internal sealed unsafe class EventLoop : IDisposable
 
     public EventLoop()
     {
-        epoll = epoll_create1(EPOLL_CLOEXEC);
-        if (epoll < 0)
+        _epoll = epoll_create1(EPOLL_CLOEXEC);
+        if (_epoll < 0)
             throw LastError("epoll_create1");
-        wakeFd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
-        if (wakeFd < 0)
+        _wakeFd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+        if (_wakeFd < 0)
             throw LastError("eventfd");
-        Add(wakeFd, EPOLLIN);
+        Add(_wakeFd, EPOLLIN);
     }
 
-    public bool IsLoopThread => Environment.CurrentManagedThreadId == ownerThread;
+    public bool IsLoopThread => Environment.CurrentManagedThreadId == _ownerThread;
 
     /// <summary>Queues work for the loop thread. Safe from any thread.</summary>
     public void Post(Action action)
     {
-        posted.Enqueue(action);
+        _posted.Enqueue(action);
         ulong one = 1;
-        write(wakeFd, &one, sizeof(ulong));
+        write(_wakeFd, &one, sizeof(ulong));
     }
 
     public IDisposable WatchFd(int fd, FdEvents events, Action<FdEvents> callback)
     {
-        if (watches.ContainsKey(fd))
+        if (_watches.ContainsKey(fd))
             throw new InvalidOperationException($"fd {fd} is already watched.");
-        watches[fd] = callback;
+        _watches[fd] = callback;
         Add(fd, (uint)events);
         return new Disposer(() =>
         {
-            if (watches.Remove(fd))
+            if (_watches.Remove(fd))
             {
-                EpollCtl(epoll, EPOLL_CTL_DEL, fd, 0, 0);
-                removedThisBatch.Add(fd); // the number may be reused before this batch's events are delivered
+                EpollCtl(_epoll, EPOLL_CTL_DEL, fd, 0, 0);
+                _removedThisBatch.Add(fd); // the number may be reused before this batch's events are delivered
             }
         });
     }
 
     /// <summary>Changes the events an already watched fd is interested in.</summary>
-    public void ModifyWatch(int fd, FdEvents events) => EpollCtl(epoll, EPOLL_CTL_MOD, fd, (uint)events, (ulong)fd);
+    public void ModifyWatch(int fd, FdEvents events) => EpollCtl(_epoll, EPOLL_CTL_MOD, fd, (uint)events, (ulong)fd);
 
     public IDisposable SetTimer(TimeSpan due, TimeSpan? period, Action callback)
     {
@@ -172,16 +172,16 @@ internal sealed unsafe class EventLoop : IDisposable
     /// <summary>Runs until <see cref="Stop"/>. <paramref name="source"/> is called around each wait.</summary>
     public void Run(IEventSource source)
     {
-        running = true;
+        _running = true;
         Span<EpollEvent> events = stackalloc EpollEvent[32];
-        while (running)
+        while (_running)
         {
             RunPosted();
-            if (!running)
+            if (!_running)
                 break;
             Guard(source.BeforeWait);
-            int timeout = posted.IsEmpty ? -1 : 0;
-            int count = EpollWait(epoll, events, timeout);
+            int timeout = _posted.IsEmpty ? -1 : 0;
+            int count = EpollWait(_epoll, events, timeout);
             if (count < 0)
             {
                 int errno = Marshal.GetLastPInvokeError();
@@ -199,16 +199,16 @@ internal sealed unsafe class EventLoop : IDisposable
             }
             Guard(() => source.AfterWait(sourceEvents));
 
-            removedThisBatch.Clear();
+            _removedThisBatch.Clear();
             for (int i = 0; i < count; i++)
             {
                 int fd = (int)events[i].Data;
-                if (fd == wakeFd)
+                if (fd == _wakeFd)
                 {
                     ulong value;
-                    read(wakeFd, &value, sizeof(ulong));
+                    read(_wakeFd, &value, sizeof(ulong));
                 }
-                else if (fd != source.Fd && !removedThisBatch.Contains(fd) && watches.TryGetValue(fd, out var callback))
+                else if (fd != source.Fd && !_removedThisBatch.Contains(fd) && _watches.TryGetValue(fd, out var callback))
                 {
                     var happened = (FdEvents)events[i].Events;
                     Guard(() => callback(happened));
@@ -219,48 +219,48 @@ internal sealed unsafe class EventLoop : IDisposable
 
     public void Stop()
     {
-        running = false;
+        _running = false;
         Post(() => { });
     }
 
     /// <summary>Registers the source fd. Its events reach <see cref="IEventSource.AfterWait"/>, not a watch callback.</summary>
     public void AddSource(int fd) => Add(fd, EPOLLIN);
 
-    void RunPosted()
+    private void RunPosted()
     {
         // Only run what was queued before we started, so work that re-posts itself cannot starve the loop.
-        int count = posted.Count;
-        for (int i = 0; i < count && posted.TryDequeue(out var action); i++)
+        int count = _posted.Count;
+        for (int i = 0; i < count && _posted.TryDequeue(out var action); i++)
             Guard(action);
     }
 
-    void Add(int fd, uint events)
+    private void Add(int fd, uint events)
     {
-        if (EpollCtl(epoll, EPOLL_CTL_ADD, fd, events, (ulong)fd) < 0)
+        if (EpollCtl(_epoll, EPOLL_CTL_ADD, fd, events, (ulong)fd) < 0)
             throw LastError("epoll_ctl");
     }
 
     public void Dispose()
     {
-        close(wakeFd);
-        close(epoll);
+        close(_wakeFd);
+        close(_epoll);
     }
 }
 
 /// <summary>The loop's main fd and the hooks that run around each wait (for the Wayland read protocol).</summary>
 internal interface IEventSource
 {
-    int Fd { get; }
-    void BeforeWait();
-    void AfterWait(FdEvents events);
+    public int Fd { get; }
+    public void BeforeWait();
+    public void AfterWait(FdEvents events);
 }
 
 /// <summary>Runs an action once on dispose.</summary>
 internal sealed class Disposer(Action action) : IDisposable
 {
-    Action? action = action;
+    private Action? _action = action;
 
-    public void Dispose() => Interlocked.Exchange(ref action, null)?.Invoke();
+    public void Dispose() => Interlocked.Exchange(ref _action, null)?.Invoke();
 }
 
 /// <summary>Resumes <c>await</c> continuations on the loop thread.</summary>

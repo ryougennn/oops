@@ -7,7 +7,7 @@ namespace oopshell.IntegrationTests;
 [Collection("sway")]
 public class SkiaTests(SwayFixture sway)
 {
-    static void DrawScene(SKCanvas canvas, float scale)
+    private static void DrawScene(SKCanvas canvas, float scale)
     {
         canvas.Scale(scale);
         canvas.Clear(new SKColor(0x00, 0x80, 0x80));
@@ -20,7 +20,7 @@ public class SkiaTests(SwayFixture sway)
         canvas.DrawRect(600, 400, 150, 150, navy);
     }
 
-    Png RenderWith(SkiaBackend backend)
+    private Png RenderWith(SkiaBackend backend)
     {
         using var app = sway.Connect();
         using var window = new Toplevel(app);

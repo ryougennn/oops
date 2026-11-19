@@ -5,32 +5,32 @@ namespace oopshell.Tests;
 public class EventLoopTests
 {
     /// <summary>Stands in for the Wayland connection: a pipe nobody writes to.</summary>
-    sealed unsafe class IdleSource : IEventSource, IDisposable
+    private sealed unsafe class IdleSource : IEventSource, IDisposable
     {
-        readonly int readFd, writeFd;
+        private readonly int _readFd, _writeFd;
 
         public IdleSource()
         {
             int* fds = stackalloc int[2];
             if (LibC.pipe2(fds, LibC.O_CLOEXEC) < 0)
                 throw LibC.LastError("pipe2");
-            readFd = fds[0];
-            writeFd = fds[1];
+            _readFd = fds[0];
+            _writeFd = fds[1];
         }
 
-        public int Fd => readFd;
+        public int Fd => _readFd;
         public int Waits { get; private set; }
         public void BeforeWait() => Waits++;
         public void AfterWait(FdEvents events) { }
 
         public void Dispose()
         {
-            LibC.close(readFd);
-            LibC.close(writeFd);
+            LibC.close(_readFd);
+            LibC.close(_writeFd);
         }
     }
 
-    static void RunWithTimeout(EventLoop loop, IEventSource source, int timeoutMs = 5000)
+    private static void RunWithTimeout(EventLoop loop, IEventSource source, int timeoutMs = 5000)
     {
         using var timeout = loop.SetTimer(TimeSpan.FromMilliseconds(timeoutMs), null, () => throw new TimeoutException("Loop did not stop."));
         loop.Run(source);

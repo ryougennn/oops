@@ -26,43 +26,43 @@ public enum SkiaBackend
 /// </summary>
 public sealed class SkiaSurface : IDisposable
 {
-    const int GL_RGBA8 = 0x8058;
+    private const int GL_RGBA8 = 0x8058;
 
-    readonly Surface surface;
+    private readonly Surface _surface;
     // GPU
-    readonly EglWindow? egl;
-    readonly GRContext? grContext;
-    readonly DamageHistory gpuHistory = new();
-    SKSurface? gpuSurface;
-    Size gpuSize;
+    private readonly EglWindow? _egl;
+    private readonly GRContext? _grContext;
+    private readonly DamageHistory _gpuHistory = new();
+    private SKSurface? _gpuSurface;
+    private Size _gpuSize;
     // Vulkan
-    readonly VulkanWindow? vulkan;
-    SKSurface?[] vulkanSurfaces = [];
+    private readonly VulkanWindow? _vulkan;
+    private SKSurface?[] _vulkanSurfaces = [];
     // SHM
-    readonly ShmSwapchain? chain;
-    readonly Dictionary<nint, SKSurface> shmSurfaces = new();
-    Size shmSize;
-    ShmBuffer? shmBuffer;
+    private readonly ShmSwapchain? _chain;
+    private readonly Dictionary<nint, SKSurface> _shmSurfaces = new();
+    private Size _shmSize;
+    private ShmBuffer? _shmBuffer;
 
-    RenderFrame frame;
-    SKSurface? current;
+    private RenderFrame _frame;
+    private SKSurface? _current;
 
     public SkiaSurface(Surface surface, SkiaBackend backend = SkiaBackend.Auto)
     {
-        this.surface = surface;
+        _surface = surface;
         if (backend == SkiaBackend.Vulkan)
         {
             try
             {
-                vulkan = VulkanWindow.Create(surface);
-                grContext = SharedContext(vulkan.Device);
-                vulkan.ImagesDestroying += DropVulkanSurfaces;
+                _vulkan = VulkanWindow.Create(surface);
+                _grContext = SharedContext(_vulkan.Device);
+                _vulkan.ImagesDestroying += DropVulkanSurfaces;
                 return;
             }
             catch (Exception e) when (e is NotSupportedException or InvalidOperationException)
             {
-                vulkan?.Dispose();
-                vulkan = null;
+                _vulkan?.Dispose();
+                _vulkan = null;
                 backend = SkiaBackend.Auto;
             }
         }
@@ -70,27 +70,27 @@ public sealed class SkiaSurface : IDisposable
         {
             try
             {
-                egl = EglWindow.Create(surface);
-                grContext = SharedContext(egl.Display);
+                _egl = EglWindow.Create(surface);
+                _grContext = SharedContext(_egl.Display);
             }
             catch (Exception e) when (backend == SkiaBackend.Auto && e is NotSupportedException or InvalidOperationException)
             {
-                egl?.Dispose();
-                egl = null;
+                _egl?.Dispose();
+                _egl = null;
             }
         }
-        if (egl is null)
-            chain = new ShmSwapchain(surface);
+        if (_egl is null)
+            _chain = new ShmSwapchain(surface);
     }
 
     /// <summary>True when drawing on the GPU (EGL or Vulkan).</summary>
-    public bool IsGpu => egl is not null || vulkan is not null;
+    public bool IsGpu => _egl is not null || _vulkan is not null;
 
     /// <summary>True when drawing with Vulkan.</summary>
-    public bool IsVulkan => vulkan is not null;
+    public bool IsVulkan => _vulkan is not null;
 
     /// <summary>The GPU context (shared by all GPU surfaces of the app), or null on SHM.</summary>
-    public GRContext? GRContext => grContext;
+    public GRContext? GRContext => _grContext;
 
     /// <summary>
     /// Starts a frame. Returns null when no SHM buffer is free; skip drawing then (the surface is invalidated
@@ -98,50 +98,50 @@ public sealed class SkiaSurface : IDisposable
     /// </summary>
     public SKCanvas? BeginFrame(RenderFrame frame)
     {
-        if (current is not null)
+        if (_current is not null)
             throw new InvalidOperationException("EndFrame was not called for the previous frame.");
-        this.frame = frame;
+        _frame = frame;
         Rectangle repair;
-        if (vulkan is not null)
+        if (_vulkan is not null)
         {
-            int index = vulkan.Acquire(frame.BufferSize);
-            if (vulkanSurfaces.Length <= index)
-                Array.Resize(ref vulkanSurfaces, index + 1);
-            current = vulkanSurfaces[index] ??= WrapVulkanImage(vulkan.GetImage(index));
+            int index = _vulkan.Acquire(frame.BufferSize);
+            if (_vulkanSurfaces.Length <= index)
+                Array.Resize(ref _vulkanSurfaces, index + 1);
+            _current = _vulkanSurfaces[index] ??= WrapVulkanImage(_vulkan.GetImage(index));
             // shortcut: Vulkan has no buffer age, so every frame repaints the whole buffer; track per-image
             // damage like DamageHistory does if partial repaints ever matter here.
             repair = new Rectangle(Point.Empty, frame.BufferSize);
         }
-        else if (egl is not null)
+        else if (_egl is not null)
         {
-            egl.Resize(frame.BufferSize);
-            egl.MakeCurrent();
+            _egl.Resize(frame.BufferSize);
+            _egl.MakeCurrent();
             // The GRContext is shared by every GPU surface of the app; after switching EGL surfaces its cached
             // GL state (bound framebuffer, viewport, scissor) is stale.
-            grContext!.ResetContext();
-            if (gpuSurface is null || gpuSize != frame.BufferSize)
+            _grContext!.ResetContext();
+            if (_gpuSurface is null || _gpuSize != frame.BufferSize)
             {
-                gpuSurface?.Dispose();
-                gpuSize = frame.BufferSize;
-                gpuHistory.Clear();
-                using var target = new GRBackendRenderTarget(gpuSize.Width, gpuSize.Height, egl.Display.Options.Samples,
-                    egl.Display.Options.StencilBits, new GRGlFramebufferInfo(0, GL_RGBA8));
-                gpuSurface = SKSurface.Create(grContext, target, GRSurfaceOrigin.BottomLeft, SKColorType.Rgba8888)
+                _gpuSurface?.Dispose();
+                _gpuSize = frame.BufferSize;
+                _gpuHistory.Clear();
+                using var target = new GRBackendRenderTarget(_gpuSize.Width, _gpuSize.Height, _egl.Display.Options.Samples,
+                    _egl.Display.Options.StencilBits, new GRGlFramebufferInfo(0, GL_RGBA8));
+                _gpuSurface = SKSurface.Create(_grContext, target, GRSurfaceOrigin.BottomLeft, SKColorType.Rgba8888)
                     ?? throw new InvalidOperationException("Skia could not wrap the EGL framebuffer.");
             }
-            current = gpuSurface;
-            repair = gpuHistory.RepairArea(egl.BufferAge, frame.Damage, frame.BufferSize);
+            _current = _gpuSurface;
+            repair = _gpuHistory.RepairArea(_egl.BufferAge, frame.Damage, frame.BufferSize);
         }
         else
         {
-            shmBuffer = chain!.Acquire(frame);
-            if (shmBuffer is null)
+            _shmBuffer = _chain!.Acquire(frame);
+            if (_shmBuffer is null)
                 return null;
-            current = ShmSurface(shmBuffer);
-            repair = shmBuffer.Damage;
+            _current = ShmSurface(_shmBuffer);
+            repair = _shmBuffer.Damage;
         }
 
-        var canvas = current.Canvas;
+        var canvas = _current.Canvas;
         canvas.Save();
         canvas.ResetMatrix();
         canvas.ClipRect(SKRect.Create(repair.X, repair.Y, repair.Width, repair.Height));
@@ -151,89 +151,89 @@ public sealed class SkiaSurface : IDisposable
     /// <summary>Presents what was drawn since <see cref="BeginFrame"/>.</summary>
     public void EndFrame()
     {
-        if (current is null)
+        if (_current is null)
             return;
-        current.Canvas.Restore();
-        if (vulkan is not null)
+        _current.Canvas.Restore();
+        if (_vulkan is not null)
         {
-            var flash = surface.App.ReloadFlashRect(frame.BufferSize, frame.Scale);
+            var flash = _surface.App.ReloadFlashRect(_frame.BufferSize, _frame.Scale);
             if (!flash.IsEmpty)
             {
                 using var magenta = new SKPaint { Color = SKColors.Magenta };
-                current.Canvas.DrawRect(flash.X, flash.Y, flash.Width, flash.Height, magenta);
+                _current.Canvas.DrawRect(flash.X, flash.Y, flash.Width, flash.Height, magenta);
             }
-            grContext!.Flush(submit: true, synchronous: false);
-            vulkan.Present();
-            current = null;
+            _grContext!.Flush(submit: true, synchronous: false);
+            _vulkan.Present();
+            _current = null;
             return;
         }
-        current.Flush();
-        if (egl is not null)
+        _current.Flush();
+        if (_egl is not null)
         {
-            egl.SwapBuffers(frame.Damage);
-            gpuHistory.Add(frame.Damage);
+            _egl.SwapBuffers(_frame.Damage);
+            _gpuHistory.Add(_frame.Damage);
         }
         else
         {
-            shmBuffer!.Present(frame.Damage);
-            shmBuffer = null;
+            _shmBuffer!.Present(_frame.Damage);
+            _shmBuffer = null;
         }
-        current = null;
+        _current = null;
     }
 
-    SKSurface ShmSurface(ShmBuffer buffer)
+    private SKSurface ShmSurface(ShmBuffer buffer)
     {
-        if (shmSize != buffer.Size)
+        if (_shmSize != buffer.Size)
         {
-            foreach (var old in shmSurfaces.Values)
+            foreach (var old in _shmSurfaces.Values)
                 old.Dispose();
-            shmSurfaces.Clear();
-            shmSize = buffer.Size;
+            _shmSurfaces.Clear();
+            _shmSize = buffer.Size;
         }
-        if (!shmSurfaces.TryGetValue(buffer.Pointer, out var skSurface))
+        if (!_shmSurfaces.TryGetValue(buffer.Pointer, out var skSurface))
         {
             // wl_shm ARGB8888 is BGRA in memory on little-endian machines.
             var info = new SKImageInfo(buffer.Size.Width, buffer.Size.Height, SKColorType.Bgra8888, SKAlphaType.Premul);
             skSurface = SKSurface.Create(info, buffer.Pointer, buffer.Stride)
                 ?? throw new InvalidOperationException("Skia could not wrap the SHM buffer.");
-            shmSurfaces[buffer.Pointer] = skSurface;
+            _shmSurfaces[buffer.Pointer] = skSurface;
         }
         return skSurface;
     }
 
-    SKSurface WrapVulkanImage(ulong image)
+    private SKSurface WrapVulkanImage(ulong image)
     {
         var info = new GRVkImageInfo
         {
             Image = image,
             ImageTiling = Native.Vulkan.VK_IMAGE_TILING_OPTIMAL,
             ImageLayout = Native.Vulkan.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            Format = (uint)vulkan!.Format,
-            ImageUsageFlags = vulkan.ImageUsage,
+            Format = (uint)_vulkan!.Format,
+            ImageUsageFlags = _vulkan.ImageUsage,
             SampleCount = 1,
             LevelCount = 1,
-            CurrentQueueFamily = vulkan.Device.QueueFamily,
+            CurrentQueueFamily = _vulkan.Device.QueueFamily,
         };
-        var colorType = vulkan.Format == Native.Vulkan.VK_FORMAT_B8G8R8A8_UNORM ? SKColorType.Bgra8888 : SKColorType.Rgba8888;
-        using var target = new GRBackendRenderTarget(vulkan.Size.Width, vulkan.Size.Height, info);
-        return SKSurface.Create(grContext, target, GRSurfaceOrigin.TopLeft, colorType)
+        var colorType = _vulkan.Format == Native.Vulkan.VK_FORMAT_B8G8R8A8_UNORM ? SKColorType.Bgra8888 : SKColorType.Rgba8888;
+        using var target = new GRBackendRenderTarget(_vulkan.Size.Width, _vulkan.Size.Height, info);
+        return SKSurface.Create(_grContext, target, GRSurfaceOrigin.TopLeft, colorType)
             ?? throw new InvalidOperationException("Skia could not wrap the Vulkan swapchain image.");
     }
 
-    void DropVulkanSurfaces()
+    private void DropVulkanSurfaces()
     {
-        foreach (var s in vulkanSurfaces)
+        foreach (var s in _vulkanSurfaces)
             s?.Dispose();
-        vulkanSurfaces = [];
+        _vulkanSurfaces = [];
         // Let Skia finish and release what referenced the images before they are destroyed.
-        grContext!.Flush(submit: true, synchronous: true);
+        _grContext!.Flush(submit: true, synchronous: true);
     }
 
-    static readonly Dictionary<VulkanDevice, GRContext> VulkanContexts = new();
+    private static readonly Dictionary<VulkanDevice, GRContext> s_vulkanContexts = new();
 
-    static GRContext SharedContext(VulkanDevice device)
+    private static GRContext SharedContext(VulkanDevice device)
     {
-        if (VulkanContexts.TryGetValue(device, out var context))
+        if (s_vulkanContexts.TryGetValue(device, out var context))
             return context;
         GRVkGetProcedureAddressDelegate getProc = VulkanDevice.GetProcAddress;
         // Kept alive with the context: Skia may still call back into getProc after creation.
@@ -252,10 +252,10 @@ public sealed class SkiaSurface : IDisposable
             GetProcedureAddress = getProc,
         };
         context = GRContext.CreateVulkan(backend) ?? throw new InvalidOperationException("Skia could not create a Vulkan context.");
-        VulkanContexts[device] = context;
+        s_vulkanContexts[device] = context;
         device.Disposing += () =>
         {
-            VulkanContexts.Remove(device);
+            s_vulkanContexts.Remove(device);
             context.AbandonContext(releaseResources: false);
             context.Dispose();
             backend.Dispose();
@@ -264,11 +264,11 @@ public sealed class SkiaSurface : IDisposable
         return context;
     }
 
-    static readonly Dictionary<EglDisplay, GRContext> Contexts = new();
+    private static readonly Dictionary<EglDisplay, GRContext> s_contexts = new();
 
-    static GRContext SharedContext(EglDisplay display)
+    private static GRContext SharedContext(EglDisplay display)
     {
-        if (Contexts.TryGetValue(display, out var context))
+        if (s_contexts.TryGetValue(display, out var context))
             return context;
         display.MakeCurrentWithoutSurface(); // Skia queries GL while building its function table
         using var glInterface = (display.Options.Api == GlApi.GLES
@@ -276,11 +276,11 @@ public sealed class SkiaSurface : IDisposable
             : GRGlInterface.CreateOpenGl(EglDisplay.GetProcAddress))
             ?? throw new InvalidOperationException("Skia could not load GL functions.");
         context = GRContext.CreateGl(glInterface) ?? throw new InvalidOperationException("Skia could not create a GL context.");
-        Contexts[display] = context;
+        s_contexts[display] = context;
         display.Disposing += () =>
         {
             // The GL context is about to be destroyed; Skia must not touch it afterwards.
-            Contexts.Remove(display);
+            s_contexts.Remove(display);
             context.AbandonContext(releaseResources: false);
             context.Dispose();
         };
@@ -289,21 +289,21 @@ public sealed class SkiaSurface : IDisposable
 
     public void Dispose()
     {
-        shmBuffer?.Dispose();
-        foreach (var s in shmSurfaces.Values)
+        _shmBuffer?.Dispose();
+        foreach (var s in _shmSurfaces.Values)
             s.Dispose();
-        shmSurfaces.Clear();
-        chain?.Dispose();
-        if (vulkan is not null)
+        _shmSurfaces.Clear();
+        _chain?.Dispose();
+        if (_vulkan is not null)
         {
-            vulkan.Dispose(); // raises ImagesDestroying, which drops the SKSurfaces first
+            _vulkan.Dispose(); // raises ImagesDestroying, which drops the SKSurfaces first
         }
-        if (egl is not null)
+        if (_egl is not null)
         {
-            egl.MakeCurrent();
-            gpuSurface?.Dispose();
-            grContext?.Flush();
-            egl.Dispose();
+            _egl.MakeCurrent();
+            _gpuSurface?.Dispose();
+            _grContext?.Flush();
+            _egl.Dispose();
         }
     }
 }
