@@ -11,5 +11,6 @@
     <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Media/oopshell.Services.Media.csproj" />
     <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Audio/oopshell.Services.Audio.csproj" />
     <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Launcher/oopshell.Services.Launcher.csproj" />
+    <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Polkit/oopshell.Services.Polkit.csproj" />
   </ItemGroup>
 </Project>

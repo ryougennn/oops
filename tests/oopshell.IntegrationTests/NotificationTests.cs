@@ -37,6 +37,23 @@ public class NotificationTests(SwayFixture sway)
     }
 
     [Fact]
+    public void Unknown_methods_get_an_error_and_the_server_stays_connected()
+    {
+        // A malformed error reply once made the bus drop the server's connection on the first unknown call.
+        using var bus = new DBusDaemon();
+        using var app = sway.Connect();
+        var connection = app.Complete(OopsDBus.ConnectAsync(app, bus.Address));
+        using var server = app.Complete(NotificationServer.StartAsync(app, connection));
+        var client = app.Complete(OopsDBus.ConnectAsync(app, bus.Address));
+        const string Name = "org.freedesktop.Notifications", Path = "/org/freedesktop/Notifications";
+
+        var error = app.Complete(client.CallAsync(Name, Path, Name, "NoSuchMethod").ContinueWith(t => t.Exception?.InnerException));
+        Assert.Equal("org.freedesktop.DBus.Error.UnknownMethod", Assert.IsType<Tmds.DBus.Protocol.DBusErrorReplyException>(error).ErrorName);
+        string serverName = app.Complete(client.CallAsync(Name, Path, Name, "GetServerInformation", (m, _) => m.GetBodyReader().ReadString()));
+        Assert.Equal("oopshell", serverName);
+    }
+
+    [Fact]
     public void Notifications_expire_and_can_be_replaced()
     {
         Assert.SkipUnless(File.Exists("/usr/bin/notify-send"), "notify-send is not installed.");

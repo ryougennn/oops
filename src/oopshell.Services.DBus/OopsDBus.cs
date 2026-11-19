@@ -116,7 +116,8 @@ public static class OopsDBus
 /// <summary>
 /// An object exported on the bus whose method calls run on the oopshell UI thread, so handlers can touch
 /// app state without locking. Answer every call with <see cref="MethodContext.Reply"/> or
-/// <see cref="ReplyError"/>; unanswered calls get <c>org.freedesktop.DBus.Error.UnknownMethod</c>.
+/// <see cref="ReplyError"/>; unanswered calls get <c>org.freedesktop.DBus.Error.UnknownMethod</c>, unless the
+/// handler called <see cref="Defer"/> to answer later (e.g. after the user typed a password).
 /// </summary>
 public abstract class ExportedObject(OopsApp app, string path) : IPathMethodHandler
 {
@@ -134,10 +135,36 @@ public abstract class ExportedObject(OopsApp app, string path) : IPathMethodHand
                 context.ReplyIntrospectXml([System.Text.Encoding.UTF8.GetBytes(IntrospectionXml)]);
             else
                 HandleMethod(context);
-            if (!context.ReplySent && !context.NoReplyExpected)
+            if (!context.ReplySent && !context.NoReplyExpected && !deferred.Remove(context))
                 ReplyError(context, "org.freedesktop.DBus.Error.UnknownMethod", $"No such method {context.Request.InterfaceAsString}.{context.Request.MemberAsString}.");
             return Task.CompletedTask;
         });
+    }
+
+    readonly HashSet<MethodContext> deferred = new();
+
+    /// <summary>
+    /// Keeps <paramref name="context"/> open past <see cref="HandleMethod"/>: reply later with
+    /// <see cref="ReplyDeferred"/> or <see cref="ReplyDeferredError"/> (on the UI thread).
+    /// </summary>
+    protected void Defer(MethodContext context)
+    {
+        context.DisposesAsynchronously = true;
+        deferred.Add(context);
+    }
+
+    /// <summary>Answers a <see cref="Defer"/>red call with an empty reply and releases it.</summary>
+    protected static void ReplyDeferred(MethodContext context)
+    {
+        ReplyEmpty(context);
+        context.Dispose();
+    }
+
+    /// <summary>Answers a <see cref="Defer"/>red call with an error and releases it.</summary>
+    protected static void ReplyDeferredError(MethodContext context, string errorName, string message)
+    {
+        ReplyError(context, errorName, message);
+        context.Dispose();
     }
 
     /// <summary>Handles a call on the UI thread.</summary>
@@ -146,12 +173,9 @@ public abstract class ExportedObject(OopsApp app, string path) : IPathMethodHand
     /// <summary>The <c>&lt;interface&gt;</c> elements describing this object, for introspection.</summary>
     protected virtual string IntrospectionXml => "";
 
-    protected static void ReplyError(MethodContext context, string errorName, string message)
-    {
-        using var writer = context.CreateReplyWriter(null);
-        writer.WriteError(context.Request.Serial, context.Request.Sender, errorName, message);
-        context.Reply(writer.CreateMessage());
-    }
+    // Not CreateReplyWriter + WriteError: that writer already holds a method-return header, and the message
+    // with two headers made the bus drop the whole connection.
+    protected static void ReplyError(MethodContext context, string errorName, string message) => context.ReplyError(errorName, message);
 
     protected static void ReplyEmpty(MethodContext context)
     {

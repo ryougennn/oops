@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>oopshell.Services.Polkit</RootNamespace>
+    <Description>A polkit authentication agent for oopshell shells: the "an application wants to make changes" password prompt.</Description>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../oopshell.Services.DBus/oopshell.Services.DBus.csproj" />
+  </ItemGroup>
+</Project>
