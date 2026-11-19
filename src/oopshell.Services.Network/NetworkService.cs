@@ -116,6 +116,42 @@ public sealed class NetworkService : IDisposable
     /// <summary>Something above changed (UI thread).</summary>
     public event Action? Changed;
 
+    SecretAgent? secretAgent;
+
+    /// <summary>
+    /// NetworkManager needs a Wi-Fi password (UI thread): show a dialog and answer the request. Only raised after
+    /// <see cref="RegisterSecretAgentAsync"/>.
+    /// </summary>
+    public event Action<NetworkSecretRequest>? SecretsRequested;
+
+    internal bool HasSecretHandlers => SecretsRequested is not null;
+
+    internal void RaiseSecretsRequested(NetworkSecretRequest request) => SecretsRequested?.Invoke(request);
+
+    /// <summary>
+    /// Becomes a NetworkManager secret agent for this user, so Wi-Fi passwords are asked for through
+    /// <see cref="SecretsRequested"/> (a new network, or a saved password that stopped working). A desktop that
+    /// already runs one (GNOME, Plasma) keeps working: NetworkManager asks each agent in turn.
+    /// </summary>
+    public async Task RegisterSecretAgentAsync(string identifier = "org.oopshell.SecretAgent")
+    {
+        if (secretAgent is not null)
+            return;
+        var agent = new SecretAgent(app, this);
+        connection.AddMethodHandler(agent);
+        try
+        {
+            await connection.CallAsync(BusName, "/org/freedesktop/NetworkManager/AgentManager", "org.freedesktop.NetworkManager.AgentManager",
+                "Register", (ref MessageWriter w) => w.WriteString(identifier), "s");
+        }
+        catch
+        {
+            connection.RemoveMethodHandler(agent.Path);
+            throw;
+        }
+        secretAgent = agent;
+    }
+
     void ScheduleRefresh()
     {
         if (disposed)
@@ -293,8 +329,8 @@ public sealed class NetworkService : IDisposable
     /// Completes when NetworkManager starts connecting; watch the device's <see cref="NetworkDevice.State"/>.
     /// </summary>
     /// <remarks>
-    /// shortcut: no secret agent, so a saved network whose stored password became wrong fails (state Failed)
-    /// instead of asking again; forget it in the system settings and connect anew. Add a secret agent if shells need it.
+    /// When a saved network's password stopped working, NetworkManager asks a secret agent for a new one: call
+    /// <see cref="RegisterSecretAgentAsync"/> and handle <see cref="SecretsRequested"/> to be that agent.
     /// </remarks>
     public async Task ConnectAsync(NetworkDevice wifi, AccessPoint network, string? password = null)
     {
@@ -359,6 +395,13 @@ public sealed class NetworkService : IDisposable
     public void Dispose()
     {
         disposed = true;
+        if (secretAgent is not null)
+        {
+            secretAgent.CancelAll();
+            connection.RemoveMethodHandler(secretAgent.Path);
+            _ = connection.CallAsync(BusName, "/org/freedesktop/NetworkManager/AgentManager", "org.freedesktop.NetworkManager.AgentManager", "Unregister")
+                .ContinueWith(t => _ = t.Exception, TaskScheduler.Default);
+        }
         refreshTimer?.Dispose();
         foreach (var watch in watches)
             watch.Dispose();

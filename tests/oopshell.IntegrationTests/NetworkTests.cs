@@ -134,6 +134,86 @@ public class NetworkTests(SwayFixture sway)
     }
 
     [Fact]
+    public void The_secret_agent_asks_for_wifi_passwords()
+    {
+        using var app = sway.Connect();
+        using var bus = new DBusDaemon();
+        var nmBus = app.Complete(OopsDBus.ConnectAsync(app, bus.Address));
+        var manager = new FakeDBusObject(app, Root).With(Nm, new() { ["Devices"] = Paths(), ["Connectivity"] = 1u });
+        var agentManager = new FakeDBusObject(app, $"{Root}/AgentManager");
+        var registered = new List<string>();
+        agentManager.Methods["Register"] = c =>
+        {
+            registered.Add(c.Request.GetBodyReader().ReadString());
+            ReplyEmpty(c);
+        };
+        agentManager.Methods["Unregister"] = ReplyEmpty;
+        nmBus.AddMethodHandler(manager);
+        nmBus.AddMethodHandler(agentManager);
+        app.Complete(nmBus.RequestNameOrThrowAsync(Nm).ContinueWith(t => t.Exception is null));
+
+        var shellBus = app.Complete(OopsDBus.ConnectAsync(app, bus.Address));
+        using var network = app.Complete(NetworkService.StartAsync(app, shellBus));
+        var requests = new List<NetworkSecretRequest>();
+        network.SecretsRequested += requests.Add;
+        app.Complete(network.RegisterSecretAgentAsync().ContinueWith(t => t.Exception is null));
+        Assert.Equal(["org.oopshell.SecretAgent"], registered);
+
+        // What NetworkManager sends when it needs a WPA password (flags: allow interaction, plus "new" on retry).
+        Task<Dictionary<string, Dictionary<string, VariantValue>>> GetSecrets(uint flags) =>
+            nmBus.CallAsync(shellBus.UniqueName!, "/org/freedesktop/NetworkManager/SecretAgent", "org.freedesktop.NetworkManager.SecretAgent", "GetSecrets", (m, _) =>
+            {
+                var r = m.GetBodyReader();
+                var result = new Dictionary<string, Dictionary<string, VariantValue>>();
+                var end = r.ReadDictionaryStart();
+                while (r.HasNext(end))
+                    result[r.ReadString()] = r.ReadDictionaryOfStringToVariantValue();
+                return result;
+            }, (ref MessageWriter w) =>
+            {
+                var all = w.WriteDictionaryStart();
+                foreach (var (group, values) in new Dictionary<string, Dictionary<string, VariantValue>>
+                {
+                    ["connection"] = new() { ["id"] = "Home", ["type"] = "802-11-wireless" },
+                    ["802-11-wireless"] = new() { ["ssid"] = Ssid("Home") },
+                    ["802-11-wireless-security"] = new() { ["key-mgmt"] = "wpa-psk" },
+                })
+                {
+                    w.WriteDictionaryEntryStart();
+                    w.WriteString(group);
+                    w.WriteDictionary(values);
+                }
+                w.WriteDictionaryEnd(all);
+                w.WriteObjectPath($"{Root}/Settings/1");
+                w.WriteString("802-11-wireless-security");
+                w.WriteArray(Array.Empty<string>());
+                w.WriteUInt32(flags);
+            }, "a{sa{sv}}osasu");
+
+        var first = GetSecrets(0x1);
+        app.RunUntil(() => requests.Count == 1, what: "secret request");
+        Assert.Equal(("Home", "Home", false), (requests[0].ConnectionName, requests[0].Ssid, requests[0].IsRetry));
+        requests[0].Provide("correct horse");
+        var secrets = app.Complete(first);
+        Assert.Equal("correct horse", secrets["802-11-wireless-security"]["psk"].GetString());
+
+        // A retry after a wrong password, which NetworkManager then abandons.
+        var second = GetSecrets(0x3);
+        app.RunUntil(() => requests.Count == 2, what: "retry request");
+        Assert.True(requests[1].IsRetry);
+        bool cancelled = false;
+        requests[1].Cancelled += () => cancelled = true;
+        app.Complete(nmBus.CallAsync(shellBus.UniqueName!, "/org/freedesktop/NetworkManager/SecretAgent", "org.freedesktop.NetworkManager.SecretAgent",
+            "CancelGetSecrets", (ref MessageWriter w) =>
+            {
+                w.WriteObjectPath($"{Root}/Settings/1");
+                w.WriteString("802-11-wireless-security");
+            }, "os").ContinueWith(t => t.Exception is null));
+        Assert.True(cancelled);
+        Assert.IsType<DBusErrorReplyException>(app.Complete(second.ContinueWith(t => t.Exception?.InnerException)));
+    }
+
+    [Fact]
     public void This_machines_NetworkManager_reads()
     {
         // Read-only against the real NetworkManager, when there is one.

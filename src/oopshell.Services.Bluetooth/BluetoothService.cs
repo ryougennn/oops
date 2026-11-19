@@ -54,9 +54,8 @@ public sealed class BluetoothDevice
 /// </code>
 /// </summary>
 /// <remarks>
-/// shortcut: no pairing agent, so pairing works for devices that need no PIN or confirmation ("just works":
-/// most mice, keyboards with their own agent, headphones); others need the desktop's agent. Add an Agent1 if
-/// shells need PIN entry.
+/// Devices that pair with a PIN, a passkey or a confirmation need a pairing agent: call
+/// <see cref="RegisterPairingAgentAsync"/> and answer <see cref="PairingRequested"/>.
 /// </remarks>
 public sealed class BluetoothService : IDisposable
 {
@@ -107,6 +106,46 @@ public sealed class BluetoothService : IDisposable
 
     /// <summary>Something changed (UI thread).</summary>
     public event Action? Changed;
+
+    PairingAgent? agent;
+
+    /// <summary>
+    /// BlueZ asks the user something while pairing (a PIN, a passkey to compare, permission) (UI thread). Only
+    /// raised after <see cref="RegisterPairingAgentAsync"/>.
+    /// </summary>
+    public event Action<BluetoothPairingRequest>? PairingRequested;
+
+    internal bool HasPairingHandlers => PairingRequested is not null;
+
+    internal void RaisePairingRequested(BluetoothPairingRequest request) => PairingRequested?.Invoke(request);
+
+    /// <summary>
+    /// Becomes BlueZ's default pairing agent (capability KeyboardDisplay: it can show codes and take typed ones),
+    /// taking over from the desktop's agent while this service lives.
+    /// </summary>
+    public async Task RegisterPairingAgentAsync()
+    {
+        if (agent is not null)
+            return;
+        var created = new PairingAgent(app, this);
+        connection.AddMethodHandler(created);
+        try
+        {
+            await connection.CallAsync(BusName, "/org/bluez", "org.bluez.AgentManager1", "RegisterAgent", (ref MessageWriter w) =>
+            {
+                w.WriteObjectPath(created.Path);
+                w.WriteString("KeyboardDisplay");
+            }, "os");
+            await connection.CallAsync(BusName, "/org/bluez", "org.bluez.AgentManager1", "RequestDefaultAgent",
+                (ref MessageWriter w) => w.WriteObjectPath(created.Path), "o");
+        }
+        catch
+        {
+            connection.RemoveMethodHandler(created.Path);
+            throw;
+        }
+        agent = created;
+    }
 
     void ScheduleRefresh()
     {
@@ -257,6 +296,13 @@ public sealed class BluetoothService : IDisposable
     public void Dispose()
     {
         disposed = true;
+        if (agent is not null)
+        {
+            agent.CancelAll();
+            connection.RemoveMethodHandler(agent.Path);
+            _ = connection.CallAsync(BusName, "/org/bluez", "org.bluez.AgentManager1", "UnregisterAgent",
+                (ref MessageWriter w) => w.WriteObjectPath(agent.Path), "o").ContinueWith(t => _ = t.Exception, TaskScheduler.Default);
+        }
         refreshTimer?.Dispose();
         foreach (var watch in watches)
             watch.Dispose();

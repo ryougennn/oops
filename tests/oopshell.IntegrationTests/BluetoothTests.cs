@@ -127,6 +127,67 @@ public class BluetoothTests(SwayFixture sway)
     }
 
     [Fact]
+    public void The_pairing_agent_asks_and_answers()
+    {
+        using var app = sway.Connect();
+        using var bus = new DBusDaemon();
+        var bluez = app.Complete(OopsDBus.ConnectAsync(app, bus.Address));
+        var objects = new List<FakeDBusObject>();
+        bluez.AddMethodHandler(new FakeObjectManager(app, objects));
+        var agentManager = new FakeDBusObject(app, "/org/bluez");
+        var calls = new List<string>();
+        foreach (var method in new[] { "RegisterAgent", "RequestDefaultAgent", "UnregisterAgent" })
+            agentManager.Methods[method] = c =>
+            {
+                calls.Add(method);
+                ReplyEmpty(c);
+            };
+        bluez.AddMethodHandler(agentManager);
+        app.Complete(bluez.RequestNameOrThrowAsync(BluetoothService.BusName).ContinueWith(t => t.Exception is null));
+
+        var shellBus = app.Complete(OopsDBus.ConnectAsync(app, bus.Address));
+        using var bluetooth = app.Complete(BluetoothService.StartAsync(app, shellBus));
+        var requests = new List<BluetoothPairingRequest>();
+        bluetooth.PairingRequested += requests.Add;
+        app.Complete(bluetooth.RegisterPairingAgentAsync().ContinueWith(t => t.Exception is null));
+        Assert.Equal(["RegisterAgent", "RequestDefaultAgent"], calls);
+
+        Task<T> AgentReply<T>(string method, string signature, BodyWriter args, MessageValueReader<T> read) =>
+            bluez.CallAsync(shellBus.UniqueName!, "/org/oopshell/bluez/agent", "org.bluez.Agent1", method, read, args, signature);
+        Task Agent(string method, string signature, BodyWriter args) =>
+            bluez.CallAsync(shellBus.UniqueName!, "/org/oopshell/bluez/agent", "org.bluez.Agent1", method, args, signature);
+        const string Dev = "/org/bluez/hci0/dev_DD";
+
+        // Compare a passkey, accept.
+        var confirm = Agent("RequestConfirmation", "ou", (ref MessageWriter w) => { w.WriteObjectPath(Dev); w.WriteUInt32(42); });
+        app.RunUntil(() => requests.Count == 1, what: "confirmation");
+        Assert.Equal((BluetoothPairingKind.ConfirmPasskey, 42u, Dev), (requests[0].Kind, requests[0].Passkey!.Value, requests[0].DevicePath));
+        requests[0].Accept();
+        Assert.True(app.Complete(confirm.ContinueWith(t => t.Exception is null)));
+
+        // Type a PIN.
+        var pin = AgentReply("RequestPinCode", "o", (ref MessageWriter w) => w.WriteObjectPath(Dev), (m, _) => m.GetBodyReader().ReadString());
+        app.RunUntil(() => requests.Count == 2, what: "PIN request");
+        requests[1].Provide("0000");
+        Assert.Equal("0000", app.Complete(pin));
+
+        // A passkey to show needs no answer; BlueZ cancelling ends it.
+        app.Complete(Agent("DisplayPasskey", "ouq", (ref MessageWriter w) => { w.WriteObjectPath(Dev); w.WriteUInt32(123456); w.WriteUInt16(0); })
+            .ContinueWith(t => t.Exception is null));
+        Assert.Equal((BluetoothPairingKind.ShowPasskey, false), (requests[2].Kind, requests[2].NeedsAnswer));
+
+        // A rejected authorization comes back as BlueZ's Rejected error.
+        var authorize = Agent("RequestAuthorization", "o", (ref MessageWriter w) => w.WriteObjectPath(Dev));
+        app.RunUntil(() => requests.Count == 4, what: "authorization");
+        requests[3].Reject();
+        var error = Assert.IsType<DBusErrorReplyException>(app.Complete(authorize.ContinueWith(t => t.Exception?.InnerException)));
+        Assert.Equal("org.bluez.Error.Rejected", error.ErrorName);
+
+        bluetooth.Dispose();
+        app.RunUntil(() => calls.Contains("UnregisterAgent"), what: "unregistered");
+    }
+
+    [Fact]
     public void This_machines_BlueZ_reads()
     {
         using var app = sway.Connect();
