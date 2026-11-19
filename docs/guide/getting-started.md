@@ -106,7 +106,12 @@ app list, `Search`, `LaunchAsync` with terminals and desktop actions, `OpenAsync
 apps), `.Notifications` (be the
 notification daemon), `.Tray` (StatusNotifierItem), `.Power` (UPower), `.Audio` (default output volume and
 mute through the PulseAudio API, which PipeWire serves), `.Media` (MPRIS players: now playing, play/pause,
-next), `.Pam` (`PamAuthenticator.AuthenticateAsync` for lock screens; runs off the UI thread).
+next), `.Pam` (`PamAuthenticator.AuthenticateAsync` for lock screens; runs off the UI thread), `.Polkit`
+(`PolkitAgent`: the "authentication is required" dialog's backend; a desktop's own agent may already hold
+the session), `.Network` (`NetworkService`: NetworkManager devices, connectivity, Wi-Fi networks, connect),
+`.Bluetooth` (`BluetoothService`: BlueZ adapters and devices with batteries; discover, pair, connect) and
+`.Greetd` (`GreetdClient`: log a user in from a greeter and start their session). The system-bus services
+take a connection from `OopsDBus.ConnectAsync(app, DBusAddress.System)`.
 
 ## Escape hatches
 

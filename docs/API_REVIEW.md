@@ -60,3 +60,13 @@ popup's grab (fixed, D29).
 | `IpcHandler`, `PamContext` | `IpcServer`, `PamAuthenticator` |
 | `Pipewire`, `Mpris`, `ScreencopyView` | `AudioService`, `MediaService`, `ScreenCapture` |
 | `Process`, `FileView`, `SystemClock` | .NET's own `Process`, `File`, timers |
+
+## Freeze (2026-11-18)
+
+After a third desktop (Crossbar, a 10-foot kiosk on sway and niri) needed no core changes, the remaining
+shape questions were settled (IPC reply status D34, wall-clock timers D35, the async rule D33), screen
+loss down to zero outputs and during a lock was tested, and the system services a full desktop needs were
+added (D36). From here the public API of every package changes only by addition; anything else needs a
+decision entry explaining why. Candidates for additions: idle inhibitors, keyboard-shortcut inhibitors,
+workspaces through ext-workspace, activation tokens for notification actions, a NetworkManager secret
+agent and a BlueZ pairing agent.

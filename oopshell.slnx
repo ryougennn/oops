@@ -15,6 +15,7 @@
     <Project Path="src/oopshell.Services.Bluetooth/oopshell.Services.Bluetooth.csproj" />
     <Project Path="src/oopshell.Services.DBus/oopshell.Services.DBus.csproj" />
     <Project Path="src/oopshell.Services.Desktop/oopshell.Services.Desktop.csproj" />
+    <Project Path="src/oopshell.Services.Greetd/oopshell.Services.Greetd.csproj" />
     <Project Path="src/oopshell.Services.Launcher/oopshell.Services.Launcher.csproj" />
     <Project Path="src/oopshell.Services.Media/oopshell.Services.Media.csproj" />
     <Project Path="src/oopshell.Services.Notifications/oopshell.Services.Notifications.csproj" />

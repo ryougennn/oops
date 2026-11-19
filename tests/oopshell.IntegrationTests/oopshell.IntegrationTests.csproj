@@ -14,5 +14,6 @@
     <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Polkit/oopshell.Services.Polkit.csproj" />
     <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Network/oopshell.Services.Network.csproj" />
     <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Bluetooth/oopshell.Services.Bluetooth.csproj" />
+    <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Greetd/oopshell.Services.Greetd.csproj" />
   </ItemGroup>
 </Project>

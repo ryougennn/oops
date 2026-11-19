@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>oopshell.Services.Greetd</RootNamespace>
+    <Description>Log users in from an oopshell greeter through greetd: the authentication conversation and starting their session.</Description>
+  </PropertyGroup>
+</Project>

@@ -35,6 +35,12 @@ Record results (date, compositor + version, GPU) at the bottom.
   wrong one `AuthenticationFailed` after PAM's delay. (Checked 2026-11-18 with a test account.) The automated
   tests use a private PAM config (`pam_start_confdir`) instead.
 
+## System services (polkit, Wi-Fi, Bluetooth, greetd)
+- [ ] polkit: in a session without another agent (e.g. sway), a `PolkitAgent` dialog appears for `pkexec true` and `systemctl restart` of a unit; the right password authorizes, a wrong one allows retry, Cancel denies.
+- [ ] Wi-Fi: join a WPA2 network with its password through `NetworkService.ConnectAsync`, reconnect to it later without one, switch Wi-Fi off and on; the device's state follows.
+- [ ] Bluetooth: discover, pair and connect a mouse and headphones with `BluetoothService`; the battery level appears where the device reports one; forget them again.
+- [ ] greetd: a greeter using `GreetdClient` logs in with a real greetd (`greetd` with `default_session` set to the greeter), wrong passwords retry, and the chosen session starts.
+
 ## Crossbar (sway kiosk)
 - [ ] `sway -c demo/crossbar/config/sway.conf` on a TV or monitor from the couch: labels are readable, the waves and glass animate smoothly, ticks play on every move without lag, Super+Escape brings the bar over a fullscreen game or video and Escape returns to it, closing the last app comes home, the Running list switches between several apps.
 
