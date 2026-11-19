@@ -37,6 +37,27 @@ public class NotificationTests(SwayFixture sway)
     }
 
     [Fact]
+    public void Actions_from_a_surface_carry_an_activation_token()
+    {
+        Assert.SkipUnless(File.Exists("/usr/bin/notify-send"), "notify-send is not installed.");
+        using var bus = new DBusDaemon();
+        using var app = sway.Connect();
+        var connection = app.Complete(OopsDBus.ConnectAsync(app, bus.Address));
+        using var server = app.Complete(NotificationServer.StartAsync(app, connection));
+        using var bubble = new Toplevel(app); // stands in for the notification bubble that was clicked
+        var frames = Draw.SolidColor(bubble, 0xFF202020);
+        app.RunUntil(() => frames() >= 1, what: "bubble");
+
+        // notify-send writes the token it got to fd 2 (and the action to stdout).
+        using var sender = bus.Start("notify-send", "--activation-token-fd=2", "-A", "open=Open", "Mail", "New message");
+        app.RunUntil(() => server.Notifications.Count == 1, what: "notification");
+        server.InvokeAction(server.Notifications[0], "open", from: bubble);
+        app.RunUntil(() => sender.HasExited, what: "notify-send exit");
+        Assert.Equal("open", sender.StandardOutput.ReadToEnd().Trim());
+        Assert.Matches("^[0-9a-zA-Z_-]{8,}$", sender.StandardError.ReadToEnd().Trim()); // the token sway issued
+    }
+
+    [Fact]
     public void Unknown_methods_get_an_error_and_the_server_stays_connected()
     {
         // A malformed error reply once made the bus drop the server's connection on the first unknown call.

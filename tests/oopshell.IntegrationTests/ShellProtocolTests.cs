@@ -90,4 +90,41 @@ public class ShellProtocolTests(SwayFixture sway)
         input.MoveTo(6, 6);
         app.RunUntil(() => resumed, what: "resume");
     }
+
+    [Fact]
+    public void Idle_inhibitor_holds_off_idle_while_set()
+    {
+        using var app = sway.Connect();
+        Assert.True(app.CanInhibitIdle);
+        using var window = new Toplevel(app);
+        var frames = Draw.SolidColor(window, 0xFF203040);
+        app.RunUntil(() => frames() >= 1, what: "window");
+        window.InhibitIdle = true;
+        bool idle = false;
+        using var watch = app.Idle.Watch(TimeSpan.FromMilliseconds(200), () => idle = true);
+        app.RunFor(800);
+        Assert.False(idle); // a visible surface's inhibitor keeps the session awake
+
+        window.InhibitIdle = false;
+        app.RunUntil(() => idle, what: "idle once released");
+    }
+
+    [Fact]
+    public void Shortcut_inhibitor_becomes_active_while_focused()
+    {
+        using var app = sway.Connect();
+        using var input = new VirtualInput(app); // sway only grants it to a surface with keyboard focus
+        Assert.True(app.CanInhibitShortcuts);
+        using var window = new Toplevel(app);
+        var frames = Draw.SolidColor(window, 0xFF203040);
+        app.RunUntil(() => frames() >= 1, what: "window");
+        int changes = 0;
+        window.ShortcutsInhibitedChanged += () => changes++;
+        window.InhibitShortcuts = true;
+        app.RunUntil(() => window.ShortcutsInhibited, what: "shortcuts inhibited");
+
+        window.InhibitShortcuts = false;
+        Assert.False(window.ShortcutsInhibited);
+        Assert.Equal(2, changes);
+    }
 }

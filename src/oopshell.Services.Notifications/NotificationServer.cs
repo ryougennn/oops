@@ -50,9 +50,27 @@ public sealed class NotificationServer : ExportedObject, IDisposable
     /// <summary>Closes a notification and tells its app why.</summary>
     public void Close(Notification notification, CloseReason reason = CloseReason.Dismissed) => Close(notification.Id, reason);
 
-    /// <summary>Reports that the user chose an action. Non-resident notifications close afterwards.</summary>
-    public void InvokeAction(Notification notification, string actionKey)
+    /// <summary>
+    /// Reports that the user chose an action. Non-resident notifications close afterwards. Pass the surface
+    /// that was clicked (the bubble) as <paramref name="from"/>: the app then also gets an activation token
+    /// (the spec's ActivationToken signal, sent first), which compositors that prevent focus stealing require
+    /// before the app may raise its window. The signals go out once the compositor has issued the token.
+    /// </summary>
+    public void InvokeAction(Notification notification, string actionKey, Surface? from = null) =>
+        _ = InvokeActionAsync(notification, actionKey, from);
+
+    async Task InvokeActionAsync(Notification notification, string actionKey, Surface? from)
     {
+        string? token = from is null ? null
+            : await App.RequestActivationTokenAsync(new LaunchOptions { Surface = from, AppId = notification.DesktopEntry });
+        if (token is not null)
+        {
+            connection.EmitSignal(ObjectPath, Interface, "ActivationToken", "us", (ref MessageWriter w) =>
+            {
+                w.WriteUInt32(notification.Id);
+                w.WriteString(token);
+            });
+        }
         connection.EmitSignal(ObjectPath, Interface, "ActionInvoked", "us", (ref MessageWriter w) =>
         {
             w.WriteUInt32(notification.Id);
@@ -210,6 +228,7 @@ public sealed class NotificationServer : ExportedObject, IDisposable
           </method>
           <signal name="NotificationClosed"><arg type="u"/><arg type="u"/></signal>
           <signal name="ActionInvoked"><arg type="u"/><arg type="s"/></signal>
+          <signal name="ActivationToken"><arg type="u"/><arg type="s"/></signal>
         </interface>
         """;
 

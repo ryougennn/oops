@@ -381,6 +381,7 @@ public abstract partial class Surface : IDisposable
         DestroyRole();
         frameCallback?.Dispose();
         backgroundEffect?.Dispose();
+        DisposeInhibitors();
         fractionalScale?.Dispose();
         viewport?.Dispose();
         Proxy.Dispose();
