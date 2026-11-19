@@ -35,11 +35,19 @@ Record results (date, compositor + version, GPU) at the bottom.
   wrong one `AuthenticationFailed` after PAM's delay. (Checked 2026-11-18 with a test account.) The automated
   tests use a private PAM config (`pam_start_confdir`) instead.
 
-## System services (polkit, Wi-Fi, Bluetooth, greetd)
-- [ ] polkit: in a session without another agent (e.g. sway), a `PolkitAgent` dialog appears for `pkexec true` and `systemctl restart` of a unit; the right password authorizes, a wrong one allows retry, Cancel denies.
-- [ ] Wi-Fi: join a WPA2 network with its password through `NetworkService.ConnectAsync`, reconnect to it later without one, switch Wi-Fi off and on; the device's state follows.
-- [ ] Bluetooth: discover, pair and connect a mouse and headphones with `BluetoothService`; the battery level appears where the device reports one; forget them again.
-- [ ] greetd: a greeter using `GreetdClient` logs in with a real greetd (`greetd` with `default_session` set to the greeter), wrong passwords retry, and the chosen session starts.
+## oops-lab: services and protocols
+`samples/oops-lab` has one page per check (Tab moves between pages; results go to its log). Build with
+`dotnet run --project samples/oops-lab`, ideally inside a nested niri (it has every protocol below; sway
+lacks workspaces and blur).
+- [ ] **Wi-Fi**: join a WPA2 network with its password, reconnect later without one, switch Wi-Fi off and on. Press "Ask me for Wi-Fi passwords", change the network's password on the router (or connect with a wrong one): the lab asks again, marked as a retry.
+- [ ] **Bluetooth**: discover, pair (press "Handle pairing codes" first: a keyboard asks you to type a code, a phone asks to compare one) and connect a mouse and headphones; the battery level appears where reported; forget them.
+- [ ] **Polkit**: "Start agent for a helper process", then "Ask polkit": your password says authorized, a wrong one asks again, Cancel says not authorized. In a session without another agent (bare sway or niri), "Start agent for this session" and `pkexec true` in a terminal.
+- [ ] **Notifications**: with a notification server that sends tokens (OopsOSX or oops95, or a desktop that does), cover the lab, send the test notification and click it: the log shows the token before the action and the lab comes to the front.
+- [ ] **Workspaces** (niri): the list matches niri's, Show switches, New workspace either appears or reports that niri does not allow it.
+- [ ] **Inhibit**: with "Keep the screen awake" on, the 10-second idle watch stays active while the lab is visible; off, it reports idle. With shortcuts sent to the lab, a compositor binding does nothing while the lab has focus.
+- [ ] **Lock** (nested compositor only): locks every output; the right password unlocks, a wrong one says so.
+- [ ] **Audio, Battery**: volume and mute follow the system; a playing MPRIS player can be paused and skipped; the battery matches the desktop's indicator.
+- [ ] **greetd**: with greetd configured to run `cage -s -- oops-lab --greeter --session niri-session` (or a sway config that execs it) as its default session, log in; a wrong password asks again; the session starts.
 
 ## Crossbar (sway kiosk)
 - [ ] `sway -c demo/crossbar/config/sway.conf` on a TV or monitor from the couch: labels are readable, the waves and glass animate smoothly, ticks play on every move without lag, Super+Escape brings the bar over a fullscreen game or video and Escape returns to it, closing the last app comes home, the Running list switches between several apps.

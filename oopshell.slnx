@@ -5,6 +5,7 @@
     <Project Path="samples/HelloWindow/HelloWindow.csproj" />
     <Project Path="samples/oops-info/oops-info.csproj" />
     <Project Path="samples/oops-stress/oops-stress.csproj" />
+    <Project Path="samples/oops-lab/oops-lab.csproj" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/oopshell.Egl/oopshell.Egl.csproj" />

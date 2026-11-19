@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>oops-lab</AssemblyName>
+    <RootNamespace>OopsLab</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(RepoRoot)src/oopshell.Skia/oopshell.Skia.csproj" />
+    <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Network/oopshell.Services.Network.csproj" />
+    <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Bluetooth/oopshell.Services.Bluetooth.csproj" />
+    <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Polkit/oopshell.Services.Polkit.csproj" />
+    <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Greetd/oopshell.Services.Greetd.csproj" />
+    <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Pam/oopshell.Services.Pam.csproj" />
+    <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Audio/oopshell.Services.Audio.csproj" />
+    <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Media/oopshell.Services.Media.csproj" />
+    <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Power/oopshell.Services.Power.csproj" />
+  </ItemGroup>
+</Project>
