@@ -138,7 +138,7 @@ public sealed class SwayFixture : IDisposable
     private static string FindRepoRoot([CallerFilePath] string path = "")
     {
         var dir = Path.GetDirectoryName(path);
-        while (dir is not null && !File.Exists(Path.Combine(dir, "SPEC.md")))
+        while (dir is not null && !File.Exists(Path.Combine(dir, "oopshell.slnx")))
             dir = Path.GetDirectoryName(dir);
         return dir ?? throw new InvalidOperationException("Repository root not found.");
     }
