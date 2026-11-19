@@ -28,19 +28,21 @@ public static class AppSearch
         if (q.Length == 0)
             return [];
         var terms = q.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        string compact = q.Replace(" ", "");
         var results = new List<AppMatch>();
         foreach (var app in apps)
         {
-            double score = ScoreApp(app, q, terms);
+            var prepared = Prepared.For(app);
+            double score = ScoreApp(prepared, q, terms, compact);
             double extra = boost?.Invoke(app.Id) ?? 0;
             if (score > 0)
                 results.Add(new AppMatch(app, null, score + extra));
-            foreach (var action in app.Actions)
+            foreach (var (action, label, defaultLabel) in prepared.Actions)
             {
                 // Actions match on "App Action" so "firefox private" and "private" both find the private window.
-                double actionScore = Field($"{app.Name} {action.Name}", q, terms) * 0.8;
-                if (action.DefaultName is { } untranslated && untranslated != action.Name)
-                    actionScore = Math.Max(actionScore, Field($"{app.DefaultName} {untranslated}", q, terms) * 0.75);
+                double actionScore = Field(label, q, terms, compact) * 0.8;
+                if (defaultLabel is not null)
+                    actionScore = Math.Max(actionScore, Field(defaultLabel, q, terms, compact) * 0.75);
                 if (actionScore >= 40)
                     results.Add(new AppMatch(app, action, actionScore + extra * 0.5));
             }
@@ -53,21 +55,68 @@ public static class AppSearch
             .ToList();
     }
 
-    static double ScoreApp(DesktopEntry app, string q, string[] terms)
+    /// <summary>A field's text prepared once: folded, split into folded words, and their initials.</summary>
+    internal sealed class FieldText
     {
-        double best = Field(app.Name, q, terms);
-        if (app.DefaultName != app.Name)
-            best = Math.Max(best, Field(app.DefaultName, q, terms) * 0.95);
-        if (app.GenericName is { } generic)
-            best = Math.Max(best, Field(generic, q, terms) * 0.7);
+        public readonly string Folded;
+        public readonly List<string> Words;
+        public readonly string Initials;
+
+        public FieldText(string text)
+        {
+            Folded = TextFold.Fold(text);
+            Words = AppSearch.Words(text);
+            Initials = string.Concat(Words.Select(w => w[0]));
+        }
+    }
+
+    /// <summary>
+    /// Everything search needs from one entry, computed on first use and kept as long as the entry lives (a
+    /// catalog reload makes new entries, so stale ones are collected with their caches).
+    /// </summary>
+    sealed class Prepared
+    {
+        static readonly System.Runtime.CompilerServices.ConditionalWeakTable<DesktopEntry, Prepared> Cache = new();
+
+        public readonly FieldText Name;
+        public readonly FieldText? DefaultName, Generic, Program, IdTail;
+        public readonly FieldText[] Keywords, DefaultKeywords;
+        public readonly string? Comment;
+        public readonly (DesktopAction Action, FieldText Label, FieldText? DefaultLabel)[] Actions;
+
+        public static Prepared For(DesktopEntry app) => Cache.GetValue(app, a => new Prepared(a));
+
+        Prepared(DesktopEntry app)
+        {
+            Name = new FieldText(app.Name);
+            DefaultName = app.DefaultName != app.Name && app.DefaultName.Length > 0 ? new FieldText(app.DefaultName) : null;
+            Generic = app.GenericName is { } generic ? new FieldText(generic) : null;
+            Keywords = app.Keywords.Select(k => new FieldText(k)).ToArray();
+            DefaultKeywords = app.DefaultKeywords.Select(k => new FieldText(k)).ToArray();
+            Program = AppSearch.Program(app) is { } program ? new FieldText(program) : null;
+            string id = app.Id.EndsWith(".desktop", StringComparison.Ordinal) ? app.Id[..^8] : app.Id;
+            IdTail = new FieldText(id[(id.LastIndexOf('.') + 1)..]);
+            Comment = app.Comment is { } comment ? TextFold.Fold(comment) : null;
+            Actions = app.Actions.Select(a => (a, new FieldText($"{app.Name} {a.Name}"),
+                a.DefaultName is { } untranslated && untranslated != a.Name ? new FieldText($"{app.DefaultName} {untranslated}") : null)).ToArray();
+        }
+    }
+
+    static double ScoreApp(Prepared app, string q, string[] terms, string compact)
+    {
+        double best = Field(app.Name, q, terms, compact);
+        if (app.DefaultName is { } defaultName)
+            best = Math.Max(best, Field(defaultName, q, terms, compact) * 0.95);
+        if (app.Generic is { } generic)
+            best = Math.Max(best, Field(generic, q, terms, compact) * 0.7);
         foreach (var keyword in app.Keywords)
-            best = Math.Max(best, Field(keyword, q, terms) * 0.6);
+            best = Math.Max(best, Field(keyword, q, terms, compact) * 0.6);
         foreach (var keyword in app.DefaultKeywords)
-            best = Math.Max(best, Field(keyword, q, terms) * 0.55);
-        if (Program(app) is { } program)
-            best = Math.Max(best, Field(program, q, terms) * 0.5);
-        string id = app.Id.EndsWith(".desktop", StringComparison.Ordinal) ? app.Id[..^8] : app.Id;
-        best = Math.Max(best, Field(id[(id.LastIndexOf('.') + 1)..], q, terms) * 0.5);
+            best = Math.Max(best, Field(keyword, q, terms, compact) * 0.55);
+        if (app.Program is { } program)
+            best = Math.Max(best, Field(program, q, terms, compact) * 0.5);
+        if (app.IdTail is { } idTail)
+            best = Math.Max(best, Field(idTail, q, terms, compact) * 0.5);
         if (app.Comment is { } comment)
             best = Math.Max(best, Contains(comment, q, terms) * 0.25);
         return best;
@@ -78,33 +127,60 @@ public static class AppSearch
         app.Exec?.Split(' ', StringSplitOptions.RemoveEmptyEntries).SkipWhile(t => t == "env" || t.Contains('='))
             .FirstOrDefault() is { } p ? Path.GetFileName(p.Trim('"')) : null;
 
-    /// <summary>0..100 for one field.</summary>
-    internal static double Field(string text, string q, string[] terms)
+    /// <summary>0..100 for one field (raw text; tests use this).</summary>
+    internal static double Field(string text, string q, string[] terms) => Field(new FieldText(text), q, terms, q.Replace(" ", ""));
+
+    static double Field(FieldText field, string q, string[] terms, string compact)
     {
-        if (text.Length == 0)
+        string f = field.Folded;
+        if (f.Length == 0)
             return 0;
-        string f = TextFold.Fold(text);
         if (f == q)
             return 100;
         if (f.StartsWith(q, StringComparison.Ordinal))
             return 92 - Math.Min(10, (f.Length - q.Length) * 0.2);
-        var words = Words(text);
-        if (terms.All(t => words.Any(w => w.StartsWith(t, StringComparison.Ordinal))))
-            return 82 - Math.Min(10, words.Count);
-        if (q.Length >= 2 && !q.Contains(' ') && string.Concat(words.Select(w => w[0])).StartsWith(q, StringComparison.Ordinal))
+        if (AllTermsStartWords(field.Words, terms))
+            return 82 - Math.Min(10, field.Words.Count);
+        if (q.Length >= 2 && !q.Contains(' ') && field.Initials.StartsWith(q, StringComparison.Ordinal))
             return 74;
-        double contains = Contains(text, q, terms);
+        double contains = Contains(f, q, terms);
         if (contains > 0)
             return contains;
-        return Subsequence(f, q.Replace(" ", ""));
+        return Subsequence(f, compact);
     }
 
-    static double Contains(string text, string q, string[] terms)
+    static bool AllTermsStartWords(List<string> words, string[] terms)
     {
-        string f = TextFold.Fold(text);
-        if (f.Contains(q, StringComparison.Ordinal))
+        foreach (var term in terms)
+        {
+            bool found = false;
+            foreach (var word in words)
+            {
+                if (word.StartsWith(term, StringComparison.Ordinal))
+                {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+                return false;
+        }
+        return true;
+    }
+
+    /// <summary>Substring match on folded text.</summary>
+    static double Contains(string folded, string q, string[] terms)
+    {
+        if (folded.Contains(q, StringComparison.Ordinal))
             return 62;
-        return terms.Length > 1 && terms.All(t => f.Contains(t, StringComparison.Ordinal)) ? 52 : 0;
+        if (terms.Length < 2)
+            return 0;
+        foreach (var term in terms)
+        {
+            if (!folded.Contains(term, StringComparison.Ordinal))
+                return 0;
+        }
+        return 52;
     }
 
     /// <summary>All letters of the query in order; fewer gaps and an early start score higher (10..40).</summary>
