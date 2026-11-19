@@ -50,6 +50,20 @@ public class IpcTests(SwayFixture sway)
     }
 
     [Fact]
+    public void A_hung_instance_is_not_mistaken_for_a_stale_socket()
+    {
+        using var app = sway.Connect();
+        string name = Name;
+        // Listening but never answering, like an instance stuck in a long handler.
+        using var hung = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+        hung.Bind(new UnixDomainSocketEndPoint(name));
+        hung.Listen(1);
+        var e = Assert.Throws<InvalidOperationException>(() => IpcServer.Listen(app, name, _ => null));
+        Assert.Contains("already", e.Message);
+        Assert.True(File.Exists(name));
+    }
+
+    [Fact]
     public void Disposing_after_the_runtime_directory_is_gone_does_not_throw()
     {
         // A session ending can remove $XDG_RUNTIME_DIR before the shell has shut down.

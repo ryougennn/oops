@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- A mutation fuzzer for the parsers and the D-Bus and socket servers. Usage: see Program.cs. -->
+  <PropertyGroup>
+    <IsTestProject>false</IsTestProject>
+    <RootNamespace>oopshell.Fuzz</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Desktop/oopshell.Services.Desktop.csproj" />
+    <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Launcher/oopshell.Services.Launcher.csproj" />
+    <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Notifications/oopshell.Services.Notifications.csproj" />
+    <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Media/oopshell.Services.Media.csproj" />
+    <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Tray/oopshell.Services.Tray.csproj" />
+    <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Polkit/oopshell.Services.Polkit.csproj" />
+    <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Network/oopshell.Services.Network.csproj" />
+    <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Bluetooth/oopshell.Services.Bluetooth.csproj" />
+    <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Greetd/oopshell.Services.Greetd.csproj" />
+  </ItemGroup>
+</Project>

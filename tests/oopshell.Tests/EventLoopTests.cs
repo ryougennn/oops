@@ -187,4 +187,22 @@ public class EventLoopTests
             Assert.InRange(tick.TimeOfDay.Ticks % TimeSpan.FromMilliseconds(200).Ticks, 0, TimeSpan.FromMilliseconds(40).Ticks);
         Assert.Throws<ArgumentOutOfRangeException>(() => loop.SetClockTimer(TimeSpan.Zero, () => { }));
     }
+
+    [Fact]
+    public void Callback_exceptions_go_to_the_error_handler()
+    {
+        using var loop = new EventLoop();
+        using var source = new IdleSource();
+        loop.AddSource(source.Fd);
+        var seen = new List<string>();
+        loop.ErrorHandler = e => { seen.Add(e.Message); return e.Message != "fatal"; };
+        loop.Post(() => throw new InvalidOperationException("posted"));
+        loop.SetTimer(TimeSpan.FromMilliseconds(10), null, () => throw new InvalidOperationException("timer"));
+        loop.SetTimer(TimeSpan.FromMilliseconds(50), null, loop.Stop);
+        RunWithTimeout(loop, source);
+        Assert.Equal(["posted", "timer"], seen); // handled: the loop went on to the stop timer
+
+        loop.Post(() => throw new InvalidOperationException("fatal"));
+        Assert.Throws<InvalidOperationException>(() => RunWithTimeout(loop, source)); // not handled: it propagates
+    }
 }

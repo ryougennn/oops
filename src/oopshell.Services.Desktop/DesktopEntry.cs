@@ -130,6 +130,22 @@ public sealed class DesktopEntry
             var expanded = new StringBuilder();
             for (int i = 0; i < arg.Length; i++)
             {
+                if (arg[i] == QuotedCode && i + 1 < arg.Length)
+                {
+                    // A field code inside quotes, typically sh -c "… %f": the value goes to a shell, so quote it
+                    // for one (as GLib does) instead of letting a file name like a$(…).txt run commands.
+                    char quotedCode = arg[++i];
+                    string? value = quotedCode switch
+                    {
+                        'c' => Name,
+                        'k' => Path,
+                        'f' or 'u' when filesOrUrls.Count > 0 => filesOrUrls[0],
+                        _ => null,
+                    };
+                    if (value is not null)
+                        expanded.Append('\'').Append(value.Replace("'", "'\\''")).Append('\'');
+                    continue;
+                }
                 if (arg[i] != '%' || i + 1 == arg.Length)
                 {
                     expanded.Append(arg[i]);
@@ -150,6 +166,9 @@ public sealed class DesktopEntry
         return result;
     }
 
+    /// <summary>Marks a field code that stood inside double quotes (its value will be shell-quoted).</summary>
+    const char QuotedCode = '\uE000';
+
     /// <summary>Splits an Exec value into arguments following the spec's quoting rules.</summary>
     internal static List<string> SplitExec(string exec)
     {
@@ -163,6 +182,10 @@ public sealed class DesktopEntry
             {
                 if (c == '"')
                     inQuotes = false;
+                else if (c == '%' && i + 1 < exec.Length && exec[i + 1] is 'f' or 'u' or 'c' or 'k')
+                    current.Append(QuotedCode).Append(exec[++i]);
+                else if (c == QuotedCode)
+                    continue; // never let the file's own text forge the marker
                 else if (c == '\\' && i + 1 < exec.Length && exec[i + 1] is '"' or '`' or '$' or '\\')
                     current.Append(exec[++i]);
                 else
@@ -182,7 +205,7 @@ public sealed class DesktopEntry
                     hasArg = false;
                 }
             }
-            else
+            else if (c != QuotedCode)
             {
                 current.Append(c);
                 hasArg = true;
@@ -220,7 +243,9 @@ public static class DesktopEntries
             string apps = System.IO.Path.Combine(dir, "applications");
             if (!Directory.Exists(apps))
                 continue;
-            foreach (var file in Directory.EnumerateFiles(apps, "*.desktop", SearchOption.AllDirectories).Order(StringComparer.Ordinal))
+            // Unreadable subdirectories are skipped rather than ending the listing (or the shell).
+            var options = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = 0 };
+            foreach (var file in Directory.EnumerateFiles(apps, "*.desktop", options).Order(StringComparer.Ordinal))
             {
                 string id = System.IO.Path.GetRelativePath(apps, file).Replace('/', '-');
                 if (byId.ContainsKey(id))
@@ -230,7 +255,7 @@ public static class DesktopEntries
                     if (DesktopEntry.Parse(id, file, File.ReadAllText(file), locale) is { } entry)
                         byId[id] = entry;
                 }
-                catch (IOException)
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
                 {
                     // Unreadable files are skipped, like every other desktop does.
                 }

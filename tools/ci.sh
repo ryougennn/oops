@@ -1,6 +1,8 @@
 #!/bin/sh
 # Build, test, and AOT-publish every sample; fails on any trim/AOT warning (spec §2 rule 6).
 set -e
+# Idle MSBuild workers (one per core) would otherwise outlive each step and add up to gigabytes.
+export MSBUILDDISABLENODEREUSE=1
 cd "$(dirname "$0")/.."
 dotnet build oopshell.slnx -c Release
 # The window-capture test compositor (needs wlroots 0.20); CaptureTests skip if it cannot be built.

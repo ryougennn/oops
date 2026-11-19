@@ -355,9 +355,26 @@ public sealed class Emitter(TypeResolver types)
                 fds.Add(slot);
             slot++;
         }
-        w.Line(e.Args.Count == 0 ? $"{member}?.Invoke();" : $"{member}?.Invoke(new {EventStructName(iface, e)}(args));");
-        foreach (int fd in fds)
-            w.Line($"CloseFd(args[{fd}].h);");
+        string invoke = e.Args.Count == 0 ? $"{member}?.Invoke();" : $"{member}?.Invoke(new {EventStructName(iface, e)}(args));";
+        if (fds.Count == 0)
+            w.Line(invoke);
+        else
+        {
+            // Received fds are closed even if the handler throws.
+            w.Line("try");
+            w.Line("{");
+            w.Indent++;
+            w.Line(invoke);
+            w.Indent--;
+            w.Line("}");
+            w.Line("finally");
+            w.Line("{");
+            w.Indent++;
+            foreach (int fd in fds)
+                w.Line($"CloseFd(args[{fd}].h);");
+            w.Indent--;
+            w.Line("}");
+        }
         w.Line("break;");
         w.Indent--;
     }

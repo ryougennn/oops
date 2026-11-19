@@ -35,7 +35,7 @@ public sealed class UsageHistory
         try
         {
             if (File.Exists(path) && JsonSerializer.Deserialize(File.ReadAllText(path), UsageJson.Default.DictionaryStringRecord) is { } loaded)
-                return new UsageHistory(path, loaded);
+                return new UsageHistory(path, loaded.Where(e => e.Value is not null).ToDictionary()); // {"x": null} is valid JSON
         }
         catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
         {

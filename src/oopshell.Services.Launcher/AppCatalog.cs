@@ -117,6 +117,9 @@ public sealed class AppCatalog : IDisposable
     /// </summary>
     public async Task<DesktopEntry?> OpenAsync(string target, Surface? from = null)
     {
+        // A relative path becomes absolute, so a file named "-rf" reaches the app as a file, not an option.
+        if (MimeDatabase.TryScheme(target) is null && !Path.IsPathRooted(target))
+            target = Path.GetFullPath(target);
         mimeDatabase ??= MimeDatabase.Load(DataDirs);
         var handler = DefaultApps.For(mimeDatabase.Guess(target), AllEntries, mimeDatabase, DefaultApps.ListFiles(options.CurrentDesktops, DataDirs));
         if (handler is null)
@@ -126,7 +129,7 @@ public sealed class AppCatalog : IDisposable
         }
         // %f wants a path; %u takes the URL as is.
         string argument = target.StartsWith("file://", StringComparison.OrdinalIgnoreCase) && handler.Exec?.Contains("%u", StringComparison.OrdinalIgnoreCase) != true
-            ? Uri.UnescapeDataString(new Uri(target).AbsolutePath)
+            ? MimeDatabase.FilePath(target) ?? throw new ArgumentException($"Not a valid file URL: {target}", nameof(target))
             : target;
         await AppLauncher.LaunchAsync(app, handler, null, [argument], from, options.Terminal);
         return handler;

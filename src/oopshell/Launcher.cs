@@ -38,6 +38,7 @@ public sealed partial class OopsApp
         if (detach)
         {
             start.ArgumentList.Add("--fork");
+            start.ArgumentList.Add("--"); // a program name starting with '-' is not an option of setsid
             start.ArgumentList.Add(program);
         }
         foreach (var arg in args ?? [])
@@ -72,12 +73,16 @@ public sealed partial class OopsApp
             request.SetSurface(options.Surface.Proxy);
         if (options.AppId is not null)
             request.SetAppId(options.AppId);
+        IDisposable? timeout = null;
         request.Done += e =>
         {
+            timeout?.Dispose();
             done.TrySetResult(e.Token);
             request.Dispose();
         };
         request.Commit();
+        // A compositor that never answers must not stall a launch: carry on without a token.
+        timeout = SetTimer(TimeSpan.FromSeconds(5), null, () => done.TrySetResult(null));
         return done.Task;
     }
 

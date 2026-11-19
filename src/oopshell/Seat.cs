@@ -262,16 +262,22 @@ public sealed class Seat
         {
             if (e.Format != WlKeyboardKeymapFormat.XkbV1)
                 return;
-            nint map = LibC.mmap(0, e.Size, LibC.PROT_READ, LibC.MAP_PRIVATE, e.Fd, 0);
+            // Map no more than the file holds (reading past its end is SIGBUS); a keymap that cannot be mapped
+            // leaves the previous one in place rather than stopping the app.
+            long fileSize = LibC.lseek(e.Fd, 0, LibC.SEEK_END);
+            uint size = (uint)Math.Min(e.Size, fileSize < 0 ? 0 : fileSize);
+            if (size == 0 || size > 64 * 1024 * 1024)
+                return;
+            nint map = LibC.mmap(0, size, LibC.PROT_READ, LibC.MAP_PRIVATE, e.Fd, 0);
             if (map == LibC.MAP_FAILED)
-                throw LibC.LastError("mmap keymap");
+                return;
             try
             {
-                xkb.SetKeymap(new ReadOnlySpan<byte>((void*)map, (int)e.Size));
+                xkb.SetKeymap(new ReadOnlySpan<byte>((void*)map, (int)size));
             }
             finally
             {
-                LibC.munmap(map, e.Size);
+                LibC.munmap(map, size);
             }
             Changed?.Invoke();
         };

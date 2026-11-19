@@ -71,6 +71,8 @@ public static unsafe partial class SvgRenderer
             // Cairo's ARGB32 is premultiplied and native-endian: B, G, R, A in memory on little-endian machines.
             byte* data = cairo_image_surface_get_data(surface);
             int stride = cairo_image_surface_get_stride(surface);
+            if (data == null || stride < width * 4)
+                return null; // an error surface (e.g. out of memory) has no pixels
             var pixels = new byte[width * height * 4];
             for (int y = 0; y < height; y++)
                 new ReadOnlySpan<byte>(data + y * stride, width * 4).CopyTo(pixels.AsSpan(y * width * 4));

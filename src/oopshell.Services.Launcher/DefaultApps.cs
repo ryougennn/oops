@@ -34,11 +34,22 @@ public sealed class MimeDatabase
         return db;
     }
 
+    /// <summary>A file's lines, or none if it is missing or unreadable.</summary>
+    static string[] Lines(string path)
+    {
+        try
+        {
+            return File.Exists(path) ? File.ReadAllLines(path) : [];
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return [];
+        }
+    }
+
     static IEnumerable<(string, string)> Pairs(string path)
     {
-        if (!File.Exists(path))
-            yield break;
-        foreach (var line in File.ReadLines(path))
+        foreach (var line in Lines(path))
         {
             var parts = line.Split(' ', 2);
             if (parts.Length == 2 && !line.StartsWith('#'))
@@ -48,9 +59,7 @@ public sealed class MimeDatabase
 
     void ReadGlobs(string path)
     {
-        if (!File.Exists(path))
-            return;
-        foreach (var line in File.ReadLines(path))
+        foreach (var line in Lines(path))
         {
             if (line.StartsWith('#'))
                 continue;
@@ -100,10 +109,23 @@ public sealed class MimeDatabase
     {
         if (TryScheme(target) is { } scheme && scheme != "file")
             return $"x-scheme-handler/{scheme}";
-        string path = target.StartsWith("file://", StringComparison.OrdinalIgnoreCase) ? Uri.UnescapeDataString(new Uri(target).AbsolutePath) : target;
+        string path = target.StartsWith("file://", StringComparison.OrdinalIgnoreCase) ? FilePath(target) ?? "" : target;
         if (Directory.Exists(path))
             return "inode/directory";
         return FromFileName(path);
+    }
+
+    /// <summary>The local path of a file:// URL, or null if it is not a valid one.</summary>
+    internal static string? FilePath(string url)
+    {
+        try
+        {
+            return Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.IsFile ? uri.LocalPath : null;
+        }
+        catch (Exception e) when (e is IndexOutOfRangeException or UriFormatException)
+        {
+            return null; // System.Uri throws on some malformed input instead of returning false
+        }
     }
 
     /// <summary>"https://x" → https; "/a/b" and "C:" style are not URLs.</summary>
@@ -204,7 +226,7 @@ public static class DefaultApps
     /// <summary>The application that opens <paramref name="mime"/>, or null. <paramref name="apps"/> should include NoDisplay entries (handlers often are).</summary>
     public static DesktopEntry? For(string mime, IReadOnlyList<DesktopEntry> apps, MimeDatabase mimeDatabase, IReadOnlyList<string>? listFiles = null)
     {
-        var lists = (listFiles ?? ListFiles()).Where(File.Exists).Select(KeyFile.Load).ToList();
+        var lists = (listFiles ?? ListFiles()).Select(KeyFile.TryLoad).OfType<KeyFile>().ToList();
         var byId = apps.GroupBy(a => a.Id).ToDictionary(g => g.Key, g => g.First());
         foreach (var type in mimeDatabase.WithParents(mime))
         {

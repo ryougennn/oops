@@ -1,3 +1,4 @@
+using oopshell.Native;
 using System.Net.Sockets;
 using System.Text;
 
@@ -34,6 +35,7 @@ public readonly record struct IpcReply(IpcStatus Status, string Text)
 public sealed class IpcServer : IDisposable
 {
     const int MaxRequest = 64 * 1024;
+    const int MaxReply = 1024 * 1024;
     static readonly TimeSpan ClientTimeout = TimeSpan.FromSeconds(2);
 
     readonly OopsApp app;
@@ -62,8 +64,33 @@ public sealed class IpcServer : IDisposable
     /// <summary>The socket file.</summary>
     public string SocketPath { get; }
 
+    /// <summary>
+    /// <c>$XDG_RUNTIME_DIR/&lt;name&gt;.sock</c>. Without XDG_RUNTIME_DIR, a private 0700 directory of this user
+    /// in /tmp (never a shared path another user could take first).
+    /// </summary>
     public static string PathFor(string name) =>
-        Path.IsPathRooted(name) ? name : Path.Combine(Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR") ?? "/tmp", name + ".sock");
+        Path.IsPathRooted(name) ? name : Path.Combine(Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR") is { Length: > 0 } dir ? dir : PrivateDir(), name + ".sock");
+
+    static string PrivateDir()
+    {
+        string dir = $"/tmp/oopshell-{LibC.geteuid()}";
+        if (OperatingSystem.IsWindows())
+            throw new PlatformNotSupportedException();
+        if (!Directory.Exists(dir))
+            Directory.CreateDirectory(dir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        var info = new DirectoryInfo(dir);
+        if (info.LinkTarget is not null || info.UnixFileMode != (UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute))
+            throw new InvalidOperationException($"{dir} is not a private directory; set XDG_RUNTIME_DIR.");
+        return dir;
+    }
+
+    /// <summary>The uid of the process at the other end of a connected Unix socket (SO_PEERCRED).</summary>
+    static uint PeerUid(Socket socket)
+    {
+        Span<byte> cred = stackalloc byte[12]; // struct ucred { pid_t pid; uid_t uid; gid_t gid; }
+        socket.GetRawSocketOption(1 /* SOL_SOCKET */, 17 /* SO_PEERCRED */, cred);
+        return BitConverter.ToUInt32(cred[4..8]);
+    }
 
     /// <summary>
     /// Starts serving <paramref name="name"/>. <paramref name="handler"/> gets the arguments a client sent and
@@ -76,12 +103,22 @@ public sealed class IpcServer : IDisposable
         string path = PathFor(name);
         if (File.Exists(path))
         {
-            if (IsRunning(name))
+            // Only a socket nobody listens on is stale; one that accepts (even if busy or hung) is another instance.
+            using var probe = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+            try
+            {
+                probe.Connect(new UnixDomainSocketEndPoint(path));
                 throw new InvalidOperationException($"Another instance is already serving {path}.");
-            File.Delete(path);
+            }
+            catch (SocketException e) when (e.SocketErrorCode is SocketError.ConnectionRefused or SocketError.AddressNotAvailable)
+            {
+                File.Delete(path);
+            }
         }
         var listener = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified) { Blocking = false };
         listener.Bind(new UnixDomainSocketEndPoint(path));
+        if (!OperatingSystem.IsWindows())
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
         listener.Listen(16);
         return new IpcServer(app, listener, path, handler);
     }
@@ -104,13 +141,19 @@ public sealed class IpcServer : IDisposable
                 ReceiveTimeout = (int)ClientTimeout.TotalMilliseconds,
             };
             socket.Connect(new UnixDomainSocketEndPoint(PathFor(name)));
+            if (PeerUid(socket) != LibC.geteuid())
+                return new IpcReply(IpcStatus.NotRunning, ""); // not ours: send it nothing
             socket.Send(Encoding.UTF8.GetBytes(string.Join('\0', args)));
             socket.Shutdown(SocketShutdown.Send);
             using var reply = new MemoryStream();
             var buffer = new byte[4096];
             int n;
             while ((n = socket.Receive(buffer)) > 0)
+            {
                 reply.Write(buffer, 0, n);
+                if (reply.Length > MaxReply)
+                    return new IpcReply(IpcStatus.Failed, "The reply was too long.");
+            }
             // The first byte is the status: '+' answered, '!' the handler failed.
             var bytes = reply.GetBuffer().AsSpan(0, (int)reply.Length);
             if (bytes.Length == 0)
@@ -136,6 +179,11 @@ public sealed class IpcServer : IDisposable
             catch (SocketException e) when (e.SocketErrorCode == SocketError.WouldBlock)
             {
                 return;
+            }
+            if (PeerUid(socket) != LibC.geteuid())
+            {
+                socket.Dispose(); // another user: the runtime directory should have kept them out already
+                continue;
             }
             socket.Blocking = false;
             var client = new Client(socket);

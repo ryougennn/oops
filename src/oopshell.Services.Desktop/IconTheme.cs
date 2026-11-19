@@ -64,10 +64,21 @@ public sealed class IconTheme
     /// </summary>
     public string? Find(string icon, int size = 48, int scale = 1)
     {
+        if (icon.Contains('\0'))
+            return null; // not a name or a path (key files can contain anything)
         if (System.IO.Path.IsPathRooted(icon))
-            return File.Exists(icon) ? icon : null;
+        {
+            // Names often come from other apps (notifications, tray): only a regular, plausibly sized image file.
+            // FIFOs and devices report length 0, and opening one would block the shell.
+            var info = new FileInfo(icon);
+            return info.Exists && info.Length is > 0 and < 32 * 1024 * 1024 ? icon : null;
+        }
+        if (icon.Contains('/') || icon.Length > 255)
+            return null; // not an icon name
         if (cache.TryGetValue((icon, size, scale), out var cached))
             return cached;
+        if (cache.Count > 4096)
+            cache.Clear(); // names from other apps are unbounded
         string? result = null;
         foreach (var theme in chain)
         {
@@ -113,7 +124,7 @@ public sealed class IconTheme
     string? Existing(string dir, string icon)
     {
         if (!listings.TryGetValue(dir, out var names))
-            listings[dir] = names = Directory.Exists(dir) ? Directory.EnumerateFiles(dir).Select(f => System.IO.Path.GetFileName(f)).ToHashSet() : null;
+            listings[dir] = names = List(dir);
         if (names is null)
             return null;
         foreach (var ext in Extensions)
@@ -124,13 +135,24 @@ public sealed class IconTheme
         return null;
     }
 
+    static HashSet<string>? List(string dir)
+    {
+        try
+        {
+            return Directory.Exists(dir) ? Directory.EnumerateFiles(dir).Select(f => System.IO.Path.GetFileName(f)).ToHashSet() : null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
     ThemeData? LoadTheme(string name)
     {
         var roots = baseDirs.Select(b => System.IO.Path.Combine(b, name)).Where(Directory.Exists).ToList();
-        var index = roots.Select(r => System.IO.Path.Combine(r, "index.theme")).FirstOrDefault(File.Exists);
-        if (index is null)
+        var file = roots.Select(r => KeyFile.TryLoad(System.IO.Path.Combine(r, "index.theme"))).FirstOrDefault(f => f is not null);
+        if (file is null)
             return null;
-        var file = KeyFile.Load(index);
         var directories = new List<ThemeDirectory>();
         foreach (var subdir in file.GetList("Icon Theme", "Directories", ',').Concat(file.GetList("Icon Theme", "ScaledDirectories", ',')).Distinct())
         {
@@ -147,8 +169,8 @@ public sealed class IconTheme
 
     IEnumerable<string> ReadInherits(string name)
     {
-        var index = baseDirs.Select(b => System.IO.Path.Combine(b, name, "index.theme")).FirstOrDefault(File.Exists);
-        return index is null ? [] : KeyFile.Load(index).GetList("Icon Theme", "Inherits", ',');
+        var file = baseDirs.Select(b => KeyFile.TryLoad(System.IO.Path.Combine(b, name, "index.theme"))).FirstOrDefault(f => f is not null);
+        return file is null ? [] : file.GetList("Icon Theme", "Inherits", ',');
     }
 
     static int Int(string? value, int fallback) => int.TryParse(value, out int v) ? v : fallback;

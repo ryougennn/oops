@@ -169,6 +169,8 @@ public sealed class GreetdClient : IDisposable
         using var _ = await RequestAsync(w => w.WriteString("type", "cancel_session"));
     }
 
+    const int MaxReply = 1 << 20;
+
     /// <summary>One request and its reply: a native-endian u32 length, then JSON, each way.</summary>
     async Task<JsonDocument> RequestAsync(Action<Utf8JsonWriter> write)
     {
@@ -185,9 +187,19 @@ public sealed class GreetdClient : IDisposable
         await socket.SendAsync(frame);
         var header = new byte[4];
         await ReceiveExactlyAsync(header);
-        var payload = new byte[BinaryPrimitives.ReadUInt32LittleEndian(header)];
+        uint length = BinaryPrimitives.ReadUInt32LittleEndian(header);
+        if (length > MaxReply)
+            throw new InvalidDataException($"greetd sent a {length}-byte reply; at most {MaxReply} are accepted.");
+        var payload = new byte[length];
         await ReceiveExactlyAsync(payload);
-        return JsonDocument.Parse(payload);
+        try
+        {
+            return JsonDocument.Parse(payload);
+        }
+        catch (JsonException e)
+        {
+            throw new InvalidDataException("greetd sent a malformed reply.", e);
+        }
     }
 
     async Task ReceiveExactlyAsync(byte[] buffer)

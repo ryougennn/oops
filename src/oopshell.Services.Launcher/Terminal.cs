@@ -12,9 +12,16 @@ public static class Terminal
     [
         ("foot", []), ("kitty", []), ("alacritty", ["-e"]), ("wezterm", ["start", "--"]), ("ghostty", ["-e"]),
         ("konsole", ["-e"]), ("ptyxis", ["--"]), ("gnome-terminal", ["--"]), ("kgx", ["-e"]), ("xfce4-terminal", ["-x"]),
-        ("tilix", ["-e"]), ("terminator", ["-x"]), ("lxterminal", ["-e"]), ("mate-terminal", ["-x"]), ("st", ["-e"]),
+        ("tilix", ["-x"]), ("terminator", ["-x"]), ("lxterminal", ["-e"]), ("mate-terminal", ["-x"]), ("st", ["-e"]),
         ("urxvt", ["-e"]), ("xterm", ["-e"]),
     ];
+
+    /// <summary>
+    /// lxterminal joins everything after -e into one string and splits it again GLib-style (no shell runs it),
+    /// so arguments with spaces or quotes must arrive as one correctly quoted string.
+    /// </summary>
+    static IEnumerable<string> Arguments(string terminal, IReadOnlyList<string> command) =>
+        terminal == "lxterminal" ? [string.Join(' ', command.Select(a => "'" + a.Replace("'", "'\\''") + "'"))] : command;
 
     /// <summary>
     /// The command line that runs <paramref name="command"/> in a terminal, or null if no terminal is installed.
@@ -31,14 +38,14 @@ public static class Terminal
                 continue;
             string name = Path.GetFileName(parts[0]);
             var prefix = Known.FirstOrDefault(k => k.Name == name).Prefix ?? ["-e"];
-            return [.. parts, .. prefix, .. command];
+            return [.. parts, .. prefix, .. Arguments(name, command)];
         }
         if (FindOnPath("xdg-terminal-exec", pathVariable) is not null)
             return ["xdg-terminal-exec", .. command];
         foreach (var (name, prefix) in Known)
         {
             if (FindOnPath(name, pathVariable) is not null)
-                return [name, .. prefix, .. command];
+                return [name, .. prefix, .. Arguments(name, command)];
         }
         return null;
     }

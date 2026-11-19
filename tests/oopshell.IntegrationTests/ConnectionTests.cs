@@ -26,6 +26,30 @@ public sealed class ConnectionTests
     }
 
     [Fact]
+    public void A_handled_exception_keeps_the_app_running()
+    {
+        using var sway = new SwayFixture();
+        using var app = sway.Connect();
+        var errors = new List<string>();
+        app.UnhandledException += e =>
+        {
+            errors.Add(e.Exception.Message);
+            e.Handled = true;
+        };
+        using var bar = new LayerSurface(app, app.Outputs[0], Layer.Top, "broken") { Anchor = Anchor.Top | Anchor.Left | Anchor.Right, Size = new(0, 20) };
+        int renders = 0;
+        bar.Render += frame =>
+        {
+            renders++;
+            throw new InvalidOperationException("render");
+        };
+        app.SetTimer(TimeSpan.FromMilliseconds(20), null, () => throw new InvalidOperationException("timer"));
+        app.RunUntil(() => errors.Contains("timer") && errors.Contains("render"), what: "both errors reported");
+        Assert.True(renders >= 1);
+        Assert.Null(app.ConnectionError);
+    }
+
+    [Fact]
     public void Connecting_without_a_compositor_names_the_socket_and_the_error()
     {
         string missing = Path.Combine(Path.GetTempPath(), $"no-compositor-{Guid.NewGuid():N}");

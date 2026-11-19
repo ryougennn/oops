@@ -34,6 +34,19 @@ public sealed class KeyFile
 
     public static KeyFile Load(string path) => Parse(File.ReadAllText(path));
 
+    /// <summary><see cref="Load"/>, or null if the file is missing or unreadable.</summary>
+    public static KeyFile? TryLoad(string path)
+    {
+        try
+        {
+            return File.Exists(path) ? Load(path) : null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
     public IEnumerable<string> Groups => groups.Keys;
 
     public string? Get(string group, string key) =>

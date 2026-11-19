@@ -45,7 +45,9 @@ public sealed class DesktopTests : IDisposable
     [InlineData("foo %f", new[] { "a.txt", "b.txt" }, new[] { "foo", "a.txt" })]
     [InlineData("foo %F", new[] { "a.txt", "b.txt" }, new[] { "foo", "a.txt", "b.txt" })]
     [InlineData("foo %U --x", new string[0], new[] { "foo", "--x" })]
-    [InlineData("\"/opt/my app/run\" --name=\"%c\" 100%%", new string[0], new[] { "/opt/my app/run", "--name=App", "100%" })]
+    // A field code inside quotes is shell-quoted (as GLib does; the spec leaves it undefined).
+    [InlineData("\"/opt/my app/run\" --name=\"%c\" 100%%", new string[0], new[] { "/opt/my app/run", "--name='App'", "100%" })]
+    [InlineData("run --name=%c", new string[0], new[] { "run", "--name=App" })]
     [InlineData("sh -c \"echo \\\"hi\\\" \\$HOME\"", new string[0], new[] { "sh", "-c", "echo \"hi\" $HOME" })]
     [InlineData("foo %i %d %k", new string[0], new[] { "foo", "--icon", "app-icon", "", "/apps/app.desktop" })]
     public void Expands_exec_field_codes(string exec, string[] files, string[] expected)
@@ -146,7 +148,7 @@ public sealed class DesktopTests : IDisposable
         string hidpi = Write("icons/Retro/32x32@2/apps/term.png", "");
         string inheritedPng = Write("icons/hicolor/48x48/apps/editor.png", "");
         string inheritedSvg = Write("icons/hicolor/scalable/apps/editor.svg", "");
-        string pixmap = Write("pixmaps/legacy.png", "");
+        string pixmap = Write("pixmaps/legacy.png", "png"); // absolute paths must be non-empty regular files
 
         var theme = new IconTheme("Retro", [Path.Combine(root, "icons"), Path.Combine(root, "pixmaps")]);
 
@@ -166,6 +168,29 @@ public sealed class DesktopTests : IDisposable
 
 public class InstalledAppsTests
 {
+    [Fact]
+    public void File_names_cannot_run_commands_through_sh_c_launchers()
+    {
+        // Exec=sh -c "… %f" is common despite the spec; a crafted file name must reach the program as text.
+        string dir = Directory.CreateTempSubdirectory("oopsexec.").FullName;
+        try
+        {
+            string marker = System.IO.Path.Combine(dir, "pwned");
+            string file = System.IO.Path.Combine(dir, $"a'$(touch {marker})'`touch {marker}`.txt");
+            var entry = new DesktopEntry { Id = "v.desktop", Path = "/v.desktop", Name = "V", Exec = "sh -c \"printf %s %f\"" };
+            var argv = entry.ExpandExec([file]);
+            using var sh = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(argv[0], argv.Skip(1)) { RedirectStandardOutput = true })!;
+            string printed = sh.StandardOutput.ReadToEnd();
+            sh.WaitForExit();
+            Assert.Equal(file, printed);
+            Assert.False(File.Exists(marker));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
     [Fact]
     public void Lists_the_applications_installed_on_this_machine()
     {

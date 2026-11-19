@@ -28,6 +28,8 @@ internal sealed unsafe class CursorThemeFallback : IDisposable
     public void Apply(WlPointer pointer, uint serial, CursorShape shape, int scale)
     {
         nint theme = Theme(scale);
+        if (theme == 0)
+            return; // no theme could be loaded: keep the compositor's default cursor
         Cursor* cursor = null;
         foreach (var name in CandidateNames(shape))
         {
@@ -57,7 +59,7 @@ internal sealed unsafe class CursorThemeFallback : IDisposable
         if (themes.TryGetValue(scale, out var theme))
             return theme;
         string? name = Environment.GetEnvironmentVariable("XCURSOR_THEME");
-        int size = int.TryParse(Environment.GetEnvironmentVariable("XCURSOR_SIZE"), out int s) && s > 0 ? s : 24;
+        int size = int.TryParse(Environment.GetEnvironmentVariable("XCURSOR_SIZE"), out int s) && s is > 0 and <= 256 ? s : 24;
         using var nameUtf8 = new NativeUtf8(name);
         theme = wl_cursor_theme_load(nameUtf8.Pointer, size * scale, app.Shm.Handle);
         themes[scale] = theme;

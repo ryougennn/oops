@@ -30,6 +30,7 @@ public static unsafe partial class LibC
     public const int TFD_TIMER_ABSTIME = 1;
     public const int TFD_TIMER_CANCEL_ON_SET = 2;
     public const int ECANCELED = 125;
+    public const int SEEK_END = 2;
     public const int TFD_CLOEXEC = O_CLOEXEC;
     public const int TFD_NONBLOCK = O_NONBLOCK;
 
@@ -50,6 +51,8 @@ public static unsafe partial class LibC
     [LibraryImport(Lib, SetLastError = true)] public static partial int timerfd_settime(int fd, int flags, ITimerSpec* newValue, ITimerSpec* oldValue);
     [LibraryImport(Lib, SetLastError = true)] public static partial int memfd_create(byte* name, uint flags);
     [LibraryImport(Lib, SetLastError = true)] public static partial int ftruncate(int fd, long length);
+    [LibraryImport(Lib, SetLastError = true)] public static partial long lseek(int fd, long offset, int whence);
+    [LibraryImport(Lib)] public static partial uint geteuid();
     [LibraryImport(Lib, SetLastError = true)] public static partial nint mmap(nint addr, nuint length, int prot, int flags, int fd, long offset);
     [LibraryImport(Lib, SetLastError = true)] public static partial int munmap(nint addr, nuint length);
     [LibraryImport(Lib, SetLastError = true)] public static partial nint read(int fd, void* buf, nuint count);
