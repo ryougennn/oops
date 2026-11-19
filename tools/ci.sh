@@ -10,7 +10,7 @@ tests/fixtures/capturewl/build.sh || echo "ci: capturewl not built, CaptureTests
 for t in oopshell.Scanner.Tests oopshell.Tests oopshell.Services.Tests oopshell.IntegrationTests; do
     dotnet test --project tests/$t
 done
-for s in oops-info HelloWindow HelloBar HelloSkia oops-stress oops-lab; do
+for s in oops-info HelloWindow HelloBar HelloSkia oops-stress oops-lab QuickBar; do
     out=$(dotnet publish samples/$s -c Release -r linux-x64 -p:PublishAot=true -o artifacts/publish/$s 2>&1)
     if echo "$out" | grep -qE "warning (IL|AOT)[0-9]+"; then
         echo "$out" | grep -E "warning (IL|AOT)[0-9]+"

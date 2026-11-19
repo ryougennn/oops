@@ -6,6 +6,7 @@
     <Project Path="samples/oops-info/oops-info.csproj" />
     <Project Path="samples/oops-stress/oops-stress.csproj" />
     <Project Path="samples/oops-lab/oops-lab.csproj" />
+    <Project Path="samples/QuickBar/QuickBar.csproj" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/oopshell.Egl/oopshell.Egl.csproj" />

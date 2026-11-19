@@ -1,0 +1,33 @@
+{
+  "$schema": "https://raw.githubusercontent.com/dotnet/docfx/main/schemas/docfx.schema.json",
+  "metadata": [
+    {
+      "src": [
+        {
+          "src": "../src",
+          "files": [ "**/*.csproj" ],
+          "exclude": [ "oopshell.Scanner/**" ]
+        }
+      ],
+      "dest": "api",
+      "namespaceLayout": "flattened",
+      "memberLayout": "samePage"
+    }
+  ],
+  "build": {
+    "content": [
+      { "files": [ "api/**.yml", "api/index.md" ] },
+      { "files": [ "index.md", "toc.yml", "guide/**.md", "guide/toc.yml" ] }
+    ],
+    "output": "../artifacts/docs",
+    "template": [ "default", "modern" ],
+    "globalMetadata": {
+      "_appName": "oopshell",
+      "_appTitle": "oopshell",
+      "_appFooter": "oopshell · MIT License",
+      "_enableSearch": true,
+      "_disableContribution": true
+    },
+    "xref": [ "https://learn.microsoft.com/en-us/dotnet/.xrefmap.json" ]
+  }
+}

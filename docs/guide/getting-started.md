@@ -1,5 +1,8 @@
 # Getting started
 
+New to oopshell? Start with the [quick start](quickstart.md), which builds a working bar step by step; this page
+explains the pieces in more depth.
+
 Requirements: .NET 10 SDK, a wlroots-based compositor (sway, niri, …), `libwayland-client`,
 `libxkbcommon`. GNOME is not supported (no layer-shell).
 

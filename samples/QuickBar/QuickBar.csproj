@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>quickbar</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(RepoRoot)src/oopshell.Skia/oopshell.Skia.csproj" />
+    <ProjectReference Include="$(RepoRoot)src/oopshell.Services.Audio/oopshell.Services.Audio.csproj" />
+  </ItemGroup>
+</Project>
