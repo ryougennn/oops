@@ -1345,8 +1345,14 @@ public sealed unsafe partial class WlDataSource : WlProxy, IWaylandProxy<WlDataS
                 Target?.Invoke(new WlDataSourceTargetEvent(args));
                 break;
             case 1:
-                Send?.Invoke(new WlDataSourceSendEvent(args));
-                CloseFd(args[1].h);
+                try
+                {
+                    Send?.Invoke(new WlDataSourceSendEvent(args));
+                }
+                finally
+                {
+                    CloseFd(args[1].h);
+                }
                 break;
             case 2:
                 Cancelled?.Invoke();
@@ -3876,8 +3882,14 @@ public sealed unsafe partial class WlKeyboard : WlProxy, IWaylandProxy<WlKeyboar
         switch (opcode)
         {
             case 0:
-                Keymap?.Invoke(new WlKeyboardKeymapEvent(args));
-                CloseFd(args[1].h);
+                try
+                {
+                    Keymap?.Invoke(new WlKeyboardKeymapEvent(args));
+                }
+                finally
+                {
+                    CloseFd(args[1].h);
+                }
                 break;
             case 1:
                 Enter?.Invoke(new WlKeyboardEnterEvent(args));

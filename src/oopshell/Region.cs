@@ -31,6 +31,7 @@ public sealed class Region(params Rectangle[] rectangles)
 /// <param name="Time">Timestamp of the frame callback that triggered this frame (milliseconds, arbitrary base).</param>
 public readonly record struct RenderFrame(Size BufferSize, Size LogicalSize, double Scale, Rectangle Damage, uint Time)
 {
+    /// <summary>The whole buffer must be redrawn (first frame, resize, scale change, or no usable history).</summary>
     public bool IsFullDamage => Damage == new Rectangle(Point.Empty, BufferSize);
 }
 

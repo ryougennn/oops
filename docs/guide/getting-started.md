@@ -17,6 +17,13 @@ uses, and waits until outputs and seats are described. Without a compositor it t
 SIGINT and SIGTERM stop it). When the compositor goes away, `Run()` returns 1 and `app.ConnectionError`
 says why; disposing surfaces and services afterwards is safe, so `using` blocks unwind normally.
 
+An exception from one of your handlers (render, input, timer, posted work) also ends `Run()` by default.
+A shell that should survive a broken widget handles `app.UnhandledException`:
+
+```csharp
+app.UnhandledException += e => { Console.Error.WriteLine(e.Exception); e.Handled = true; };
+```
+
 Everything Wayland belongs to that thread. From other threads use `app.Post(action)` or
 `await app.InvokeAsync(...)`; `await` inside handlers resumes on the UI thread automatically.
 

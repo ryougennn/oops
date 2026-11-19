@@ -58,9 +58,12 @@ public sealed class Seat
     /// <summary>The surface with keyboard focus, if it is one of ours.</summary>
     public Surface? KeyboardFocus { get; private set; }
 
+    /// <summary>Last pointer position on <see cref="PointerFocus"/>, in its logical surface coordinates.</summary>
     public double PointerX { get; private set; }
+    /// <summary>Last pointer position on <see cref="PointerFocus"/>, in its logical surface coordinates.</summary>
     public double PointerY { get; private set; }
 
+    /// <summary>Modifiers currently held or locked on this seat's keyboard.</summary>
     public Modifiers Modifiers => xkb.Modifiers;
 
     /// <summary>The active keyboard layout's name, e.g. "English (US)".</summary>

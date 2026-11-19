@@ -11,11 +11,14 @@ public enum ToplevelStates
     Maximized = 1 << 0,
     Fullscreen = 1 << 1,
     Resizing = 1 << 2,
+    /// <summary>Has keyboard focus: draw the window as active.</summary>
     Activated = 1 << 3,
+    /// <summary>The left edge touches another window or the screen edge (tiling): drop shadows and rounded corners there.</summary>
     TiledLeft = 1 << 4,
     TiledRight = 1 << 5,
     TiledTop = 1 << 6,
     TiledBottom = 1 << 7,
+    /// <summary>Not visible at all (another workspace, a minimized window): stop animating until this clears.</summary>
     Suspended = 1 << 8,
 }
 

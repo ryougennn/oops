@@ -6,5 +6,14 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!-- Generated protocol docs and interop structs are not all documented; CS1591 stays a warning-free hint. -->
     <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <!-- Package metadata shared by every oopshell package. RepositoryUrl/Source Link: add once the GitHub repository exists. -->
+    <Copyright>Copyright (c) oopshell contributors</Copyright>
+    <PackageTags>wayland;desktop;shell;layer-shell;panel;bar;dock;launcher;lock-screen;nativeaot;linux</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
+  <ItemGroup Condition="'$(IsPackable)' != 'false'">
+    <None Include="$(RepoRoot)README.md" Pack="true" PackagePath="/" Visible="false" />
+  </ItemGroup>
 </Project>

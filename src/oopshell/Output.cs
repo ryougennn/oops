@@ -61,7 +61,9 @@ public sealed class Output
     public Size PixelSize { get; private set; }
     /// <summary>Integer scale factor.</summary>
     public int Scale { get; private set; } = 1;
+    /// <summary>Rotation and flip of the screen (90° for a portrait monitor); <see cref="LogicalSize"/> already applies it.</summary>
     public WlOutputTransform Transform { get; private set; }
+    /// <summary>Refresh rate of the current mode in millihertz (60000 = 60 Hz); 0 if unknown.</summary>
     public int RefreshMilliHz { get; private set; }
 
     /// <summary>True once the compositor sent the first complete description.</summary>

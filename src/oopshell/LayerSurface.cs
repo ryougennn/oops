@@ -27,6 +27,7 @@ public enum Anchor
 /// <summary>Whether a layer surface gets keyboard focus.</summary>
 public enum KeyboardInteractivity
 {
+    /// <summary>Never gets keyboard focus (bars, docks, wallpapers).</summary>
     None = 0,
     /// <summary>Takes keyboard focus as long as it is mapped (top and overlay layers).</summary>
     Exclusive = 1,
