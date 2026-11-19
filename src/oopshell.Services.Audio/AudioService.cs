@@ -65,11 +65,16 @@ public sealed unsafe partial class AudioService : IDisposable
     private AudioService(OopsApp app, string? server)
     {
         _app = app;
-        _self = GCHandle.Alloc(this);
         _mainloop = pa_threaded_mainloop_new();
         if (_mainloop == 0)
             throw new InvalidOperationException("libpulse could not create a main loop.");
         _context = pa_context_new(pa_threaded_mainloop_get_api(_mainloop), "oopshell");
+        if (_context == 0)
+        {
+            pa_threaded_mainloop_free(_mainloop);
+            throw new InvalidOperationException("libpulse could not create a context.");
+        }
+        _self = GCHandle.Alloc(this);
         nint userdata = GCHandle.ToIntPtr(_self);
         pa_context_set_state_callback(_context, &OnState, userdata);
         pa_context_set_subscribe_callback(_context, &OnEvent, userdata);

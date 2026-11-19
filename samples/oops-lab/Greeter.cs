@@ -84,8 +84,8 @@ internal sealed class Greeter(OopsApp app, Toplevel window, string session)
                     AskPassword(user, "Wrong password. Try again.", wrong: true);
                 else
                 {
-                    _status = $"greetd: {result.Description}";
                     AskUser();
+                    _status = $"greetd: {result.Description}"; // after AskUser, which resets the status line
                 }
             }),
             OnCancel = AskUser,

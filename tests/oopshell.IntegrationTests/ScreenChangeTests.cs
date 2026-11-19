@@ -46,8 +46,7 @@ public sealed class ScreenChangeTests
             surfaces.Add(surface);
             Draw.SolidColor(surface, 0xFF000080);
         });
-        app.RunUntil(() => lockTask.IsCompleted, what: "locked");
-        var session = lockTask.Result;
+        var session = app.Complete(lockTask);
         string first = surfaces[0].Output.Name;
 
         // Unplug the only output while locked: its surface goes, the session stays locked.

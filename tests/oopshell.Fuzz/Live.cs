@@ -103,7 +103,7 @@ internal static class Live
         return task.IsCompleted ? task.GetAwaiter().GetResult() : throw new TimeoutException("No answer.");
     }
 
-    // ---- random D-Bus values --------------------------------------------------------------------
+    // Random D-Bus values
 
     /// <summary>A mutated string a peer could really send: the bus refuses NUL and invalid UTF-8 (and disconnects the sender).</summary>
     private static string Wire(string s) => new(Encoding.UTF8.GetString(Encoding.UTF8.GetBytes(s.Replace('\0', ' ')))
@@ -159,9 +159,9 @@ internal static class Live
         }
     }
 
-    // ---- targets --------------------------------------------------------------------------------
+    // Targets
 
-    public static IEnumerable<(string, Action<Mutator>)> Targets(Findings findings, string work, string[] tokens)
+    public static IEnumerable<(string, Action<Mutator>)> Targets(Findings findings, string work)
     {
         yield return ("greetd", m =>
         {
@@ -205,8 +205,7 @@ internal static class Live
             {
             }
             server.Wait(500);
-        }
-        );
+        });
 
         OopsApp? ipcApp = null;
         IpcServer? ipc = null;
@@ -234,8 +233,7 @@ internal static class Live
             Pump(ipcApp, () => send.IsCompleted, 3000);
             if (!Await(ipcApp, Task.Run(() => IpcServer.IsRunning(name))))
                 throw new InvalidOperationException("The IPC server stopped answering.");
-        }
-        );
+        });
 
         OopsApp? nApp = null;
         DBusConnection? nClient = null;
@@ -279,8 +277,7 @@ internal static class Live
                 if (m.Random.Next(3) == 0)
                     notifications.Close(n);
             }
-        }
-        );
+        });
 
         OopsApp? mApp = null;
         FakeObject? player = null;
@@ -322,8 +319,7 @@ internal static class Live
             });
             Pump(mApp, () => false, 30);
             _ = media!.Active?.Title;
-        }
-        );
+        });
 
         OopsApp? tApp = null;
         FakeObject? item = null;
@@ -358,11 +354,10 @@ internal static class Live
             catch (TimeoutException)
             {
             }
-            itemBus.EmitSignal("/StatusNotifierItem", "org.kde.StatusNotifierItem", new[] { "NewIcon", "NewTitle", "NewStatus", "NewToolTip" }[m.Random.Next(4)]);
+            itemBus!.EmitSignal("/StatusNotifierItem", "org.kde.StatusNotifierItem", new[] { "NewIcon", "NewTitle", "NewStatus", "NewToolTip" }[m.Random.Next(4)]);
             Pump(tApp, () => false, 30);
             foreach (var i in tray!.Items)
                 _ = i.Title;
-        }
-        );
+        });
     }
 }

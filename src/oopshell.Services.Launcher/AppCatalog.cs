@@ -30,6 +30,7 @@ public static class AppLauncher
     }
 }
 
+/// <summary>Options for <see cref="AppCatalog.Start"/>.</summary>
 public sealed record AppCatalogOptions
 {
     /// <summary>Data dirs to read (default: <c>$XDG_DATA_HOME</c> then <c>$XDG_DATA_DIRS</c>).</summary>

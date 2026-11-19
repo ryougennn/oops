@@ -83,7 +83,7 @@ public class SwapchainTests(SwayFixture sway)
         app.RunUntil(() => log.Any(l => l.Size.Width == 800), what: "full width");
 
         using var second = new Toplevel(app);
-        var frames = Draw.SolidColor(second, 0xFF000000);
+        Draw.SolidColor(second, 0xFF000000);
         app.RunUntil(() => log.Any(l => l.Size.Width == 400), what: "half width");
 
         var resized = log.First(l => l.Size.Width == 400);
@@ -95,7 +95,7 @@ public class SwapchainTests(SwayFixture sway)
     {
         using var app = sway.Connect();
         using var window = new Toplevel(app);
-        var frames = Draw.SolidColor(window, 0xFF000000);
+        Draw.SolidColor(window, 0xFF000000);
         var infos = new List<PresentationInfo>();
         window.Presented += infos.Add;
         window.Invalidate();

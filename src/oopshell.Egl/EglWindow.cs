@@ -1,6 +1,5 @@
 using System.Drawing;
 using System.Runtime.InteropServices;
-using oopshell.Native;
 using static oopshell.Native.Egl;
 
 namespace oopshell.Egl;
@@ -35,6 +34,7 @@ public sealed unsafe class EglDisplay : IDisposable
 {
     private static readonly Dictionary<OopsApp, EglDisplay> s_displays = new();
     private readonly HashSet<string> _extensions;
+    private bool _disposed;
 
     private EglDisplay(OopsApp app, EglOptions options)
     {
@@ -131,8 +131,6 @@ public sealed unsafe class EglDisplay : IDisposable
     /// <summary>Raised before the display is terminated (e.g. so a GPU drawing library can drop its context).</summary>
     public event Action? Disposing;
 
-    private bool _disposed;
-
     /// <summary>Looks up a GL or EGL function, for GL binding libraries (Silk.NET, OpenTK, Skia's GRGlInterface).</summary>
     public static nint GetProcAddress(string name) => Native.Egl.GetProcAddress(name);
 
@@ -172,8 +170,8 @@ public sealed unsafe class EglWindow : IDisposable
     }
 
     /// <summary>
-    /// Creates the wl_egl_window and EGLSurface on first use, at the real size. Created any earlier (before the
-    /// first configure, at a placeholder size), Mesa may present its first frame from a buffer of the old size.
+    /// Creates the wl_egl_window and EGLSurface on first use, at the real size. If they were created before the
+    /// first configure at a placeholder size, Mesa could present the first frame from a buffer of the old size.
     /// </summary>
     private void EnsureCreated()
     {

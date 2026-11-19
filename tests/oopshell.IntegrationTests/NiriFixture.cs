@@ -13,7 +13,7 @@ public sealed class NiriFixture : IDisposable
 
     public NiriFixture(string extraConfig = "")
     {
-        if (!SwayFixtureHelpers.OnPath("niri") || !SwayFixtureHelpers.OnPath("sway"))
+        if (!SwayFixture.OnPath("niri") || !SwayFixture.OnPath("sway"))
         {
             SkipReason = "niri and sway are required.";
             return;
@@ -23,7 +23,7 @@ public sealed class NiriFixture : IDisposable
         File.WriteAllText(Path.Combine(RuntimeDir, "sway.conf"), "output HEADLESS-1 resolution 1280x800\ndefault_border none\nxwayland disable\n");
         File.WriteAllText(Path.Combine(RuntimeDir, "niri.kdl"), "hotkey-overlay { skip-at-startup; }\nprefer-no-csd\n" + extraConfig);
 
-        var sway = Start("sway", ["-c", Path.Combine(RuntimeDir, "sway.conf")], new()
+        Start("sway", ["-c", Path.Combine(RuntimeDir, "sway.conf")], new()
         {
             ["WLR_BACKENDS"] = "headless",
             ["WLR_LIBINPUT_NO_DEVICES"] = "1",
@@ -45,14 +45,13 @@ public sealed class NiriFixture : IDisposable
             .FirstOrDefault(f => !f.EndsWith(".lock") && f != swayDisplay && File.Exists(f + ".lock")));
         if (WaylandSocket is null)
             SkipReason = "niri did not start.";
-        _ = sway;
     }
 
     public string? SkipReason { get; }
     public string RuntimeDir { get; } = "";
     public string? WaylandSocket { get; }
 
-    private Process Start(string program, string[] args, Dictionary<string, string> env)
+    private void Start(string program, string[] args, Dictionary<string, string> env)
     {
         var start = new ProcessStartInfo(program, args) { RedirectStandardOutput = true, RedirectStandardError = true };
         start.Environment.Clear();
@@ -67,7 +66,6 @@ public sealed class NiriFixture : IDisposable
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
         _processes.Add(process);
-        return process;
     }
 
     private static string? WaitFor(Func<string?> find)
@@ -102,10 +100,4 @@ public sealed class NiriFixture : IDisposable
         if (RuntimeDir.Length > 0)
             Directory.Delete(RuntimeDir, recursive: true);
     }
-}
-
-internal static class SwayFixtureHelpers
-{
-    public static bool OnPath(string program) =>
-        (Environment.GetEnvironmentVariable("PATH") ?? "").Split(':').Any(dir => File.Exists(Path.Combine(dir, program)));
 }

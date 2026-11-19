@@ -16,7 +16,12 @@ Directory.CreateDirectory(findingsDir);
 var work = Directory.CreateTempSubdirectory("oopsfuzz.").FullName;
 var findings = new Findings(findingsDir);
 
-string Seed(string path, int maxChars = 20000) => File.Exists(path) ? File.ReadAllText(path) is var t && t.Length > maxChars ? t[..maxChars] : t : "";
+string Seed(string path, int maxChars = 20000)
+{
+    string text = File.Exists(path) ? File.ReadAllText(path) : "";
+    return text.Length > maxChars ? text[..maxChars] : text;
+}
+
 var desktopSeeds = Directory.Exists("/usr/share/applications")
     ? Directory.GetFiles("/usr/share/applications", "*.desktop").OrderBy(p => p).Take(40).Select(p => Seed(p)).Where(t => t.Length > 0).ToList()
     : [];
@@ -101,7 +106,7 @@ var targets = new List<(string Name, Action<Mutator> Run)>
         Unescape(line);
     }),
 };
-targets.AddRange(Live.Targets(findings, work, tokens));
+targets.AddRange(Live.Targets(findings, work));
 
 foreach (var (name, run) in targets.Where(t => only.Count == 0 || only.Contains(t.Name)))
 {
@@ -182,7 +187,7 @@ namespace oopshell.Fuzz
                 return;
             }
             _seen[key] = (target, e, 1);
-            File.WriteAllText(Path.Combine(dir, $"{target}-{_seen.Count}.txt"), $"{e}\n\n--- input ---\n{Input}", new UTF8Encoding(false, throwOnInvalidBytes: false));
+            File.WriteAllText(Path.Combine(dir, $"{target}-{_seen.Count}.txt"), $"{e}\n\n--- input ---\n{Input}", Encodings.Lenient);
         }
 
         public void Report()

@@ -5,15 +5,12 @@ namespace oopshell.IntegrationTests;
 [Collection("sway")]
 public class LayerSurfaceTests(SwayFixture sway)
 {
-    private static LayerSurface CreateBar(OopsApp app, Output? output, int height)
+    private static LayerSurface CreateBar(OopsApp app, Output? output, int height) => new(app, output, Layer.Top, "test-bar")
     {
-        return new LayerSurface(app, output, Layer.Top, "test-bar")
-        {
-            Anchor = Anchor.Bottom | Anchor.Left | Anchor.Right,
-            Size = new Size(0, height),
-            ExclusiveZone = height,
-        };
-    }
+        Anchor = Anchor.Bottom | Anchor.Left | Anchor.Right,
+        Size = new Size(0, height),
+        ExclusiveZone = height,
+    };
 
     [Fact]
     public void Exclusive_zone_shrinks_toplevels()
@@ -132,10 +129,5 @@ public class LayerSurfaceTests(SwayFixture sway)
             sway.Swaymsg("output", "HEADLESS-1", "scale", "1");
             app.RunUntil(() => app.Outputs[0].LogicalSize.Width == 800 && bar.Scale == 1, what: "scale reset");
         }
-    }
-
-    private sealed class Disposer(Action action) : IDisposable
-    {
-        public void Dispose() => action();
     }
 }

@@ -3,8 +3,7 @@ using Tmds.DBus.Protocol;
 
 namespace oopshell.Services.Tray;
 
-/// <summary>An ARGB32 icon image from a tray item (network byte order, as the spec sends it).</summary>
-/// <summary>An icon image from the item: always 1..512 pixels per side, with exactly Width × Height × 4 bytes (ARGB32, network byte order).</summary>
+/// <summary>A tray icon image: 1..512 pixels per side, exactly Width × Height × 4 bytes of ARGB32 in network byte order.</summary>
 public sealed record TrayPixmap(int Width, int Height, byte[] Argb);
 
 /// <summary>A tray icon (<c>org.kde.StatusNotifierItem</c>). Properties refresh when the item signals changes.</summary>
@@ -71,7 +70,7 @@ public sealed class TrayItem
         }
         catch (DBusErrorReplyException)
         {
-            return; // the item went away; the host removes it when its name vanishes
+            return; // The item is gone; the host removes it when its name vanishes.
         }
         await _app.InvokeAsync(() =>
         {

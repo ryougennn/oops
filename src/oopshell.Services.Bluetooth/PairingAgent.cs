@@ -67,6 +67,7 @@ public sealed class BluetoothPairingRequest
     {
         if (IsFinished || _context is null)
             return;
+        // Not a using declaration: a using variable cannot be passed by ref.
         var w = _context.CreateReplyWriter(signature);
         try
         {
@@ -159,6 +160,16 @@ internal sealed class PairingAgent(OopsApp app, BluetoothService service, string
         _pending.Add(created);
         created.Finished += () => _pending.Remove(created);
         service.RaisePairingRequested(created);
+    }
+
+    /// <summary>Ends the Show requests for <paramref name="devicePath"/> (they need no answer).</summary>
+    public void EndDisplays(string devicePath)
+    {
+        foreach (var request in _pending.Where(r => !r.NeedsAnswer && r.DevicePath == devicePath).ToList())
+        {
+            _pending.Remove(request);
+            request.CancelledByBlueZ();
+        }
     }
 
     public void CancelAll()

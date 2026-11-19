@@ -132,7 +132,7 @@ public sealed class SwayFixture : IDisposable
             Directory.Delete(RuntimeDir, recursive: true);
     }
 
-    private static bool OnPath(string tool) =>
+    internal static bool OnPath(string tool) =>
         (Environment.GetEnvironmentVariable("PATH") ?? "").Split(':').Any(dir => File.Exists(Path.Combine(dir, tool)));
 
     private static string FindRepoRoot([CallerFilePath] string path = "")

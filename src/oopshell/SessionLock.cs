@@ -36,9 +36,8 @@ public sealed class LockSurface : Surface
 /// outputs plugged in while locked. Call <see cref="Unlock"/> only after your code authenticated the user.
 /// </summary>
 /// <remarks>
-/// If the process crashes or exits while locked, the compositor keeps the session locked (showing a
-/// fallback or blank screen). That is intended: a crash must never unlock the session.
-/// Recovery is compositor-specific (start a new locker, or switch VT and use the compositor's IPC).
+/// If the process exits while locked, the compositor keeps the session locked and shows a fallback or blank
+/// screen, so a crash never unlocks the session. Recovery is compositor-specific, such as starting a new locker.
 /// </remarks>
 public sealed class SessionLock
 {
@@ -68,12 +67,12 @@ public sealed class SessionLock
 
     internal Task<SessionLock> LockedTask => _locked.Task;
 
-    /// <summary>True once the compositor confirmed the lock (every output shows a lock surface or is blanked).</summary>
+    /// <summary>True once the compositor has confirmed the lock and every output shows a lock surface or is blank.</summary>
     public bool IsLocked { get; private set; }
 
     public IReadOnlyCollection<LockSurface> Surfaces => _surfaces.Values;
 
-    /// <summary>The compositor ended the lock without an unlock (another locker took over, or it refused to lock).</summary>
+    /// <summary>Raised when the compositor ends the lock without an unlock, for example because another locker is running.</summary>
     public event Action? Finished;
 
     /// <summary>Unlocks the session and destroys the lock surfaces.</summary>

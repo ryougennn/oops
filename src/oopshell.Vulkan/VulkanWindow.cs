@@ -76,7 +76,7 @@ public sealed unsafe class VulkanWindow : IDisposable
         ulong pool;
         Check(vkCreateCommandPool(device.Device, &poolInfo, 0, &pool), "vkCreateCommandPool");
         _commandPool = pool;
-        _acquireFence = CreateFence(signaled: false);
+        _acquireFence = CreateFence();
     }
 
     /// <summary>Creates a Vulkan window for <paramref name="surface"/>. Throws <see cref="NotSupportedException"/> without Vulkan.</summary>
@@ -260,12 +260,12 @@ public sealed unsafe class VulkanWindow : IDisposable
                 Before = buffers[2 * i],
                 After = buffers[2 * i + 1],
                 RenderDone = CreateSemaphore(),
-                Done = CreateFence(signaled: false),
+                Done = CreateFence(),
             };
         }
     }
 
-    /// <summary>Destroys the old swapchain's images (after <see cref="ImagesDestroying"/>), keeping the swapchain handle for reuse as oldSwapchain.</summary>
+    /// <summary>Raises <see cref="ImagesDestroying"/>, then destroys the swapchain and its per-image resources.</summary>
     private void DestroySlots()
     {
         if (_slots.Length == 0 && _swapchain == 0)
@@ -336,9 +336,9 @@ public sealed unsafe class VulkanWindow : IDisposable
         Check(vkResetFences(Device.Device, 1, &fence), "vkResetFences");
     }
 
-    private ulong CreateFence(bool signaled)
+    private ulong CreateFence()
     {
-        var info = new VkFenceCreateInfo { sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, flags = signaled ? 1u : 0 };
+        var info = new VkFenceCreateInfo { sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
         ulong fence;
         Check(vkCreateFence(Device.Device, &info, 0, &fence), "vkCreateFence");
         return fence;

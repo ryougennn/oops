@@ -176,9 +176,3 @@ public class PolkitTests(SwayFixture sway)
         }
     }
 }
-
-internal sealed class TempDir : IDisposable
-{
-    public string Path { get; } = Directory.CreateTempSubdirectory("oopstest.").FullName;
-    public void Dispose() => Directory.Delete(Path, recursive: true);
-}

@@ -18,20 +18,20 @@ public abstract partial class Surface : IDisposable
     private readonly WpViewport? _viewport;
     private readonly WpFractionalScaleV1? _fractionalScale;
     private readonly List<Output> _enteredOutputs = new();
-    private int _preferredBufferScale;    // from wl_surface.preferred_buffer_scale (v6); 0 = not sent
-    private int _fractionalScale120;      // from wp_fractional_scale_v1; 0 = not sent
+    private int _preferredBufferScale; // wl_surface.preferred_buffer_scale (v6); 0 = not sent
+    private int _fractionalScale120;   // wp_fractional_scale_v1, in 1/120ths; 0 = not sent
 
     private bool _needsInitialCommit = true;
     private bool _dirty;
-    private bool _renderNow;              // render in the next phase even if a frame callback is in flight
+    private bool _renderNow;           // render in the next phase even if a frame callback is in flight
     private bool _presentedThisFrame;
     private bool _inRender;
-    private Rectangle _damage;            // accumulated, in buffer coordinates
+    private Rectangle _damage;         // accumulated, in buffer coordinates
     private WlCallback? _frameCallback;
-    private Action<WlCallbackDoneEvent>? _onFrameDone; // cached so each frame does not allocate a new delegate
+    private Action<WlCallbackDoneEvent>? _onFrameDone; // cached to avoid a delegate allocation per frame
     private uint _lastFrameTime;
 
-    // State last sent to the compositor, so it is only re-sent when it changes.
+    // Last state sent to the compositor; re-sent only on change.
     private int _sentBufferScale = 1;
     private Size _sentViewportSize;
     private bool _regionsDirty = true;
@@ -92,7 +92,11 @@ public abstract partial class Surface : IDisposable
     /// <summary>The outputs this surface is (partly) shown on.</summary>
     public IReadOnlyList<Output> Outputs => _enteredOutputs;
 
-    /// <summary>Draw and present exactly once (via a swapchain, EGL, or <see cref="PrepareCommit"/> + your own commit).</summary>
+    /// <summary>Popups whose parent is this surface; they are destroyed first, as xdg-shell requires.</summary>
+    internal List<Popup> ChildPopups { get; } = new();
+
+    /// <summary>Raised when the surface should draw a frame.</summary>
+    /// <remarks>The handler must present exactly once: through a swapchain, EGL, or <see cref="PrepareCommit"/> followed by its own commit.</remarks>
     public event Action<RenderFrame>? Render;
 
     /// <summary>Raised after each configure and scale change, before the resulting <see cref="Render"/>.</summary>
@@ -116,14 +120,15 @@ public abstract partial class Surface : IDisposable
     public event Action<TouchEvent>? TouchUp;
     public event Action<TouchEvent>? TouchCancel;
 
-    /// <summary>Where the surface accepts input, in logical coordinates. Null = everywhere; <see cref="Region.Empty"/> = click-through.</summary>
+    /// <summary>Where the surface accepts input, in logical coordinates.</summary>
+    /// <remarks>Null means everywhere; <see cref="Region.Empty"/> makes the surface click-through.</remarks>
     public Region? InputRegion
     {
         get => _inputRegion;
         set { _inputRegion = value; _regionsDirty = true; Invalidate(Rectangle.Empty); }
     }
 
-    /// <summary>Area that is fully opaque (an optimization hint for the compositor).</summary>
+    /// <summary>The fully opaque area, in logical coordinates; an optimization hint for the compositor.</summary>
     public Region? OpaqueRegion
     {
         get => _opaqueRegion;
@@ -158,9 +163,11 @@ public abstract partial class Surface : IDisposable
     }
 
     /// <summary>
-    /// Call right before committing a buffer yourself (raw-handle path). Requests the next frame callback and
-    /// sends pending surface state (scale, viewport, regions). The swapchain and EGL helpers call this for you.
+    /// Requests the next frame callback and sends pending surface state (scale, viewport, regions).
     /// </summary>
+    /// <remarks>
+    /// Call right before committing a buffer through the raw handles. The swapchain and EGL helpers call it.
+    /// </remarks>
     public void PrepareCommit()
     {
         ObjectDisposedException.ThrowIf(IsDisposed, this);
@@ -212,7 +219,6 @@ public abstract partial class Surface : IDisposable
         _lastFrameTime = time;
     }
 
-    /// <summary>Called by the app's render phase.</summary>
     internal void RunRenderPhase()
     {
         if (IsDisposed)
@@ -251,13 +257,13 @@ public abstract partial class Surface : IDisposable
 
     internal bool IsRendering => _inRender;
 
-    /// <summary>A buffer has been committed (so a state-only commit keeps the surface mapped).</summary>
+    /// <summary>True once a buffer has been committed, so a state-only commit keeps the surface mapped.</summary>
     internal bool HasPresented { get; private set; }
 
-    /// <summary>False for roles that are configured without an initial commit (and must not commit before acking).</summary>
+    /// <summary>False for roles that are configured without an initial commit and must not commit before the first ack.</summary>
     private protected virtual bool CommitsBeforeConfigure => true;
 
-    /// <summary>Last chance for a role to send state before the initial commit (e.g. a popup grab).</summary>
+    /// <summary>Lets a role send state, such as a popup grab, before the initial commit.</summary>
     private protected virtual void BeforeInitialCommit() { }
 
     /// <summary>Roles call this after acking a configure with the new logical size.</summary>
@@ -276,7 +282,7 @@ public abstract partial class Surface : IDisposable
         _renderNow = true;
     }
 
-    /// <summary>Scale to assume before the compositor says anything (e.g. the layer surface's output).</summary>
+    /// <summary>The scale to assume before the compositor reports one.</summary>
     private protected virtual int InitialScaleHint => 1;
 
     private double ComputeScale()
@@ -323,7 +329,7 @@ public abstract partial class Surface : IDisposable
     private protected static Size GrowBy(Size size, Margins m) =>
         new(size.Width + m.Left + m.Right, size.Height + m.Top + m.Bottom);
 
-    /// <summary>Sends xdg_surface.set_window_geometry for margins (applied with the next commit); once set it is kept up to date.</summary>
+    /// <summary>Sends <c>xdg_surface.set_window_geometry</c> for the margins; once sent, it is re-sent on every call.</summary>
     private protected static void SendWindowGeometry(XdgSurface xdg, Margins m, Size geometry, ref bool sent)
     {
         if (m == default && !sent)
@@ -367,9 +373,6 @@ public abstract partial class Surface : IDisposable
     /// <summary>Destroys the role objects. The base then destroys the <c>wl_surface</c>.</summary>
     private protected abstract void DestroyRole();
 
-    /// <summary>Popups whose parent is this surface; they are destroyed first, as xdg-shell requires.</summary>
-    internal List<Popup> ChildPopups { get; } = new();
-
     public void Dispose()
     {
         if (IsDisposed)
@@ -392,6 +395,7 @@ public sealed partial class OopsApp
 {
     private readonly List<Surface> _surfaces = new();
     private readonly Dictionary<WlSurface, Surface> _surfacesByProxy = new();
+    private readonly List<Surface> _renderScratch = new();
 
     /// <summary>Every live oopshell surface.</summary>
     public IReadOnlyList<Surface> Surfaces => _surfaces;
@@ -416,12 +420,10 @@ public sealed partial class OopsApp
     /// <summary>Initial commits and Render events for every surface that needs one.</summary>
     private void RenderPhase()
     {
-        // Iterate a copy (render handlers may create or dispose surfaces), reusing one list to avoid garbage.
+        // Render handlers may create or dispose surfaces; iterate a reused copy.
         _renderScratch.Clear();
         _renderScratch.AddRange(_surfaces);
         foreach (var surface in _renderScratch)
             surface.RunRenderPhase();
     }
-
-    private readonly List<Surface> _renderScratch = new();
 }

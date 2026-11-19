@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+using System.Text;
 using oopshell.Services.Desktop;
 
 namespace oopshell.Services.Launcher;
@@ -56,7 +58,7 @@ public static class AppSearch
     }
 
     /// <summary>A field's text prepared once: folded, split into folded words, and their initials.</summary>
-    internal sealed class FieldText
+    private sealed class FieldText
     {
         public readonly string Folded;
         public readonly List<string> Words;
@@ -71,15 +73,15 @@ public static class AppSearch
     }
 
     /// <summary>
-    /// Everything search needs from one entry, computed on first use and kept as long as the entry lives (a
-    /// catalog reload makes new entries, so stale ones are collected with their caches).
+    /// Everything search needs from one entry, computed on first use and cached for the entry's lifetime
+    /// (a catalog reload creates new entries, so stale caches are collected with them).
     /// </summary>
     private sealed class Prepared
     {
-        private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<DesktopEntry, Prepared> s_cache = new();
+        private static readonly ConditionalWeakTable<DesktopEntry, Prepared> s_cache = new();
 
-        public readonly FieldText Name;
-        public readonly FieldText? DefaultName, Generic, Program, IdTail;
+        public readonly FieldText Name, IdTail;
+        public readonly FieldText? DefaultName, Generic, Program;
         public readonly FieldText[] Keywords, DefaultKeywords;
         public readonly string? Comment;
         public readonly (DesktopAction Action, FieldText Label, FieldText? DefaultLabel)[] Actions;
@@ -115,8 +117,7 @@ public static class AppSearch
             best = Math.Max(best, Field(keyword, q, terms, compact) * 0.55);
         if (app.Program is { } program)
             best = Math.Max(best, Field(program, q, terms, compact) * 0.5);
-        if (app.IdTail is { } idTail)
-            best = Math.Max(best, Field(idTail, q, terms, compact) * 0.5);
+        best = Math.Max(best, Field(app.IdTail, q, terms, compact) * 0.5);
         if (app.Comment is { } comment)
             best = Math.Max(best, Contains(comment, q, terms) * 0.25);
         return best;
@@ -127,9 +128,7 @@ public static class AppSearch
         app.Exec?.Split(' ', StringSplitOptions.RemoveEmptyEntries).SkipWhile(t => t == "env" || t.Contains('='))
             .FirstOrDefault() is { } p ? Path.GetFileName(p.Trim('"')) : null;
 
-    /// <summary>0..100 for one field (raw text; tests use this).</summary>
-    internal static double Field(string text, string q, string[] terms) => Field(new FieldText(text), q, terms, q.Replace(" ", ""));
-
+    /// <summary>0..100 for one field.</summary>
     private static double Field(FieldText field, string q, string[] terms, string compact)
     {
         string f = field.Folded;
@@ -208,7 +207,7 @@ public static class AppSearch
     internal static List<string> Words(string text)
     {
         var words = new List<string>();
-        var current = new System.Text.StringBuilder();
+        var current = new StringBuilder();
         for (int i = 0; i < text.Length; i++)
         {
             char c = text[i];

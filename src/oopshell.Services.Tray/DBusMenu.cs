@@ -137,7 +137,7 @@ public sealed class DBusMenu : IDisposable
             ToggleType = Str("toggle-type") ?? "",
             ToggleState = p.TryGetValue("toggle-state", out var state) && state.Type == VariantValueType.Int32 ? state.GetInt32() : -1,
             IconName = Str("icon-name") is { Length: > 0 } icon ? icon : null,
-            IconPng = p.TryGetValue("icon-data", out var data) && data.Type == VariantValueType.Array ? data.GetArray<byte>() : null,
+            IconPng = p.TryGetValue("icon-data", out var data) ? data.AsBytes() : null,
             Children = children.Where(c => c.Visible).ToList(),
         };
     }

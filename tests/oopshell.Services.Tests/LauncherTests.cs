@@ -20,7 +20,7 @@ public sealed class LauncherTests : IDisposable
         return path;
     }
 
-    // ---- folding and search --------------------------------------------------------------------
+    // Folding and search
 
     [Theory]
     [InlineData("Café Ångström", "cafe angstrom")]
@@ -100,7 +100,7 @@ public sealed class LauncherTests : IDisposable
         Assert.Equal(0, UsageHistory.Load(path).Boost("kept.desktop"));
     }
 
-    // ---- what distributions actually ship -------------------------------------------------------
+    // What distributions actually ship
 
     [Fact]
     public void Real_world_layouts_load_with_their_quirks()
@@ -156,7 +156,7 @@ public sealed class LauncherTests : IDisposable
         Assert.Equal(["steam", "steam://rungameid/620"], visible.Single(e => e.Name == "Portal 2").ExpandExec());
     }
 
-    // ---- terminals ---------------------------------------------------------------------------
+    // Terminals
 
     private string FakePath(params string[] programs)
     {
@@ -188,7 +188,7 @@ public sealed class LauncherTests : IDisposable
         Assert.Equal([alacritty, "-e", "top", "-d", "1"], AppLauncher.CommandLine(top, terminal: alacritty));
     }
 
-    // ---- MIME types and default applications --------------------------------------------------------
+    // MIME types and default applications
 
     [Fact]
     public void Files_folders_and_urls_open_with_the_users_defaults()

@@ -98,8 +98,8 @@ public sealed class ShmSwapchain : IDisposable
 
     private void Resize(Size size)
     {
-        // Buffers of the old size die as soon as the compositor lets go of them; their pool can go right away
-        // (wl_shm_pool.destroy keeps existing buffers valid).
+        // Busy buffers of the old size are destroyed on release. The old pool can go now:
+        // wl_shm_pool.destroy keeps existing buffers valid.
         foreach (var buffer in _buffers.Where(b => !b.IsBusy).ToList())
         {
             _buffers.Remove(buffer);
@@ -129,6 +129,7 @@ public sealed unsafe class ShmBuffer : IDisposable
     private readonly int _slot;
     private readonly WlBuffer _proxy;
     private bool _leased;
+    private long _leaseFrame;
 
     internal ShmBuffer(ShmSwapchain chain, ShmPool pool, int slot, Size size)
     {
@@ -151,8 +152,6 @@ public sealed unsafe class ShmBuffer : IDisposable
 
     internal long LastPresentedFrame { get; set; }
 
-    private long _leaseFrame;
-
     public Size Size { get; }
 
     /// <summary>Bytes per row.</summary>
@@ -164,10 +163,10 @@ public sealed unsafe class ShmBuffer : IDisposable
     /// <summary>Pixels, row-major, <see cref="Stride"/>/4 per row. For ARGB8888 each is premultiplied 0xAARRGGBB.</summary>
     public Span<uint> Pixels => new((void*)Pointer, Size.Width * Size.Height);
 
-    /// <summary>0 = contents undefined; N = contents are what was presented N frames ago.</summary>
+    /// <summary>How many frames ago the buffer's contents were presented; 0 if the contents are undefined.</summary>
     public int Age => AgeAt(_leaseFrame);
 
-    /// <summary>The area you must redraw for the buffer to be fully up to date (this frame's damage plus <see cref="Age"/> history).</summary>
+    /// <summary>The area to redraw to bring the buffer up to date: this frame's damage plus the damage of the last <see cref="Age"/> frames.</summary>
     public Rectangle Damage { get; private set; }
 
     internal int AgeAt(long currentFrame) => LastPresentedFrame == 0 ? 0 : (int)(currentFrame + 1 - LastPresentedFrame);
@@ -208,7 +207,7 @@ public sealed unsafe class ShmBuffer : IDisposable
     /// <summary>Presents with full damage.</summary>
     public void Present() => Present(new Rectangle(Point.Empty, Size));
 
-    /// <summary>Returns the buffer unpresented, if it was not presented. Safe to call after <see cref="Present(Rectangle)"/>.</summary>
+    /// <summary>Returns the buffer to the swapchain if it was not presented. Safe to call after <see cref="Present(Rectangle)"/>.</summary>
     public void Dispose()
     {
         if (!_leased)

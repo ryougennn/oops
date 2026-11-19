@@ -44,7 +44,7 @@ public class IpcTests(SwayFixture sway)
         dead.Bind(new UnixDomainSocketEndPoint(name));
         Assert.True(File.Exists(name));
         Assert.Equal(IpcStatus.NotRunning, IpcServer.Send(name, "anything").Status);
-        using (var server = IpcServer.Listen(app, name, _ => "alive"))
+        using (IpcServer.Listen(app, name, _ => "alive"))
             Assert.Equal("alive", app.Complete(Task.Run(() => IpcServer.Send(name, "x"))).Text);
         Assert.False(File.Exists(name)); // disposed: the socket file is gone
     }

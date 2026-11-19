@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 
 namespace oopshell.Native;
 
-/// <summary>The handful of libc calls oopshell needs. All set errno (read it with <see cref="Marshal.GetLastPInvokeError"/>).</summary>
+/// <summary>The handful of libc calls oopshell needs. Those marked <c>SetLastError</c> set errno (read it with <see cref="Marshal.GetLastPInvokeError"/>).</summary>
 public static unsafe partial class LibC
 {
     private const string Lib = "libc";
@@ -91,7 +91,7 @@ public static unsafe partial class LibC
 
     public static string ErrorText(int errno) => Marshal.GetPInvokeErrorMessage(errno);
 
-    /// <summary>Throws an <see cref="IOException"/> describing the last errno.</summary>
+    /// <summary>Creates an <see cref="IOException"/> describing the last errno, for the caller to throw.</summary>
     public static IOException LastError(string what)
     {
         int errno = Marshal.GetLastPInvokeError();

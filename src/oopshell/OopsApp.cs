@@ -33,6 +33,7 @@ public sealed partial class OopsApp : IDisposable, IEventSource
     private int _exitCode;
     private bool _disposed;
     private bool _sourceAdded;
+    private bool _waitingForWritable;
 
     private OopsApp(OopsOptions options)
     {
@@ -50,9 +51,9 @@ public sealed partial class OopsApp : IDisposable, IEventSource
         Shm = Get<WlShm>();
         foreach (var global in _globals.ToList())
             BindKnownGlobal(global);
-        BindBackgroundEffects(); // its capabilities arrive in the next roundtrip
+        BindBackgroundEffects(); // capabilities arrive in the next roundtrip
         Display.Roundtrip(); // initial output/seat state
-        Display.Roundtrip(); // events triggered by objects bound in the previous roundtrip (xdg_output, keymaps)
+        Display.Roundtrip(); // events from objects bound in the previous roundtrip (xdg_output, keymaps)
         Initializing = false;
         Current = this;
     }
@@ -60,32 +61,26 @@ public sealed partial class OopsApp : IDisposable, IEventSource
     /// <summary>Connects to the compositor and binds the globals oopshell uses.</summary>
     public static OopsApp Connect(OopsOptions? options = null) => new(options ?? new OopsOptions());
 
-    /// <summary>The most recently connected app; used by hot reload, which has no other way in.</summary>
+    /// <summary>The most recently connected app; hot reload has no other way to reach it.</summary>
     internal static OopsApp? Current { get; private set; }
 
     internal bool Initializing { get; private set; }
 
     public OopsOptions Options { get; }
 
-    /// <summary>Posts to this app's UI thread. Installed as the current context while <see cref="Run"/> runs; hand it to libraries that call back on other threads.</summary>
+    /// <summary>Posts to this app's UI thread.</summary>
+    /// <remarks>Installed as the current context while <see cref="Run"/> runs. Hand it to libraries that call back on other threads.</remarks>
     public SynchronizationContext SynchronizationContext { get; }
 
     /// <summary>
-    /// An exception escaped one of your handlers: rendering, input, a timer, posted work, an awaited continuation,
-    /// a service event. By default it ends <see cref="Run"/> (the process usually exits), so bugs are not hidden.
-    /// Set <see cref="LoopExceptionEventArgs.Handled"/> to log it and keep the shell running instead; one
-    /// broken widget then does not take the desktop down. Connection loss always ends <see cref="Run"/>.
+    /// Raised when an exception escapes a handler: rendering, input, a timer, posted work, an awaited
+    /// continuation, or a service event.
     /// </summary>
+    /// <remarks>
+    /// Unhandled, the exception ends <see cref="Run"/>. Set <see cref="LoopExceptionEventArgs.Handled"/> to keep
+    /// the loop running. Connection loss always ends <see cref="Run"/>.
+    /// </remarks>
     public event Action<LoopExceptionEventArgs>? UnhandledException;
-
-    private bool HandleUnhandled(Exception e)
-    {
-        if (e is WaylandConnectionException or WaylandProtocolException || UnhandledException is null)
-            return false;
-        var args = new LoopExceptionEventArgs(e);
-        UnhandledException.Invoke(args);
-        return args.Handled;
-    }
 
     /// <summary>The raw connection (escape hatch).</summary>
     public WlDisplay Display { get; }
@@ -121,7 +116,7 @@ public sealed partial class OopsApp : IDisposable, IEventSource
     /// <summary><see cref="Get{T}"/>, or null if unsupported.</summary>
     public T? TryGet<T>() where T : WlProxy, IWaylandProxy<T> => Has<T>() ? Get<T>() : null;
 
-    /// <summary>Binds a new instance of any global. You own (and dispose) the result.</summary>
+    /// <summary>Binds a new instance of any global. The caller owns the result.</summary>
     public T Bind<T>(GlobalInfo global, uint? version = null) where T : WlProxy, IWaylandProxy<T>
     {
         if (global.Interface != T.InterfaceName)
@@ -168,8 +163,6 @@ public sealed partial class OopsApp : IDisposable, IEventSource
         }
     }
 
-    // ---- event loop -------------------------------------------------------------------------
-
     /// <summary>
     /// Runs the event loop on the calling thread (which becomes the UI thread) until <see cref="Quit"/>,
     /// SIGINT/SIGTERM, or connection loss. Returns the exit code; non-zero after connection loss.
@@ -203,6 +196,15 @@ public sealed partial class OopsApp : IDisposable, IEventSource
             SynchronizationContext.SetSynchronizationContext(previousContext);
         }
         return _exitCode;
+    }
+
+    private bool HandleUnhandled(Exception e)
+    {
+        if (e is WaylandConnectionException or WaylandProtocolException || UnhandledException is null)
+            return false;
+        var args = new LoopExceptionEventArgs(e);
+        UnhandledException.Invoke(args);
+        return args.Handled;
     }
 
     private void OnSignal(PosixSignalContext context)
@@ -260,8 +262,6 @@ public sealed partial class OopsApp : IDisposable, IEventSource
 
     int IEventSource.Fd => Display.Fd;
 
-    private bool _waitingForWritable;
-
     void IEventSource.BeforeWait()
     {
         Display.DispatchPending();
@@ -288,10 +288,8 @@ public sealed partial class OopsApp : IDisposable, IEventSource
         Display.DispatchPending();
     }
 
-    /// <summary>
-    /// Raised when the app is disposed, before the connection closes; add-ons (EGL, D-Bus) release
-    /// resources tied to the connection here.
-    /// </summary>
+    /// <summary>Raised when the app is disposed, before the connection closes.</summary>
+    /// <remarks>Add-ons (EGL, D-Bus) release resources tied to the connection here.</remarks>
     public event Action? Disposing;
 
     public void Dispose()

@@ -14,12 +14,6 @@ public class NetworkTests(SwayFixture sway)
     private static VariantValue Paths(params string[] paths) => new Array<ObjectPath>(paths.Select(p => new ObjectPath(p)));
     private static VariantValue Ssid(string s) => new Array<byte>(Encoding.UTF8.GetBytes(s));
 
-    private static void ReplyEmpty(MethodContext c)
-    {
-        using var w = c.CreateReplyWriter(null);
-        c.Reply(w.CreateMessage());
-    }
-
     [Fact]
     public void Devices_networks_and_wifi_actions()
     {
@@ -96,8 +90,8 @@ public class NetworkTests(SwayFixture sway)
             w.WriteObjectPath($"{Root}/ActiveConnection/10");
             c.Reply(w.CreateMessage());
         };
-        wifi.Methods["Disconnect"] = ReplyEmpty;
-        wifi.Methods["RequestScan"] = ReplyEmpty;
+        wifi.Methods["Disconnect"] = FakeDBusObject.ReplyEmpty;
+        wifi.Methods["RequestScan"] = FakeDBusObject.ReplyEmpty;
         app.Complete(nmBus.RequestNameOrThrowAsync(Nm).ContinueWith(t => t.Exception is null));
 
         var shellBus = app.Complete(OopsDBus.ConnectAsync(app, bus.Address));
@@ -148,9 +142,9 @@ public class NetworkTests(SwayFixture sway)
         agentManager.Methods["Register"] = c =>
         {
             registered.Add(c.Request.GetBodyReader().ReadString());
-            ReplyEmpty(c);
+            FakeDBusObject.ReplyEmpty(c);
         };
-        agentManager.Methods["Unregister"] = ReplyEmpty;
+        agentManager.Methods["Unregister"] = FakeDBusObject.ReplyEmpty;
         nmBus.AddMethodHandler(manager);
         nmBus.AddMethodHandler(agentManager);
         app.Complete(nmBus.RequestNameOrThrowAsync(Nm).ContinueWith(t => t.Exception is null));

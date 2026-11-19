@@ -3,9 +3,9 @@ using Tmds.DBus.Protocol;
 namespace oopshell.Services.DBus;
 
 /// <summary>
-/// Type-checked reads of values other processes sent: null instead of an exception when a peer sends the
-/// wrong type (a buggy or hostile app must not be able to break a shell by doing so). Integers convert between
-/// widths when they fit; a value wrapped in an extra variant is unwrapped.
+/// Type-checked reads of values sent by other processes. A wrong type yields null instead of throwing, so a
+/// buggy or hostile peer cannot crash the shell. Integers convert between widths when they fit; nested
+/// variants are unwrapped.
 /// </summary>
 public static class Variants
 {

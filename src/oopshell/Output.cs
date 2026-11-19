@@ -48,7 +48,7 @@ public sealed class Output
     /// <summary>The raw <c>wl_output</c> (escape hatch).</summary>
     public WlOutput Proxy { get; }
 
-    /// <summary>Connector-like name, e.g. <c>DP-1</c>.</summary>
+    /// <summary>The connector-like name, such as <c>DP-1</c>.</summary>
     public string Name { get; private set; } = "";
     public string Description { get; private set; } = "";
     public string Make { get; private set; } = "";
@@ -72,7 +72,7 @@ public sealed class Output
     /// <summary>Raised after the output's properties changed.</summary>
     public event Action? Changed;
 
-    /// <summary>Raised when the output is unplugged. The object is dead afterwards.</summary>
+    /// <summary>Raised when the output is unplugged. The object is unusable afterwards.</summary>
     public event Action? Removed;
 
     internal event Action<Output>? FirstDone;
@@ -116,10 +116,10 @@ public sealed partial class OopsApp
     public event Action<Output>? OutputAdded;
     public event Action<Output>? OutputRemoved;
 
-    /// <summary>
-    /// Calls <paramref name="perOutput"/> for every current and future output. Whatever it returns is disposed
-    /// when that output goes away (or when the returned subscription is disposed).
-    /// </summary>
+    /// <summary>Calls <paramref name="perOutput"/> for every current and future output.</summary>
+    /// <remarks>
+    /// The object it returns is disposed when that output is removed or when the returned subscription is disposed.
+    /// </remarks>
     public IDisposable ForEachOutput(Func<Output, IDisposable?> perOutput)
     {
         var created = new Dictionary<Output, IDisposable?>();

@@ -23,11 +23,11 @@ public sealed record LaunchOptions
 
 public sealed partial class OopsApp
 {
-    /// <summary>
-    /// Starts <paramref name="program"/> detached (it outlives the shell, via <c>setsid --fork</c>) with an
-    /// xdg-activation token in <c>XDG_ACTIVATION_TOKEN</c> and <c>DESKTOP_STARTUP_ID</c>, so the new window
-    /// may take focus. Without xdg-activation the program starts without a token.
-    /// </summary>
+    /// <summary>Starts <paramref name="program"/> detached, with an xdg-activation token so its window may take focus.</summary>
+    /// <remarks>
+    /// The program is started with <c>setsid --fork</c> so it outlives the shell. The token is passed in
+    /// <c>XDG_ACTIVATION_TOKEN</c> and <c>DESKTOP_STARTUP_ID</c>; without xdg-activation there is none.
+    /// </remarks>
     public async Task LaunchAsync(string program, IEnumerable<string>? args = null, LaunchOptions? options = null)
     {
         options ??= new LaunchOptions();

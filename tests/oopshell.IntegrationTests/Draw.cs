@@ -25,7 +25,10 @@ public static class Draw
     }
 
     /// <summary>Hooks a swapchain that fills each frame with <paramref name="argb"/>; returns a frame counter.</summary>
-    public static Func<int> SolidColor(Surface surface, uint argb)
+    public static Func<int> SolidColor(Surface surface, uint argb) => SolidColor(surface, () => argb);
+
+    /// <summary>Like <see cref="SolidColor(Surface, uint)"/>, with the color read on every frame.</summary>
+    public static Func<int> SolidColor(Surface surface, Func<uint> argb)
     {
         var chain = new ShmSwapchain(surface);
         int frames = 0;
@@ -34,7 +37,7 @@ public static class Draw
             using var buffer = chain.Acquire(frame);
             if (buffer is null)
                 return;
-            Fill(buffer, argb);
+            Fill(buffer, argb());
             buffer.Present(new Rectangle(Point.Empty, frame.BufferSize));
             frames++;
         };

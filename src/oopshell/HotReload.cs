@@ -5,10 +5,8 @@ using System.Drawing;
 
 namespace oopshell.HotReload
 {
-    /// <summary>
-    /// Called by .NET Hot Reload (<c>dotnet watch</c>) after code changes are applied, possibly on another thread.
-    /// Inert under NativeAOT, where hot reload does not exist.
-    /// </summary>
+    /// <summary>Called by .NET Hot Reload (<c>dotnet watch</c>) after code changes are applied.</summary>
+    /// <remarks>May be called on any thread. Never called under NativeAOT.</remarks>
     internal static class Handler
     {
         public static void ClearCache(Type[]? updatedTypes)
@@ -32,11 +30,8 @@ namespace oopshell
         private static readonly TimeSpan s_reloadFlashDuration = TimeSpan.FromMilliseconds(600);
         private long _reloadFlashUntil;
 
-        /// <summary>
-        /// Raised on the UI thread after a hot reload applied code changes (with the updated types, if known).
-        /// Rebuild cached state here (menus built from data, layout caches…). Every surface is invalidated
-        /// right afterwards, so edited drawing code shows up immediately.
-        /// </summary>
+        /// <summary>Raised on the UI thread after a hot reload applied code changes, with the updated types if known.</summary>
+        /// <remarks>Rebuild cached state here. Every surface is invalidated right afterwards.</remarks>
         public event Action<Type[]?>? HotReloaded;
 
         /// <summary>Raised on the UI thread when hot reload asks caches to be cleared (before <see cref="HotReloaded"/>).</summary>

@@ -11,21 +11,21 @@ namespace oopshell;
 /// </summary>
 public sealed record CapturedImage(int Width, int Height, int Stride, WlShmFormat Format, byte[] Pixels)
 {
-    /// <summary>The format has no alpha channel (treat every pixel as opaque).</summary>
+    /// <summary>True if the format has no alpha channel and every pixel is opaque.</summary>
     public bool IsOpaque => Format is WlShmFormat.Xrgb8888 or WlShmFormat.Xbgr8888;
 }
 
 /// <summary>
-/// Captures a window or an output into shared memory (ext-image-copy-capture-v1), for window thumbnails
-/// and previews:
+/// Captures a window or an output into shared memory (ext-image-copy-capture-v1), for thumbnails and previews.
+/// </summary>
+/// <remarks>
 /// <code>
-/// using var capture = ScreenCapture.ForWindow(app, window);   // null if the compositor cannot
+/// using var capture = ScreenCapture.ForWindow(app, window); // null if unsupported
 /// var image = await capture.CaptureAsync();
 /// </code>
-/// A capture keeps its session (and buffer) for repeated <see cref="CaptureAsync"/> calls; dispose it when
-/// done. Window capture needs ext-foreign-toplevel-image-capture-source-v1 (not every compositor has it:
-/// see <see cref="CanCaptureWindows"/>).
-/// </summary>
+/// A capture keeps its session and buffer for repeated <see cref="CaptureAsync"/> calls; dispose it when done.
+/// Window capture needs ext-foreign-toplevel-image-capture-source-v1; see <see cref="CanCaptureWindows"/>.
+/// </remarks>
 public sealed class ScreenCapture : IDisposable
 {
     private readonly OopsApp _app;
@@ -39,6 +39,7 @@ public sealed class ScreenCapture : IDisposable
     private int _constraintsVersion; // bumped by every session.done
     private readonly List<(Action Then, Action<Exception> Fail)> _waiting = new();
     private Task<CapturedImage>? _inFlight;
+    private (ExtImageCopyCaptureFrameV1 Frame, Action<Exception> Fail)? _inFlightFrame;
     private ShmPool? _pool;
     private WlBuffer? _buffer;
     private WlShmFormat _bufferFormat;
@@ -90,10 +91,11 @@ public sealed class ScreenCapture : IDisposable
     public static bool CanCaptureOutputs(OopsApp app) =>
         app.Has<ExtImageCopyCaptureManagerV1>() && app.Has<ExtOutputImageCaptureSourceManagerV1>();
 
-    /// <summary>
-    /// A capture of <paramref name="window"/>, or null if the compositor cannot capture windows (or has not
-    /// matched this window to its capture handle yet: try again after the window's next change).
-    /// </summary>
+    /// <summary>Creates a capture of <paramref name="window"/>, or returns null if the window cannot be captured.</summary>
+    /// <remarks>
+    /// Also returns null while the window has not been matched to its capture handle; retry after the window's
+    /// next change.
+    /// </remarks>
     public static ScreenCapture? ForWindow(OopsApp app, ForeignToplevel window, bool cursor = false)
     {
         if (!CanCaptureWindows(app) || window.CaptureHandle is not { } handle)
@@ -101,7 +103,7 @@ public sealed class ScreenCapture : IDisposable
         return new ScreenCapture(app, app.Get<ExtForeignToplevelImageCaptureSourceManagerV1>().CreateSource(handle), cursor);
     }
 
-    /// <summary>A capture of a whole output, or null if the compositor cannot.</summary>
+    /// <summary>Creates a capture of a whole output, or returns null if the compositor cannot capture outputs.</summary>
     public static ScreenCapture? ForOutput(OopsApp app, Output output, bool cursor = false)
     {
         if (!CanCaptureOutputs(app))
@@ -114,10 +116,11 @@ public sealed class ScreenCapture : IDisposable
 
     public event Action? Stopped;
 
-    /// <summary>
-    /// Captures the current contents. Throws <see cref="InvalidOperationException"/> (in the task) if the source
-    /// is gone or the compositor refuses. Concurrent calls share one capture. Call on the UI thread.
-    /// </summary>
+    /// <summary>Captures the current contents.</summary>
+    /// <remarks>
+    /// Call on the UI thread. Concurrent calls share one capture. The task faults with
+    /// <see cref="InvalidOperationException"/> if the source is gone or the compositor refuses.
+    /// </remarks>
     public Task<CapturedImage> CaptureAsync()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -128,14 +131,14 @@ public sealed class ScreenCapture : IDisposable
         return _inFlight = result.Task;
     }
 
-    // Driven by callbacks from Wayland events, not awaits: the session and buffers belong to the UI thread, and
-    // continuations of awaits inside a library could resume elsewhere.
+    // Driven by Wayland event callbacks rather than awaits: the session and buffers belong to the UI thread,
+    // and await continuations inside a library could resume elsewhere.
     private void Attempt(TaskCompletionSource<CapturedImage> result, bool retry) => WhenConstraintsKnown(() => CaptureFrame(image =>
     {
         if (image is not null)
             result.TrySetResult(image);
         else if (retry)
-            Attempt(result, retry: false);   // the size or formats changed under us: once more with the new ones
+            Attempt(result, retry: false); // constraints changed mid-capture: retry once with the new ones
         else
             result.TrySetException(new InvalidOperationException("The capture source kept changing size."));
     }, error => result.TrySetException(error)), error => result.TrySetException(error));
@@ -165,6 +168,11 @@ public sealed class ScreenCapture : IDisposable
             fail(new InvalidOperationException($"The compositor offers no usable shared-memory format for capture (offered: {(_formats.Count == 0 ? "none" : string.Join(", ", _formats))})."));
             return;
         }
+        if (_size.Width is <= 0 or > ShmPool.MaxSide || _size.Height is <= 0 or > ShmPool.MaxSide)
+        {
+            fail(new InvalidOperationException($"The compositor asked for an unusable buffer size {_size.Width}x{_size.Height}."));
+            return;
+        }
         if (_pool is null || _pool.BufferSize != _size || _bufferFormat != format)
         {
             _buffer?.Dispose();
@@ -174,11 +182,6 @@ public sealed class ScreenCapture : IDisposable
             _bufferFormat = format;
         }
 
-        if (_size.Width is <= 0 or > ShmPool.MaxSide || _size.Height is <= 0 or > ShmPool.MaxSide)
-        {
-            fail(new InvalidOperationException($"The compositor asked for an unusable buffer size {_size.Width}x{_size.Height}."));
-            return;
-        }
         var frameSize = _size;
         int version = _constraintsVersion;
         var frame = _session.CreateFrame();
@@ -192,8 +195,7 @@ public sealed class ScreenCapture : IDisposable
             var pixels = new byte[stride * frameSize.Height];
             Marshal.Copy(_pool.SlotPointer(0), pixels, 0, pixels.Length);
             frame.Dispose();
-            bool swapped = format is WlShmFormat.Abgr8888 or WlShmFormat.Xbgr8888;
-            if (swapped)
+            if (format is WlShmFormat.Abgr8888 or WlShmFormat.Xbgr8888)
             {
                 for (int i = 0; i < pixels.Length; i += 4)
                     (pixels[i], pixels[i + 2]) = (pixels[i + 2], pixels[i]);
@@ -221,8 +223,6 @@ public sealed class ScreenCapture : IDisposable
         frame.DamageBuffer(0, 0, frameSize.Width, frameSize.Height);
         frame.Capture();
     }
-
-    private (ExtImageCopyCaptureFrameV1 Frame, Action<Exception> Fail)? _inFlightFrame;
 
     public void Dispose()
     {

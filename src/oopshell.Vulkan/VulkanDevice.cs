@@ -16,8 +16,8 @@ public sealed unsafe class VulkanDevice : IDisposable
     /// <summary>Device extensions that are enabled.</summary>
     public static readonly string[] DeviceExtensions = ["VK_KHR_swapchain"];
 
-    // An all-false VkPhysicalDeviceFeatures: no optional features are enabled, and libraries asking which are get this.
-    private readonly nint _features = (nint)NativeMemory.AllocZeroed(PhysicalDeviceFeaturesSize);
+    // All-false VkPhysicalDeviceFeatures: passed to vkCreateDevice and exposed as EnabledFeatures.
+    private readonly nint _features;
     private bool _disposed;
 
     private VulkanDevice(OopsApp app)
@@ -27,9 +27,10 @@ public sealed unsafe class VulkanDevice : IDisposable
         App = app;
         uint loaderVersion;
         ApiVersion = vkEnumerateInstanceVersion(&loaderVersion) == VK_SUCCESS ? Math.Max(loaderVersion, VK_API_VERSION_1_1) : VK_API_VERSION_1_1;
-        Instance = CreateInstance(ApiVersion);
+        _features = (nint)NativeMemory.AllocZeroed(PhysicalDeviceFeaturesSize);
         try
         {
+            Instance = CreateInstance(ApiVersion);
             (PhysicalDevice, QueueFamily, DeviceName, uint deviceApi) = PickPhysicalDevice(Instance, app.Display.Handle);
             ApiVersion = Math.Min(ApiVersion, deviceApi);
             Device = CreateDevice(PhysicalDevice, QueueFamily, (void*)_features);
@@ -39,7 +40,8 @@ public sealed unsafe class VulkanDevice : IDisposable
         }
         catch
         {
-            vkDestroyInstance(Instance, 0);
+            if (Instance != 0)
+                vkDestroyInstance(Instance, 0);
             NativeMemory.Free((void*)_features);
             throw;
         }

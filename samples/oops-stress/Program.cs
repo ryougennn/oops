@@ -8,6 +8,7 @@
 //   oops-stress notify [count=2000]                                      notification flood (needs a session bus)
 //   oops-stress windows [count=40] [seconds=20]                          static windows, one retitled every 50 ms (load for a shell)
 //   oops-stress sweep <y> [seconds=10]                                   1000 Hz pointer sweep along row y (load for a shell)
+using System.Collections.Specialized;
 using System.Diagnostics;
 using System.Drawing;
 using oopshell;
@@ -16,6 +17,7 @@ using oopshell.Services.DBus;
 using oopshell.Services.Notifications;
 using oopshell.Skia;
 using SkiaSharp;
+using Tmds.DBus.Protocol;
 
 string scenario = args.ElementAtOrDefault(0) ?? "frames";
 int Arg(int index, int fallback) => int.TryParse(args.ElementAtOrDefault(index), out int v) ? v : fallback;
@@ -141,7 +143,7 @@ static int Input(OopsApp app, int seconds, Stats stats)
         pointer.Dispose();
     });
 
-    app.SetTimer(TimeSpan.FromSeconds(1), null, () => { injector.Start(); });
+    app.SetTimer(TimeSpan.FromSeconds(1), null, injector.Start);
     app.SetTimer(TimeSpan.FromSeconds(2), null, () => { moves = 0; stats.Start(); });
     app.SetTimer(TimeSpan.FromSeconds(2 + seconds), null, () => app.Quit());
     int code = app.Run();
@@ -168,15 +170,13 @@ static int Churn(OopsApp app, int rounds, Stats stats)
         var skia = new SkiaSurface(window, SkiaBackend.Shm);
         var layer = new LayerSurface(app, null, Layer.Overlay, "oops-stress") { Size = new Size(200, 30), Anchor = Anchor.Top };
         var layerChain = new ShmSwapchain(layer);
-        Popup? popup = null;
+        var popup = new Popup(layer, new PopupOptions { Size = new Size(120, 200), AnchorRect = new Rectangle(0, 0, 200, 30) });
+        var popupSkia = new SkiaSurface(popup, SkiaBackend.Shm);
         bool finished = false;
-        SkiaSurface? popupSkia = null;
         layer.Render += frame =>
         {
             if (layerChain.Acquire(frame) is { } b) { b.Pixels.Fill(0xFF808080); b.Present(); }
         };
-        popup = new Popup(layer, new PopupOptions { Size = new Size(120, 200), AnchorRect = new Rectangle(0, 0, 200, 30) });
-        popupSkia = new SkiaSurface(popup, SkiaBackend.Shm);
         popup.Render += frame =>
         {
             if (popupSkia.BeginFrame(frame) is { } c) { Scene.Draw(c, frame.LogicalSize, round); popupSkia.EndFrame(); }
@@ -277,9 +277,9 @@ static int Notify(OopsApp app, int count, Stats stats)
         var serverBus = await OopsDBus.ConnectAsync(app);
         server = await NotificationServer.StartAsync(app, serverBus);
         server.DefaultTimeout = TimeSpan.FromMilliseconds(200);
-        ((System.Collections.Specialized.INotifyCollectionChanged)server.Notifications).CollectionChanged += (_, e) =>
+        ((INotifyCollectionChanged)server.Notifications).CollectionChanged += (_, e) =>
         {
-            if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Remove)
+            if (e.Action == NotifyCollectionChangedAction.Remove)
                 closed++;
         };
         var client = await OopsDBus.ConnectAsync(app);
@@ -288,7 +288,7 @@ static int Notify(OopsApp app, int count, Stats stats)
         {
             int n = i;
             await client.CallAsync("org.freedesktop.Notifications", "/org/freedesktop/Notifications", "org.freedesktop.Notifications", "Notify",
-                (m, _) => m.GetBodyReader().ReadUInt32(), (ref Tmds.DBus.Protocol.MessageWriter w) =>
+                (m, _) => m.GetBodyReader().ReadUInt32(), (ref MessageWriter w) =>
                 {
                     w.WriteString("oops-stress");
                     w.WriteUInt32(0);
@@ -365,9 +365,10 @@ internal static class Scene
     private static readonly SKPaint s_fill = new() { IsAntialias = true };
     private static readonly SKPaint s_text = new() { Color = SKColors.Black, IsAntialias = true };
 
-    /// <summary>A taskbar/menu-like frame: background, bevelled rows, text, one moving highlight.</summary>
+    // STRESS_SCENE=clear: measure the pipeline without the drawing cost.
     private static readonly bool s_clearOnly = Environment.GetEnvironmentVariable("STRESS_SCENE") == "clear";
 
+    /// <summary>A taskbar/menu-like frame: background, bevelled rows, text, one moving highlight.</summary>
     public static void Draw(SKCanvas canvas, Size size, int tick)
     {
         canvas.Clear(new SKColor(0xC0, 0xC0, 0xC0));

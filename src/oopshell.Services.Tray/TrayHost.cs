@@ -13,6 +13,9 @@ public sealed class TrayHost : IDisposable
     public const string WatcherName = "org.kde.StatusNotifierWatcher";
     public const string WatcherPath = "/StatusNotifierWatcher";
 
+    // How long an item may take to answer before it is left out.
+    private static readonly TimeSpan s_peerTimeout = TimeSpan.FromSeconds(3);
+
     private readonly OopsApp _app;
     private readonly DBusConnection _connection;
     private readonly ObservableCollection<TrayItem> _items = new();
@@ -66,9 +69,6 @@ public sealed class TrayHost : IDisposable
         await Task.WhenAll((registered.AsStrings() ?? []).Select(AddAsync));
     }
 
-    /// <summary>How long an item may take to answer before it is left out.</summary>
-    private static readonly TimeSpan s_peerTimeout = TimeSpan.FromSeconds(3);
-
     private async Task AddAsync(string service)
     {
         if (_items.Any(i => i.Service == service))
@@ -80,7 +80,7 @@ public sealed class TrayHost : IDisposable
         }
         catch (Exception)
         {
-            return; // registered but not answering, or answering nonsense: one bad item must not stop the tray
+            return; // Unresponsive or malformed item: leave it out rather than fail the tray.
         }
         await _app.InvokeAsync(() =>
         {
@@ -114,6 +114,7 @@ internal sealed class StatusNotifierWatcher(OopsApp app, DBusConnection connecti
 {
     private readonly List<string> _items = new();
     private readonly List<string> _hosts = new();
+    private readonly Dictionary<string, string> _registeredBy = new(); // service -> unique name of the registering peer
     private IDisposable? _nameWatch;
 
     public event Action<string>? ItemRegistered;
@@ -198,8 +199,6 @@ internal sealed class StatusNotifierWatcher(OopsApp app, DBusConnection connecti
             default: writer.WriteVariantInt32(0); break;
         }
     }
-
-    private readonly Dictionary<string, string> _registeredBy = new();
 
     private void RegisterItem(string service, string sender)
     {

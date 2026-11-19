@@ -7,6 +7,9 @@ public sealed class DesktopEntry
 {
     private const string Group = "Desktop Entry";
 
+    /// <summary>Marks a field code that stood inside double quotes (its value will be shell-quoted).</summary>
+    private const char QuotedCode = '\uE000';
+
     /// <summary>The desktop file id, e.g. <c>org.gnome.Nautilus.desktop</c> (subdirectories joined with '-').</summary>
     public required string Id { get; init; }
     public required string Path { get; init; }
@@ -132,8 +135,8 @@ public sealed class DesktopEntry
             {
                 if (arg[i] == QuotedCode && i + 1 < arg.Length)
                 {
-                    // A field code inside quotes, typically sh -c "… %f": the value goes to a shell, so quote it
-                    // for one (as GLib does) instead of letting a file name like a$(…).txt run commands.
+                    // A field code inside quotes (typically sh -c "… %f") reaches a shell: quote the value as GLib
+                    // does, so a file name like a$(…).txt cannot run commands.
                     char quotedCode = arg[++i];
                     string? value = quotedCode switch
                     {
@@ -165,9 +168,6 @@ public sealed class DesktopEntry
         }
         return result;
     }
-
-    /// <summary>Marks a field code that stood inside double quotes (its value will be shell-quoted).</summary>
-    private const char QuotedCode = '\uE000';
 
     /// <summary>Splits an Exec value into arguments following the spec's quoting rules.</summary>
     internal static List<string> SplitExec(string exec)

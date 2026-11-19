@@ -31,7 +31,7 @@ public static class OopsDBus
             throw new InvalidOperationException($"The bus name {name} is already taken.");
     }
 
-    /// <summary>Calls a method without arguments and returns the reply body reader result.</summary>
+    /// <summary>Calls a method and decodes the reply with <paramref name="readReply"/>.</summary>
     public static Task<T> CallAsync<T>(this DBusConnection connection, string destination, string path, string iface, string member,
         MessageValueReader<T> readReply, BodyWriter? writeArgs = null, string? signature = null)
     {
@@ -110,8 +110,8 @@ public static class OopsDBus
     }
 
     /// <summary>
-    /// Emits a signal. False if the connection is gone (the bus restarted, or the session ends): signals are
-    /// notifications, and a shell should not stop because nobody can hear one.
+    /// Emits a signal. Returns false instead of throwing if the connection is closed: a signal nobody can
+    /// receive is not worth stopping the shell for.
     /// </summary>
     public static bool EmitSignal(this DBusConnection connection, string path, string iface, string member, string? signature = null, BodyWriter? writeArgs = null)
     {
@@ -137,6 +137,8 @@ public static class OopsDBus
 /// </summary>
 public abstract class ExportedObject(OopsApp app, string path) : IPathMethodHandler
 {
+    private readonly HashSet<MethodContext> _deferred = new();
+
     public string Path { get; } = path;
 
     public bool HandlesChildPaths => false;
@@ -158,8 +160,8 @@ public abstract class ExportedObject(OopsApp app, string path) : IPathMethodHand
             }
             catch (Exception e)
             {
-                // Bad input from a peer (wrong types, malformed body) or a bug in a handler: the caller gets an
-                // error, the shell carries on, and a deferred call is not left dangling.
+                // Malformed peer input or a handler bug: reply with an error, keep running, and release a
+                // deferred call so it is not left dangling.
                 bool wasDeferred = _deferred.Remove(context);
                 if (!context.ReplySent && !context.NoReplyExpected)
                     ReplyError(context, "org.freedesktop.DBus.Error.Failed", e is InvalidOperationException or IndexOutOfRangeException or FormatException
@@ -183,8 +185,6 @@ public abstract class ExportedObject(OopsApp app, string path) : IPathMethodHand
         ReplyError(context, "org.freedesktop.DBus.Error.AccessDenied", "Only the service this agent is registered with may call it.");
         return true;
     }
-
-    private readonly HashSet<MethodContext> _deferred = new();
 
     /// <summary>
     /// Keeps <paramref name="context"/> open past <see cref="HandleMethod"/>: reply later with

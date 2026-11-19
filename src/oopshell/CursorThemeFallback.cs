@@ -14,7 +14,7 @@ internal sealed unsafe class CursorThemeFallback : IDisposable
     private readonly OopsApp _app;
     private readonly WlSurface _cursorSurface;
     private readonly Dictionary<int, nint> _themes = new();
-    // Buffers belong to the theme; we wrap each once (to pass it to attach) and never dispose the wrapper.
+    // The theme owns the buffers; each is wrapped once for attach and the wrapper is never disposed.
     private readonly Dictionary<nint, WlBuffer> _buffers = new();
 
     private CursorThemeFallback(OopsApp app)

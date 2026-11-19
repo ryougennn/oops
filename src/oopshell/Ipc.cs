@@ -4,18 +4,7 @@ using oopshell.Native;
 
 namespace oopshell;
 
-/// <summary>
-/// A single-instance command channel, so compositor key bindings and scripts can reach a running shell:
-/// <code>
-/// // in the shell
-/// using var ipc = IpcServer.Listen(app, "myshell", args => args[0] switch { "toggle" => Toggle(), _ => "unknown" });
-/// // in `myshell toggle` (another process)
-/// var reply = IpcServer.Send("myshell", "toggle");
-/// if (reply.Status == IpcStatus.NotRunning) …            // reply.Text: the answer, or the error message
-/// </code>
-/// The socket is <c>$XDG_RUNTIME_DIR/&lt;name&gt;.sock</c> (or the name itself if it is an absolute
-/// path). Requests are served on the UI thread from the event loop, without threads or blocking reads.
-/// </summary>
+/// <summary>The result of an <see cref="IpcServer.Send"/> call.</summary>
 public enum IpcStatus
 {
     /// <summary>Nothing is serving the name.</summary>
@@ -32,6 +21,19 @@ public readonly record struct IpcReply(IpcStatus Status, string Text)
     public bool IsOk => Status == IpcStatus.Ok;
 }
 
+/// <summary>
+/// A single-instance command channel that lets compositor key bindings and scripts reach a running shell.
+/// </summary>
+/// <remarks>
+/// <code>
+/// // In the shell:
+/// using var ipc = IpcServer.Listen(app, "myshell", args => args[0] switch { "toggle" => Toggle(), _ => "unknown" });
+/// // In another process:
+/// var reply = IpcServer.Send("myshell", "toggle");
+/// </code>
+/// The socket is <c>$XDG_RUNTIME_DIR/&lt;name&gt;.sock</c>, or the name itself if it is an absolute path.
+/// Requests are served on the UI thread from the event loop, without extra threads or blocking reads.
+/// </remarks>
 public sealed class IpcServer : IDisposable
 {
     private const int MaxRequest = 64 * 1024;
@@ -64,10 +66,11 @@ public sealed class IpcServer : IDisposable
     /// <summary>The socket file.</summary>
     public string SocketPath { get; }
 
-    /// <summary>
-    /// <c>$XDG_RUNTIME_DIR/&lt;name&gt;.sock</c>. Without XDG_RUNTIME_DIR, a private 0700 directory of this user
-    /// in /tmp (never a shared path another user could take first).
-    /// </summary>
+    /// <summary>Returns the socket path for <paramref name="name"/>: <c>$XDG_RUNTIME_DIR/&lt;name&gt;.sock</c>.</summary>
+    /// <remarks>
+    /// Without XDG_RUNTIME_DIR, a private 0700 directory of this user in /tmp is used, never a shared path
+    /// another user could create first.
+    /// </remarks>
     public static string PathFor(string name) =>
         Path.IsPathRooted(name) ? name : Path.Combine(Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR") is { Length: > 0 } dir ? dir : PrivateDir(), name + ".sock");
 
@@ -92,18 +95,19 @@ public sealed class IpcServer : IDisposable
         return BitConverter.ToUInt32(cred[4..8]);
     }
 
-    /// <summary>
-    /// Starts serving <paramref name="name"/>. <paramref name="handler"/> gets the arguments a client sent and
-    /// returns the reply (null for none); to fail a request, throw (the client gets <see cref="IpcStatus.Failed"/>
-    /// and the message). Throws <see cref="InvalidOperationException"/> if another instance is
-    /// already serving it; a stale socket file left by a crash is replaced.
-    /// </summary>
+    /// <summary>Starts serving <paramref name="name"/>.</summary>
+    /// <remarks>
+    /// <paramref name="handler"/> receives the client's arguments and returns the reply, or null for none. If it
+    /// throws, the client gets <see cref="IpcStatus.Failed"/> and the exception message. A stale socket file left
+    /// by a crash is replaced.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">Another instance is already serving <paramref name="name"/>.</exception>
     public static IpcServer Listen(OopsApp app, string name, Func<IReadOnlyList<string>, string?> handler)
     {
         string path = PathFor(name);
         if (File.Exists(path))
         {
-            // Only a socket nobody listens on is stale; one that accepts (even if busy or hung) is another instance.
+            // Only a socket nobody listens on is stale; one that accepts, even if hung, is another instance.
             using var probe = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
             try
             {
@@ -126,11 +130,8 @@ public sealed class IpcServer : IDisposable
     /// <summary>True if an instance is serving <paramref name="name"/>.</summary>
     public static bool IsRunning(string name) => Send(name).Status != IpcStatus.NotRunning;
 
-    /// <summary>
-    /// Sends <paramref name="args"/> to the instance serving <paramref name="name"/>: its reply, the error its
-    /// handler threw, or <see cref="IpcStatus.NotRunning"/>. Blocks for at most two seconds. With no
-    /// arguments it only checks that the instance answers.
-    /// </summary>
+    /// <summary>Sends <paramref name="args"/> to the instance serving <paramref name="name"/> and returns its reply.</summary>
+    /// <remarks>Blocks for at most two seconds. With no arguments, only checks that the instance answers.</remarks>
     public static IpcReply Send(string name, params string[] args)
     {
         try
@@ -142,7 +143,7 @@ public sealed class IpcServer : IDisposable
             };
             socket.Connect(new UnixDomainSocketEndPoint(PathFor(name)));
             if (PeerUid(socket) != LibC.geteuid())
-                return new IpcReply(IpcStatus.NotRunning, ""); // not ours: send it nothing
+                return new IpcReply(IpcStatus.NotRunning, ""); // another user's socket: send nothing
             socket.Send(Encoding.UTF8.GetBytes(string.Join('\0', args)));
             socket.Shutdown(SocketShutdown.Send);
             using var reply = new MemoryStream();
@@ -154,10 +155,10 @@ public sealed class IpcServer : IDisposable
                 if (reply.Length > MaxReply)
                     return new IpcReply(IpcStatus.Failed, "The reply was too long.");
             }
-            // The first byte is the status: '+' answered, '!' the handler failed.
+            // The first byte is the status: '+' for a reply, '!' if the handler threw.
             var bytes = reply.GetBuffer().AsSpan(0, (int)reply.Length);
             if (bytes.Length == 0)
-                return new IpcReply(IpcStatus.NotRunning, ""); // accepted, then closed without an answer: not a live instance
+                return new IpcReply(IpcStatus.NotRunning, ""); // closed without an answer: not a live instance
             var status = bytes[0] == (byte)'!' ? IpcStatus.Failed : IpcStatus.Ok;
             return new IpcReply(status, Encoding.UTF8.GetString(bytes[1..]));
         }
@@ -182,7 +183,7 @@ public sealed class IpcServer : IDisposable
             }
             if (PeerUid(socket) != LibC.geteuid())
             {
-                socket.Dispose(); // another user: the runtime directory should have kept them out already
+                socket.Dispose(); // another user; the runtime directory's permissions should already prevent this
                 continue;
             }
             socket.Blocking = false;
@@ -206,7 +207,7 @@ public sealed class IpcServer : IDisposable
             }
             catch (SocketException e) when (e.SocketErrorCode == SocketError.WouldBlock)
             {
-                return; // more later
+                return;
             }
             catch (SocketException)
             {
@@ -214,7 +215,7 @@ public sealed class IpcServer : IDisposable
                 return;
             }
             if (n == 0)
-                break; // the client finished its request
+                break; // end of request
             client.Request.Write(buffer, 0, n);
             if (client.Request.Length > MaxRequest)
             {
@@ -273,7 +274,7 @@ public sealed class IpcServer : IDisposable
         }
         catch (IOException)
         {
-            // The runtime directory is already gone (the session ended first).
+            // The runtime directory is already gone because the session ended first.
         }
     }
 }

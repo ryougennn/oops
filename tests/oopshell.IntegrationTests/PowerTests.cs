@@ -22,30 +22,23 @@ public class PowerTests(SwayFixture sway)
             if (context.Request.MemberAsString != "GetAll")
                 return;
             Reads++;
-            var writer = context.CreateReplyWriter("a{sv}");
-            try
+            using var writer = context.CreateReplyWriter("a{sv}");
+            var dict = writer.WriteDictionaryStart();
+            foreach (var (key, value) in Properties)
             {
-                var dict = writer.WriteDictionaryStart();
-                foreach (var (key, value) in Properties)
+                writer.WriteDictionaryEntryStart();
+                writer.WriteString(key);
+                switch (value)
                 {
-                    writer.WriteDictionaryEntryStart();
-                    writer.WriteString(key);
-                    switch (value)
-                    {
-                        case uint u: writer.WriteVariantUInt32(u); break;
-                        case double d: writer.WriteVariantDouble(d); break;
-                        case bool b: writer.WriteVariantBool(b); break;
-                        case long l: writer.WriteVariantInt64(l); break;
-                        case string s: writer.WriteVariantString(s); break;
-                    }
+                    case uint u: writer.WriteVariantUInt32(u); break;
+                    case double d: writer.WriteVariantDouble(d); break;
+                    case bool b: writer.WriteVariantBool(b); break;
+                    case long l: writer.WriteVariantInt64(l); break;
+                    case string s: writer.WriteVariantString(s); break;
                 }
-                writer.WriteDictionaryEnd(dict);
-                context.Reply(writer.CreateMessage());
             }
-            finally
-            {
-                writer.Dispose();
-            }
+            writer.WriteDictionaryEnd(dict);
+            context.Reply(writer.CreateMessage());
         }
     }
 
@@ -60,47 +53,23 @@ public class PowerTests(SwayFixture sway)
             {
                 case "EnumerateDevices":
                     {
-                        var writer = context.CreateReplyWriter("ao");
-                        try
-                        {
-                            var array = writer.WriteArrayStart(DBusType.ObjectPath);
-                            foreach (var path in Devices)
-                                writer.WriteObjectPath(path);
-                            writer.WriteArrayEnd(array);
-                            context.Reply(writer.CreateMessage());
-                        }
-                        finally
-                        {
-                            writer.Dispose();
-                        }
+                        using var writer = context.CreateReplyWriter("ao");
+                        writer.WriteArray(Devices.Select(p => new ObjectPath(p)).ToArray());
+                        context.Reply(writer.CreateMessage());
                         break;
                     }
                 case "GetDisplayDevice":
                     {
-                        var writer = context.CreateReplyWriter("o");
-                        try
-                        {
-                            writer.WriteObjectPath(DisplayPath);
-                            context.Reply(writer.CreateMessage());
-                        }
-                        finally
-                        {
-                            writer.Dispose();
-                        }
+                        using var writer = context.CreateReplyWriter("o");
+                        writer.WriteObjectPath(DisplayPath);
+                        context.Reply(writer.CreateMessage());
                         break;
                     }
                 case "Get": // only OnBattery is asked for
                     {
-                        var writer = context.CreateReplyWriter("v");
-                        try
-                        {
-                            writer.WriteVariantBool(OnBattery);
-                            context.Reply(writer.CreateMessage());
-                        }
-                        finally
-                        {
-                            writer.Dispose();
-                        }
+                        using var writer = context.CreateReplyWriter("v");
+                        writer.WriteVariantBool(OnBattery);
+                        context.Reply(writer.CreateMessage());
                         break;
                     }
             }

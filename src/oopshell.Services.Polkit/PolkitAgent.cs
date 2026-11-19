@@ -266,10 +266,10 @@ public sealed class PolkitRequest
     public event Action? Finished;
 
     /// <summary>Checks <paramref name="password"/> for <paramref name="user"/>. True finishes the request; false allows another try.</summary>
-    public async Task<bool> AuthenticateAsync(PolkitUser user, string password)
+    public Task<bool> AuthenticateAsync(PolkitUser user, string password)
     {
         bool answered = false;
-        return await AuthenticateAsync(user, prompt =>
+        return AuthenticateAsync(user, prompt =>
         {
             if (prompt.Kind != PolkitPromptKind.Secret || answered)
                 return prompt.NeedsAnswer ? "" : null;
@@ -292,7 +292,7 @@ public sealed class PolkitRequest
         {
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
-            RedirectStandardError = true,
+            RedirectStandardError = false, // never read; a redirected stderr could fill its pipe and block the helper
             StandardOutputEncoding = Encoding.UTF8,
         };
         using var process = Process.Start(start) ?? throw new InvalidOperationException("Could not start polkit's helper.");

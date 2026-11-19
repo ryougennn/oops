@@ -63,12 +63,15 @@ public sealed class BluetoothService : IDisposable
     private const string AdapterInterface = "org.bluez.Adapter1";
     private const string DeviceInterface = "org.bluez.Device1";
     private const string BatteryInterface = "org.bluez.Battery1";
+    private const string AgentManagerPath = "/org/bluez";
+    private const string AgentManagerInterface = "org.bluez.AgentManager1";
 
     private readonly OopsApp _app;
     private readonly DBusConnection _connection;
     private readonly ObservableCollection<BluetoothAdapter> _adapters = new();
     private readonly ObservableCollection<BluetoothDevice> _devices = new();
     private readonly List<IDisposable> _watches = new();
+    private PairingAgent? _agent;
     private IDisposable? _refreshTimer;
     private bool _refreshing, _refreshAgain, _disposed;
 
@@ -107,8 +110,6 @@ public sealed class BluetoothService : IDisposable
     /// <summary>Something changed (UI thread).</summary>
     public event Action? Changed;
 
-    private PairingAgent? _agent;
-
     /// <summary>
     /// BlueZ asks the user something while pairing (a PIN, a passkey to compare, permission) (UI thread). Only
     /// raised after <see cref="RegisterPairingAgentAsync"/>.
@@ -131,12 +132,12 @@ public sealed class BluetoothService : IDisposable
         _connection.AddMethodHandler(created);
         try
         {
-            await _connection.CallAsync(BusName, "/org/bluez", "org.bluez.AgentManager1", "RegisterAgent", (ref MessageWriter w) =>
+            await _connection.CallAsync(BusName, AgentManagerPath, AgentManagerInterface, "RegisterAgent", (ref MessageWriter w) =>
             {
                 w.WriteObjectPath(created.Path);
                 w.WriteString("KeyboardDisplay");
             }, "os");
-            await _connection.CallAsync(BusName, "/org/bluez", "org.bluez.AgentManager1", "RequestDefaultAgent",
+            await _connection.CallAsync(BusName, AgentManagerPath, AgentManagerInterface, "RequestDefaultAgent",
                 (ref MessageWriter w) => w.WriteObjectPath(created.Path), "o");
         }
         catch
@@ -155,8 +156,20 @@ public sealed class BluetoothService : IDisposable
         _refreshTimer = _app.SetTimer(TimeSpan.FromMilliseconds(100), null, () =>
         {
             _refreshTimer = null;
-            _ = RefreshAsync();
+            _ = RefreshQuietlyAsync();
         });
+    }
+
+    /// <summary>A refresh nobody awaits: errors are dropped, and the next signal from the service retries.</summary>
+    private async Task RefreshQuietlyAsync()
+    {
+        try
+        {
+            await RefreshAsync();
+        }
+        catch (Exception e) when (e is DBusErrorReplyException or DBusConnectionClosedException or DBusConnectionException)
+        {
+        }
     }
 
     private async Task RefreshAsync()
@@ -233,7 +246,8 @@ public sealed class BluetoothService : IDisposable
         Sync(_adapters, seenAdapters);
         Sync(_devices, seenDevices.OrderByDescending(d => d.Connected).ThenByDescending(d => d.Paired)
             .ThenBy(d => d.Name, StringComparer.CurrentCultureIgnoreCase).ToList());
-        Changed?.Invoke();
+        if (!_disposed)
+            Changed?.Invoke();
     }
 
     /// <summary>Makes <paramref name="target"/> equal <paramref name="wanted"/> with minimal moves (keeps UI selections stable).</summary>
@@ -283,7 +297,15 @@ public sealed class BluetoothService : IDisposable
     /// <summary>Pairs and trusts the device (so it may reconnect by itself later).</summary>
     public async Task PairAsync(BluetoothDevice device)
     {
-        await _connection.CallAsync(BusName, device.Path, DeviceInterface, "Pair");
+        try
+        {
+            await _connection.CallAsync(BusName, device.Path, DeviceInterface, "Pair");
+        }
+        finally
+        {
+            // BlueZ cancels code displays only when pairing fails; end them on success too.
+            _agent?.EndDisplays(device.Path);
+        }
         await SetTrustedAsync(device, true);
     }
 
@@ -300,7 +322,7 @@ public sealed class BluetoothService : IDisposable
         {
             _agent.CancelAll();
             _connection.RemoveMethodHandler(_agent.Path);
-            _ = _connection.CallAsync(BusName, "/org/bluez", "org.bluez.AgentManager1", "UnregisterAgent",
+            _ = _connection.CallAsync(BusName, AgentManagerPath, AgentManagerInterface, "UnregisterAgent",
                 (ref MessageWriter w) => w.WriteObjectPath(_agent.Path), "o").ContinueWith(t => _ = t.Exception, TaskScheduler.Default);
         }
         _refreshTimer?.Dispose();

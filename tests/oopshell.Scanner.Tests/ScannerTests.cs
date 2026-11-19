@@ -2,7 +2,8 @@ using System.Collections.Immutable;
 using System.Runtime.CompilerServices;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
-using oopshell.Scanner;
+using Microsoft.CodeAnalysis.Diagnostics;
+using Microsoft.CodeAnalysis.Text;
 
 namespace oopshell.Scanner.Tests;
 
@@ -17,6 +18,9 @@ public class ScannerTests
         "protocols/wlr-protocols/wlr-layer-shell-unstable-v1.xml",
     ];
 
+    private static ImmutableArray<ProtocolFile> LoadGoldenProtocols() =>
+        s_goldenProtocols.Select(p => new ProtocolFile(p, File.ReadAllText(Path.Combine(s_repoRoot, p)))).ToImmutableArray();
+
     /// <summary>
     /// Compares generator output with tests/oopshell.Scanner.Tests/Goldens. To accept intentional changes, run
     /// <c>UPDATE_GOLDENS=1 dotnet test tests/oopshell.Scanner.Tests</c> and review the diff.
@@ -24,7 +28,7 @@ public class ScannerTests
     [Fact]
     public void Output_matches_golden_files()
     {
-        var files = s_goldenProtocols.Select(p => new ProtocolFile(p, File.ReadAllText(Path.Combine(s_repoRoot, p)))).ToImmutableArray();
+        var files = LoadGoldenProtocols();
         var result = WaylandScanner.Generate(files, "oopshell.Protocol", new Dictionary<string, string>());
 
         Assert.Empty(result.Diagnostics);
@@ -43,7 +47,7 @@ public class ScannerTests
     [Fact]
     public void Output_is_deterministic()
     {
-        var files = s_goldenProtocols.Select(p => new ProtocolFile(p, File.ReadAllText(Path.Combine(s_repoRoot, p)))).ToImmutableArray();
+        var files = LoadGoldenProtocols();
         var first = WaylandScanner.Generate(files, "X", new Dictionary<string, string>());
         var second = WaylandScanner.Generate(files.Reverse().ToImmutableArray(), "X", new Dictionary<string, string>());
         Assert.Equal(first.Sources, second.Sources);
@@ -105,6 +109,7 @@ public class ScannerTests
               </interface>
             </protocol>
             """;
+        var ct = TestContext.Current.CancellationToken;
         var protocolAssembly = typeof(oopshell.Protocol.WlSurface).Assembly;
         var references = AppDomain.CurrentDomain.GetAssemblies()
             .Where(a => !a.IsDynamic && a.Location.Length > 0 && !a.GetName().Name!.StartsWith("oopshell"))
@@ -112,14 +117,13 @@ public class ScannerTests
             .Append(MetadataReference.CreateFromFile(protocolAssembly.Location))
             .Append(MetadataReference.CreateFromFile(typeof(oopshell.Native.WlArgument).Assembly.Location));
         var compilation = CSharpCompilation.Create("UserProtocols",
-            [CSharpSyntaxTree.ParseText("namespace User; public static class Anchor { }", cancellationToken: TestContext.Current.CancellationToken)],
+            [CSharpSyntaxTree.ParseText("namespace User; public static class Anchor { }", cancellationToken: ct)],
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true, nullableContextOptions: NullableContextOptions.Enable));
 
         var driver = CSharpGeneratorDriver.Create([new WaylandScanner().AsSourceGenerator()],
             additionalTexts: [new InMemoryText("effects.xml", xml)],
             optionsProvider: new TestOptions("User.Protocols"));
-        var ct = TestContext.Current.CancellationToken;
         driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var generatorDiagnostics, ct);
 
         Assert.Empty(generatorDiagnostics);
@@ -141,16 +145,16 @@ public class ScannerTests
     private sealed class InMemoryText(string path, string text) : AdditionalText
     {
         public override string Path => path;
-        public override Microsoft.CodeAnalysis.Text.SourceText GetText(CancellationToken ct = default) => Microsoft.CodeAnalysis.Text.SourceText.From(text);
+        public override SourceText GetText(CancellationToken ct = default) => SourceText.From(text);
     }
 
-    private sealed class TestOptions(string ns) : Microsoft.CodeAnalysis.Diagnostics.AnalyzerConfigOptionsProvider
+    private sealed class TestOptions(string ns) : AnalyzerConfigOptionsProvider
     {
-        public override Microsoft.CodeAnalysis.Diagnostics.AnalyzerConfigOptions GlobalOptions { get; } = new Options(ns);
-        public override Microsoft.CodeAnalysis.Diagnostics.AnalyzerConfigOptions GetOptions(SyntaxTree tree) => new Options(null);
-        public override Microsoft.CodeAnalysis.Diagnostics.AnalyzerConfigOptions GetOptions(AdditionalText textFile) => new Options(null);
+        public override AnalyzerConfigOptions GlobalOptions { get; } = new Options(ns);
+        public override AnalyzerConfigOptions GetOptions(SyntaxTree tree) => new Options(null);
+        public override AnalyzerConfigOptions GetOptions(AdditionalText textFile) => new Options(null);
 
-        private sealed class Options(string? ns) : Microsoft.CodeAnalysis.Diagnostics.AnalyzerConfigOptions
+        private sealed class Options(string? ns) : AnalyzerConfigOptions
         {
             public override bool TryGetValue(string key, out string value)
             {

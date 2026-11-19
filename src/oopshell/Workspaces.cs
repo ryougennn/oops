@@ -1,13 +1,14 @@
 using System.Collections.ObjectModel;
+using System.Runtime.InteropServices;
 using oopshell.Protocol;
 
 namespace oopshell;
 
-/// <summary>
-/// A workspace (or tag, or virtual desktop) of the compositor, from ext-workspace-v1. Its state changes in
-/// batches; <see cref="Changed"/> fires after each. Requests (<see cref="Activate"/>…) take effect when the
-/// compositor applies them; the new state arrives as a change.
-/// </summary>
+/// <summary>A compositor workspace, tag or virtual desktop (ext-workspace-v1).</summary>
+/// <remarks>
+/// State changes arrive in batches; <see cref="Changed"/> is raised after each. Requests such as
+/// <see cref="Activate"/> take effect when the compositor applies them, and the new state arrives as a change.
+/// </remarks>
 public sealed class Workspace
 {
     private readonly OopsApp _app;
@@ -20,38 +21,35 @@ public sealed class Workspace
         _handle = handle;
         handle.IdEvent += e => Id = e.Id;
         handle.Name += e => Name = e.Name;
-        handle.Coordinates += e => Coordinates = ReadCoordinates(e.Coordinates);
+        handle.Coordinates += e => Coordinates = MemoryMarshal.Cast<byte, uint>(e.Coordinates).ToArray();
         handle.State += e => State = (uint)e.State;
         handle.Capabilities += e => Abilities = (uint)e.Capabilities;
     }
 
-    private static uint[] ReadCoordinates(ReadOnlySpan<byte> bytes) =>
-        System.Runtime.InteropServices.MemoryMarshal.Cast<byte, uint>(bytes).ToArray();
-
-    /// <summary>A stable id across sessions, if the compositor has one ("" otherwise).</summary>
+    /// <summary>An id that is stable across sessions, or "" if the compositor has none.</summary>
     public string Id { get; private set; } = "";
     /// <summary>The name to show ("1", "web"…).</summary>
     public string Name { get; private set; } = "";
-    /// <summary>Its position in the compositor's layout (one number for a row, two for a grid; empty if unordered).</summary>
+    /// <summary>The position in the compositor's layout: one number for a row, two for a grid, empty if unordered.</summary>
     public IReadOnlyList<uint> Coordinates { get; private set; } = [];
     internal uint State { get; private set; }
     internal uint Abilities { get; private set; }
 
-    /// <summary>Shown on its output(s) now.</summary>
+    /// <summary>True if the workspace is currently shown.</summary>
     public bool IsActive => (State & (uint)ExtWorkspaceHandleV1State.Active) != 0;
-    /// <summary>Something on it wants attention.</summary>
+    /// <summary>True if something on the workspace wants attention.</summary>
     public bool IsUrgent => (State & (uint)ExtWorkspaceHandleV1State.Urgent) != 0;
-    /// <summary>The compositor suggests not showing it (e.g. a scratchpad).</summary>
-    public bool IsHidden => (State & 4) != 0;
+    /// <summary>True if the compositor suggests not showing the workspace, as for a scratchpad.</summary>
+    public bool IsHidden => (State & (uint)ExtWorkspaceHandleV1State.Hidden) != 0;
 
-    /// <summary>The outputs its group spans (usually one).</summary>
+    /// <summary>The outputs the workspace's group spans, usually one.</summary>
     public IReadOnlyList<Output> Outputs => _group?.Outputs ?? [];
 
     public bool CanActivate => (Abilities & (uint)ExtWorkspaceHandleV1WorkspaceCapabilities.Activate) != 0;
     public bool CanDeactivate => (Abilities & (uint)ExtWorkspaceHandleV1WorkspaceCapabilities.Deactivate) != 0;
     public bool CanRemove => (Abilities & (uint)ExtWorkspaceHandleV1WorkspaceCapabilities.Remove) != 0;
 
-    /// <summary>The workspace changed (name, state, position or outputs).</summary>
+    /// <summary>Raised when the name, state, position or outputs change.</summary>
     public event Action? Changed;
 
     internal void RaiseChanged() => Changed?.Invoke();
@@ -63,14 +61,14 @@ public sealed class Workspace
         _app.CommitWorkspaces();
     }
 
-    /// <summary>Hides it, where the compositor allows several active workspaces (tags).</summary>
+    /// <summary>Hides this workspace, where the compositor allows several active workspaces (tags).</summary>
     public void Deactivate()
     {
         _handle.Deactivate();
         _app.CommitWorkspaces();
     }
 
-    /// <summary>Asks the compositor to remove it.</summary>
+    /// <summary>Asks the compositor to remove this workspace.</summary>
     public void Remove()
     {
         _handle.Remove();
@@ -80,7 +78,7 @@ public sealed class Workspace
     public override string ToString() => $"{Name}{(IsActive ? " (active)" : "")}";
 }
 
-/// <summary>Workspaces that share outputs (ext-workspace's group). Internal: exposed as <see cref="Workspace.Outputs"/>.</summary>
+/// <summary>An ext-workspace group: workspaces that share outputs. Exposed only through <see cref="Workspace.Outputs"/>.</summary>
 internal sealed class WorkspaceGroup
 {
     public readonly ExtWorkspaceGroupHandleV1 Handle;
@@ -93,8 +91,7 @@ internal sealed class WorkspaceGroup
         handle.Capabilities += e => CanCreate = ((uint)e.Capabilities & (uint)ExtWorkspaceGroupHandleV1GroupCapabilities.CreateWorkspace) != 0;
         handle.OutputEnter += e =>
         {
-            var proxy = e.Output;
-            if (app.Outputs.FirstOrDefault(o => o.Proxy == proxy) is { } output && !Outputs.Contains(output))
+            if (app.FindOutput(e.Output) is { } output && !Outputs.Contains(output))
                 Outputs.Add(output);
         };
         handle.OutputLeave += e =>
@@ -114,10 +111,8 @@ public sealed partial class OopsApp
     private readonly List<Workspace> _pendingWorkspaces = new();
     private bool _workspacesBound;
 
-    /// <summary>
-    /// The compositor's workspaces in layout order, or null if it offers no ext-workspace-v1 (sway, for one,
-    /// does not; niri does). Fills asynchronously once accessed for the first time.
-    /// </summary>
+    /// <summary>The compositor's workspaces in layout order, or null without ext-workspace-v1.</summary>
+    /// <remarks>Bound on first access; the collection fills asynchronously.</remarks>
     public ReadOnlyObservableCollection<Workspace>? Workspaces
     {
         get
@@ -131,7 +126,7 @@ public sealed partial class OopsApp
         }
     }
 
-    /// <summary>Workspaces were added, removed or changed (after each batch of changes from the compositor).</summary>
+    /// <summary>Raised after each batch of workspace additions, removals or changes.</summary>
     public event Action? WorkspacesChanged;
 
     private void BindWorkspaces()
@@ -172,7 +167,7 @@ public sealed partial class OopsApp
                 workspace._handle.Dispose();
             };
         };
-        // Everything above is one atomic batch, ended by done.
+        // Events up to done form one atomic batch.
         manager.Done += () =>
         {
             foreach (var workspace in _pendingWorkspaces)
@@ -198,10 +193,10 @@ public sealed partial class OopsApp
 
     internal void CommitWorkspaces() => _workspaceManager?.Commit();
 
-    /// <summary>
-    /// Asks the compositor for a new workspace named <paramref name="name"/> on <paramref name="output"/> (default:
-    /// the first output that allows it). False if the compositor does not let clients create workspaces there.
-    /// </summary>
+    /// <summary>Asks the compositor for a new workspace named <paramref name="name"/>.</summary>
+    /// <param name="name">The workspace name.</param>
+    /// <param name="output">The output to create it on, or null for the first group that allows creation.</param>
+    /// <returns>False if the compositor does not let clients create workspaces there.</returns>
     public bool CreateWorkspace(string name, Output? output = null)
     {
         _ = Workspaces;

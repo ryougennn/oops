@@ -15,6 +15,9 @@ internal sealed class FakeDBusObject(OopsApp app, string path) : ExportedObject(
     public readonly List<string> Calls = new();
     public DBusConnection? Connection;
 
+    /// <summary>Replies with no body; usable directly as a <see cref="Methods"/> handler.</summary>
+    public static new void ReplyEmpty(MethodContext context) => ExportedObject.ReplyEmpty(context);
+
     public FakeDBusObject With(string iface, Dictionary<string, VariantValue> properties)
     {
         Interfaces[iface] = properties;

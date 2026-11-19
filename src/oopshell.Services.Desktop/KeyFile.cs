@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace oopshell.Services.Desktop;
 
 /// <summary>Parser for the freedesktop "key file" format (.desktop files, index.theme).</summary>
@@ -71,10 +73,15 @@ public sealed class KeyFile
         if (!_groups.TryGetValue(group, out var g) || !g.TryGetValue(key, out var raw))
             return [];
         var items = new List<string>();
-        var current = new System.Text.StringBuilder();
+        var current = new StringBuilder();
         for (int i = 0; i < raw.Length; i++)
         {
-            if (raw[i] == '\\' && i + 1 < raw.Length && raw[i + 1] == separator)
+            if (raw[i] == '\\' && i + 1 < raw.Length && raw[i + 1] == '\\')
+            {
+                current.Append("\\\\"); // an escaped backslash, left for Unescape; it cannot escape the next separator
+                i++;
+            }
+            else if (raw[i] == '\\' && i + 1 < raw.Length && raw[i + 1] == separator)
             {
                 current.Append(separator);
                 i++;
@@ -89,8 +96,9 @@ public sealed class KeyFile
                 current.Append(raw[i]);
             }
         }
-        if (current.ToString().Trim().Length > 0)
-            items.Add(Unescape(current.ToString().Trim()));
+        string last = current.ToString().Trim();
+        if (last.Length > 0)
+            items.Add(Unescape(last));
         return items;
     }
 
@@ -98,7 +106,7 @@ public sealed class KeyFile
     {
         if (!value.Contains('\\'))
             return value;
-        var sb = new System.Text.StringBuilder(value.Length);
+        var sb = new StringBuilder(value.Length);
         for (int i = 0; i < value.Length; i++)
         {
             if (value[i] != '\\' || i + 1 == value.Length)

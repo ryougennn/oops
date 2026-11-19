@@ -34,12 +34,6 @@ public class BluetoothTests(SwayFixture sway)
         }
     }
 
-    private static void ReplyEmpty(MethodContext c)
-    {
-        using var w = c.CreateReplyWriter(null);
-        c.Reply(w.CreateMessage());
-    }
-
     [Fact]
     public void Adapters_devices_and_actions()
     {
@@ -86,7 +80,7 @@ public class BluetoothTests(SwayFixture sway)
         });
         hci0.Methods["StartDiscovery"] = c =>
         {
-            ReplyEmpty(c);
+            FakeDBusObject.ReplyEmpty(c);
             hci0.Set("org.bluez.Adapter1", "Discovering", true);
             // A device shows up while discovering.
             var found = Add("/org/bluez/hci0/dev_CC").With("org.bluez.Device1", new()
@@ -110,11 +104,11 @@ public class BluetoothTests(SwayFixture sway)
         hci0.Methods["RemoveDevice"] = c =>
         {
             removed.Add(c.Request.GetBodyReader().ReadObjectPathAsString());
-            ReplyEmpty(c);
+            FakeDBusObject.ReplyEmpty(c);
         };
         mouse.Methods["Connect"] = c =>
         {
-            ReplyEmpty(c);
+            FakeDBusObject.ReplyEmpty(c);
             mouse.Set("org.bluez.Device1", "Connected", true);
         };
         app.Complete(bluez.RequestNameOrThrowAsync(BluetoothService.BusName).ContinueWith(t => t.Exception is null));
@@ -159,7 +153,7 @@ public class BluetoothTests(SwayFixture sway)
             agentManager.Methods[method] = c =>
             {
                 calls.Add(method);
-                ReplyEmpty(c);
+                FakeDBusObject.ReplyEmpty(c);
             };
         bluez.AddMethodHandler(agentManager);
         app.Complete(bluez.RequestNameOrThrowAsync(BluetoothService.BusName).ContinueWith(t => t.Exception is null));

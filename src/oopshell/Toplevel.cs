@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Runtime.InteropServices;
 using oopshell.Protocol;
 
 namespace oopshell;
@@ -75,11 +76,11 @@ public sealed class Toplevel : Surface
     /// <summary>The raw <c>xdg_toplevel</c> (escape hatch).</summary>
     public XdgToplevel Role { get; }
 
-    /// <summary>
-    /// Surface space outside the window geometry: client-side shadows or resize borders. The compositor sizes,
-    /// places and tiles the window by its geometry only; <see cref="Surface.LogicalSize"/> and render frames
-    /// include the margins, so draw the window itself inset by them. Can change at any time.
-    /// </summary>
+    /// <summary>Surface space outside the window geometry, for client-side shadows or resize borders.</summary>
+    /// <remarks>
+    /// The compositor sizes, places and tiles the window by its geometry only. <see cref="Surface.LogicalSize"/>
+    /// and render frames include the margins, so draw the window inset by them. Can change at any time.
+    /// </remarks>
     public Margins ShadowMargins
     {
         get => _shadowMargins;
@@ -100,18 +101,18 @@ public sealed class Toplevel : Surface
         ApplyConfigure(GrowBy(_geometrySize, _shadowMargins));
     }
 
-    /// <summary>Size to use when the compositor lets the client choose (configure with 0×0).</summary>
+    /// <summary>The size to use when the compositor lets the client choose (a 0×0 configure).</summary>
     public Size DefaultSize { get; set; } = new(640, 480);
 
     public ToplevelStates States { get; private set; }
 
-    /// <summary>The largest size the compositor suggests (e.g. the output's usable area), if it said.</summary>
+    /// <summary>The largest size the compositor suggests, such as the output's usable area; null if not sent.</summary>
     public Size? Bounds { get; private set; }
 
     /// <summary>The decoration mode in effect. Client-side when the compositor lacks xdg-decoration.</summary>
     public DecorationMode Decoration { get; private set; } = DecorationMode.ClientSide;
 
-    /// <summary>The user (or compositor) asked to close the window. oopshell does not close it for you.</summary>
+    /// <summary>Raised when the user or compositor asks to close the window. The window is not closed automatically.</summary>
     public event Action? CloseRequested;
 
     public string Title
@@ -126,24 +127,25 @@ public sealed class Toplevel : Surface
         set { _appId = value; Role.SetAppId(value); }
     }
 
-    /// <summary>Minimum logical size; empty = no minimum.</summary>
+    /// <summary>The minimum logical size; empty for none.</summary>
     public Size MinSize
     {
         get => _minSize;
         set { _minSize = value; Role.SetMinSize(value.Width, value.Height); }
     }
 
-    /// <summary>Maximum logical size; empty = no maximum.</summary>
+    /// <summary>The maximum logical size; empty for none.</summary>
     public Size MaxSize
     {
         get => _maxSize;
         set { _maxSize = value; Role.SetMaxSize(value.Width, value.Height); }
     }
 
-    /// <summary>
-    /// Asks for client- or server-side decorations. The compositor decides; read <see cref="Decoration"/>
-    /// after the next configure. Does nothing without xdg-decoration (decorations are then client-side).
-    /// </summary>
+    /// <summary>Asks for client- or server-side decorations.</summary>
+    /// <remarks>
+    /// The compositor decides; read <see cref="Decoration"/> after the next configure. Does nothing without
+    /// xdg-decoration, where decorations are always client-side.
+    /// </remarks>
     public void RequestDecoration(DecorationMode mode) => _decoration?.SetMode((ZxdgToplevelDecorationV1Mode)mode);
 
     public void SetMaximized(bool maximized)
@@ -176,7 +178,7 @@ public sealed class Toplevel : Surface
     private static ToplevelStates ParseStates(ReadOnlySpan<byte> array)
     {
         var states = ToplevelStates.None;
-        foreach (uint state in System.Runtime.InteropServices.MemoryMarshal.Cast<byte, uint>(array))
+        foreach (uint state in MemoryMarshal.Cast<byte, uint>(array))
         {
             // xdg_toplevel.state values start at 1, in the same order as ToplevelStates.
             if (state is >= 1 and <= 9)

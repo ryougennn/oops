@@ -235,8 +235,9 @@ public sealed class SkiaSurface : IDisposable
     {
         if (s_vulkanContexts.TryGetValue(device, out var context))
             return context;
+        // backend and extensions hold getProc and are disposed with the context, which keeps the delegate alive
+        // for as long as Skia may call it.
         GRVkGetProcedureAddressDelegate getProc = VulkanDevice.GetProcAddress;
-        // Kept alive with the context: Skia may still call back into getProc after creation.
         var extensions = GRVkExtensions.Create(getProc, device.Instance, device.PhysicalDevice,
             VulkanDevice.InstanceExtensions, VulkanDevice.DeviceExtensions);
         var backend = new GRVkBackendContext
@@ -270,7 +271,7 @@ public sealed class SkiaSurface : IDisposable
     {
         if (s_contexts.TryGetValue(display, out var context))
             return context;
-        display.MakeCurrentWithoutSurface(); // Skia queries GL while building its function table
+        display.MakeCurrentWithoutSurface(); // Skia queries GL while building its function table.
         using var glInterface = (display.Options.Api == GlApi.GLES
             ? GRGlInterface.CreateGles(EglDisplay.GetProcAddress)
             : GRGlInterface.CreateOpenGl(EglDisplay.GetProcAddress))
@@ -287,22 +288,28 @@ public sealed class SkiaSurface : IDisposable
         return context;
     }
 
+    private bool _disposed;
+
     public void Dispose()
     {
+        if (_disposed)
+            return;
+        _disposed = true;
         _shmBuffer?.Dispose();
         foreach (var s in _shmSurfaces.Values)
             s.Dispose();
         _shmSurfaces.Clear();
         _chain?.Dispose();
-        if (_vulkan is not null)
-        {
-            _vulkan.Dispose(); // raises ImagesDestroying, which drops the SKSurfaces first
-        }
+        _vulkan?.Dispose(); // Raises ImagesDestroying, which disposes the wrapping SKSurfaces first.
         if (_egl is not null)
         {
-            _egl.MakeCurrent();
-            _gpuSurface?.Dispose();
-            _grContext?.Flush();
+            // Only make the context current if a frame was drawn; otherwise that would create the EGL surface just to destroy it.
+            if (_gpuSurface is not null)
+            {
+                _egl.MakeCurrent();
+                _gpuSurface.Dispose();
+                _grContext?.Flush();
+            }
             _egl.Dispose();
         }
     }

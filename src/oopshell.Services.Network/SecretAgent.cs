@@ -52,6 +52,7 @@ public sealed class NetworkSecretRequest
             _context.Reply(w.CreateMessage());
         }
         _context.Dispose();
+        Answered?.Invoke();
     }
 
     /// <summary>The user gave up; the connection attempt fails.</summary>
@@ -62,7 +63,11 @@ public sealed class NetworkSecretRequest
         IsFinished = true;
         _context.ReplyError("org.freedesktop.NetworkManager.SecretAgent.UserCanceled", "Cancelled by the user.");
         _context.Dispose();
+        Answered?.Invoke();
     }
+
+    /// <summary>Raised once the request is answered either way, so the agent can forget it.</summary>
+    internal event Action? Answered;
 
     internal void CancelledByNetworkManager()
     {
@@ -123,17 +128,18 @@ internal sealed class SecretAgent(OopsApp app, NetworkService service, string? n
             return;
         }
         string keyManagement = settings.TryGetValue(settingName, out var security) && security.TryGetValue("key-mgmt", out var k) ? k.AsString() ?? "wpa-psk" : "wpa-psk";
-        string key = keyManagement == "none" ? "wep-key0" : "psk";
+        string key = keyManagement == "none" ? "wep-key0" : "psk"; // key-mgmt "none" with a security setting is static WEP
         string name = settings.TryGetValue("connection", out var c) && c.TryGetValue("id", out var id) ? id.AsString() ?? "" : "";
         string? ssid = settings.TryGetValue("802-11-wireless", out var w) && w.TryGetValue("ssid", out var s) && s.AsBytes() is { } ssidBytes ? Encoding.UTF8.GetString(ssidBytes) : null;
         Defer(context);
         var request = new NetworkSecretRequest(context, name, ssid, settingName, key, (flags & RequestNew) != 0) { ConnectionPath = path };
         _pending.Add(request);
-        request.Cancelled += () => _pending.Remove(request);
+        request.Answered += () => _pending.Remove(request);
         service.RaiseSecretsRequested(request);
     }
 
-    private static Dictionary<string, Dictionary<string, VariantValue>> ReadSettings(ref Reader reader)
+    /// <summary>Reads an <c>a{sa{sv}}</c> connection settings dictionary.</summary>
+    internal static Dictionary<string, Dictionary<string, VariantValue>> ReadSettings(ref Reader reader)
     {
         var result = new Dictionary<string, Dictionary<string, VariantValue>>();
         var end = reader.ReadDictionaryStart();

@@ -11,11 +11,10 @@ public sealed class IconTheme
     private readonly List<ThemeData> _chain = new();
     private readonly IReadOnlyList<string> _baseDirs;
     private readonly Dictionary<(string, int, int), string?> _cache = new();
-    // File names per directory (null = missing), read once: probing hundreds of theme directories with
-    // stat() per lookup cost ~2 ms per icon.
+    // File names per directory (null = missing), read once: a stat() per theme directory per lookup cost ~2 ms per icon.
     private readonly Dictionary<string, HashSet<string>?> _listings = new();
 
-    private sealed record ThemeData(string Name, List<string> Roots, List<ThemeDirectory> Directories);
+    private sealed record ThemeData(string Name, List<ThemeDirectory> Directories);
 
     private sealed record ThemeDirectory(string Path, int Size, int Scale, string Type, int MinSize, int MaxSize, int Threshold)
     {
@@ -164,7 +163,7 @@ public sealed class IconTheme
             foreach (var root in roots)
                 directories.Add(entry with { Path = System.IO.Path.Combine(root, subdir) });
         }
-        return new ThemeData(name, roots, directories);
+        return new ThemeData(name, directories);
     }
 
     private IEnumerable<string> ReadInherits(string name)

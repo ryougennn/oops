@@ -1,20 +1,23 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using oopshell.Protocol;
 
 namespace oopshell;
 
-/// <summary>
-/// Another application's window, for taskbars. Backed by wlr-foreign-toplevel-management (with actions) or
-/// ext-foreign-toplevel-list (read-only: <see cref="CanActivate"/> is false and actions do nothing).
-/// </summary>
+/// <summary>Another application's window, for taskbars.</summary>
+/// <remarks>
+/// Backed by wlr-foreign-toplevel-management, which supports actions, or by the read-only
+/// ext-foreign-toplevel-list, where <see cref="CanActivate"/> is false and actions do nothing.
+/// </remarks>
 public sealed class ForeignToplevel
 {
     private readonly OopsApp _app;
     private readonly ZwlrForeignToplevelHandleV1? _wlr;
-    private ExtForeignToplevelHandleV1? _ext;
     private readonly List<Output> _outputs = new();
+    private ExtForeignToplevelHandleV1? _ext;
+    private bool _announced;
 
     internal ForeignToplevel(OopsApp app, ZwlrForeignToplevelHandleV1 handle)
     {
@@ -65,23 +68,22 @@ public sealed class ForeignToplevel
     public bool IsFullscreen { get; private set; }
     public IReadOnlyList<Output> Outputs => _outputs;
 
-    /// <summary>The ext-foreign-toplevel handle, for capture (paired with the wlr handle when both protocols are in use).</summary>
+    /// <summary>The ext-foreign-toplevel handle used for capture; paired with the wlr handle when both protocols are bound.</summary>
     internal ExtForeignToplevelHandleV1? CaptureHandle => _ext;
 
     internal void AttachCaptureHandle(ExtForeignToplevelHandleV1? handle) => _ext = handle;
 
-    /// <summary>False with the read-only ext-foreign-toplevel-list fallback.</summary>
+    /// <summary>True if window actions are supported; false with the read-only ext-foreign-toplevel-list.</summary>
     public bool CanActivate => _wlr is not null;
 
     /// <summary>Raised after a batch of property changes.</summary>
     public event Action? Changed;
 
-    /// <summary>The window is gone. The object is dead afterwards.</summary>
+    /// <summary>Raised when the window is gone. The object is unusable afterwards.</summary>
     public event Action? Closed;
 
     internal event Action<ForeignToplevel>? FirstDone;
     internal event Action<ForeignToplevel>? Removed;
-    private bool _announced;
 
     public void Activate(Seat seat) => _wlr?.Activate(seat.Proxy);
     public void Minimize() => _wlr?.SetMinimized();
@@ -90,7 +92,7 @@ public sealed class ForeignToplevel
     public void Unmaximize() => _wlr?.UnsetMaximized();
     public void Close() => _wlr?.Close();
 
-    /// <summary>Tells the compositor where this window's taskbar button is (for minimize animations).</summary>
+    /// <summary>Tells the compositor where this window's taskbar button is, for minimize animations.</summary>
     public void SetRectangle(Surface surface, Rectangle rectangle) =>
         _wlr?.SetRectangle(surface.Proxy, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height);
 
@@ -120,14 +122,11 @@ public sealed class ForeignToplevel
 
 public sealed partial class OopsApp
 {
-    private ObservableCollection<ForeignToplevel>? _toplevels;
     private ReadOnlyObservableCollection<ForeignToplevel>? _toplevelsView;
     private bool _toplevelsBound;
 
-    /// <summary>
-    /// Other applications' windows (for a taskbar), or null if the compositor offers no foreign toplevel
-    /// protocol. The list fills asynchronously once accessed for the first time.
-    /// </summary>
+    /// <summary>Other applications' windows, or null if the compositor offers no foreign toplevel protocol.</summary>
+    /// <remarks>Bound on first access; the collection fills asynchronously.</remarks>
     public ReadOnlyObservableCollection<ForeignToplevel>? Toplevels
     {
         get
@@ -160,7 +159,6 @@ public sealed partial class OopsApp
             ext.Toplevel += e => Track(new ForeignToplevel(this, e.Toplevel));
         else
             return;
-        _toplevels = list;
         _toplevelsView = new ReadOnlyObservableCollection<ForeignToplevel>(list);
     }
 
@@ -173,10 +171,10 @@ public sealed partial class OopsApp
     }
 
     /// <summary>
-    /// Window capture needs ext-foreign-toplevel handles, while actions need the wlr ones: bind both lists and
-    /// pair each ext handle with the wlr window that has the same app id and title (both lists announce a
-    /// window when it maps, so identical windows pair in order).
+    /// Pairs each ext-foreign-toplevel handle (needed for capture) with the wlr window (needed for actions)
+    /// that has the same app id and title.
     /// </summary>
+    /// <remarks>Both lists announce a window when it maps, so identical windows pair in order.</remarks>
     private static void PairCaptureHandles(ObservableCollection<ForeignToplevel> windows, ExtForeignToplevelListV1 extList)
     {
         var unpaired = new List<CaptureHandle>();
@@ -211,7 +209,7 @@ public sealed partial class OopsApp
             };
             unpaired.Add(entry);
         };
-        ((System.Collections.Specialized.INotifyCollectionChanged)windows).CollectionChanged += (_, args) =>
+        ((INotifyCollectionChanged)windows).CollectionChanged += (_, args) =>
         {
             foreach (ForeignToplevel window in args.NewItems ?? Array.Empty<ForeignToplevel>())
                 window.Changed += Pair;

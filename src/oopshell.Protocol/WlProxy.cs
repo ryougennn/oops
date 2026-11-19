@@ -34,7 +34,10 @@ public abstract unsafe class WlProxy : IDisposable
         void* data = (void*)GCHandle.ToIntPtr(_self);
         wl_proxy_set_tag(handle, s_tag);
         if (wl_proxy_add_dispatcher(handle, &DispatchNative, data, data) != 0)
+        {
+            _self.Free();
             throw new InvalidOperationException($"{Class}@{Id} already has a listener.");
+        }
     }
 
     /// <summary>The native <c>wl_proxy*</c>.</summary>
@@ -125,13 +128,13 @@ public abstract unsafe class WlProxy : IDisposable
 
     protected static void CloseFd(int fd) => LibC.close(fd);
 
-    /// <summary>Rethrows the first exception an event handler threw during the last dispatch, if any.</summary>
     /// <summary>
-    /// Called with an exception an event handler threw (on the dispatching thread); return true to have it ignored,
-    /// false to have it rethrown once dispatching ends. Set by the app (<c>OopsApp.UnhandledException</c>).
+    /// Called on the dispatching thread with an exception an event handler threw. Return true to ignore it, false
+    /// to have it rethrown once dispatching ends. Set by the app (<c>OopsApp.UnhandledException</c>).
     /// </summary>
     public static Func<Exception, bool>? UnhandledException { get; set; }
 
+    /// <summary>Rethrows the first exception an event handler threw during the last dispatch, if any.</summary>
     public static void ThrowPendingException()
     {
         var pending = s_pendingException;
@@ -148,9 +151,20 @@ public abstract unsafe class WlProxy : IDisposable
             if (GCHandle.FromIntPtr((nint)implementation).Target is WlProxy target && !target.IsDisposed)
                 target.Dispatch(opcode, args);
         }
-        catch (Exception e) when (UnhandledException?.Invoke(e) != true)
+        catch (Exception e)
         {
-            s_pendingException ??= ExceptionDispatchInfo.Capture(e);
+            // Decided inside the catch, not in a filter: an exception thrown by a filter would unwind into libwayland.
+            bool handled;
+            try
+            {
+                handled = UnhandledException?.Invoke(e) == true;
+            }
+            catch (Exception)
+            {
+                handled = false;
+            }
+            if (!handled)
+                s_pendingException ??= ExceptionDispatchInfo.Capture(e);
         }
         return 0;
     }

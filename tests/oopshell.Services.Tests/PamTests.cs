@@ -47,7 +47,7 @@ public sealed class PamTests : IDisposable
     }
 
     [Fact]
-    public async Task Refused_accounts_aborts_and_missing_services_are_told_apart()
+    public async Task Refused_accounts_aborted_conversations_and_missing_services_are_told_apart()
     {
         Assert.Equal(PamResult.AccountUnavailable, await PamAuthenticator.AuthenticateAsync(_user, "s3cret pässword", "oopslocked", _dir));
         Assert.Equal(PamResult.Aborted, await PamAuthenticator.AuthenticateAsync(_user, m => m.IsPrompt ? null : "", "oopstest", _dir));

@@ -9,7 +9,7 @@ public sealed record PopupOptions
     /// <summary>Popup size in logical pixels.</summary>
     public required Size Size { get; init; }
 
-    /// <summary>The rectangle (in the parent's logical coordinates) the popup is placed against, e.g. a button.</summary>
+    /// <summary>The rectangle the popup is placed against, such as a button, in the parent's logical coordinates.</summary>
     public required Rectangle AnchorRect { get; init; }
 
     /// <summary>Which point of <see cref="AnchorRect"/> the popup attaches to.</summary>
@@ -24,7 +24,7 @@ public sealed record PopupOptions
 
     public Point Offset { get; init; }
 
-    /// <summary>Re-evaluate placement when the parent moves (xdg_positioner v3).</summary>
+    /// <summary>Re-evaluates placement when the parent moves. Needs xdg_positioner v3.</summary>
     public bool Reactive { get; init; }
 
     internal XdgPositioner Create(XdgWmBase wmBase)
@@ -106,12 +106,12 @@ public sealed class Popup : Surface
     /// <summary>Where the compositor placed the popup, relative to the parent's window geometry.</summary>
     public Rectangle Geometry { get; private set; }
 
-    /// <summary>
-    /// Surface space outside the popup's geometry (a client-side shadow). Positioning uses the geometry
-    /// (<see cref="PopupOptions.Size"/>); <see cref="Surface.LogicalSize"/> and render frames include the
-    /// margins, so draw the popup itself inset by them. Child popups anchor in this popup's geometry
-    /// coordinates, i.e. surface coordinates minus the left/top margin.
-    /// </summary>
+    /// <summary>Surface space outside the popup's geometry, for a client-side shadow.</summary>
+    /// <remarks>
+    /// Positioning uses the geometry (<see cref="PopupOptions.Size"/>). <see cref="Surface.LogicalSize"/> and
+    /// render frames include the margins, so draw the popup inset by them. Child popups anchor in geometry
+    /// coordinates: surface coordinates minus the left and top margins.
+    /// </remarks>
     public Margins ShadowMargins
     {
         get => _shadowMargins;
@@ -129,15 +129,15 @@ public sealed class Popup : Surface
         ApplyConfigure(GrowBy(Geometry.Size, _shadowMargins));
     }
 
-    /// <summary>The compositor dismissed the popup (outside click, parent closed…). Dispose it.</summary>
+    /// <summary>Raised when the compositor dismisses the popup, for example on an outside click. Dispose it then.</summary>
     public event Action? Dismissed;
 
-    /// <summary>
-    /// Takes an explicit grab, so keyboard input goes here and a click outside dismisses the popup. Must be
-    /// called before the popup is first committed (right after construction), from the input handler that
-    /// opens it: the grab uses the seat's latest serial as of this call. (A later serial, such as the button
-    /// release that often arrives before the popup is committed, can cost the keyboard grab.)
-    /// </summary>
+    /// <summary>Takes an explicit grab, so keyboard input goes to the popup and an outside click dismisses it.</summary>
+    /// <remarks>
+    /// Call right after construction, from the input handler that opens the popup: the grab uses the seat's
+    /// latest serial as of this call. A later serial, such as that of the button release, can lose the keyboard grab.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">The popup has already been configured.</exception>
     public void Grab(Seat seat)
     {
         if (IsConfigured)
@@ -146,7 +146,8 @@ public sealed class Popup : Surface
         _grabSerial = seat.LastSerial;
     }
 
-    /// <summary>Moves or resizes the popup. Needs xdg_popup v3; otherwise recreate the popup instead.</summary>
+    /// <summary>Moves or resizes the popup.</summary>
+    /// <exception cref="NotSupportedException">The compositor's xdg_popup is older than v3; recreate the popup instead.</exception>
     public void Reposition(PopupOptions options)
     {
         if (Role.BoundVersion < 3)

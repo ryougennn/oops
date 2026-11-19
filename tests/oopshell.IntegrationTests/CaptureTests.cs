@@ -67,7 +67,9 @@ public sealed class CaptureTests
         using var compositor = new Compositor(withWlrToplevels: false, renderer);
         using var app = compositor.Connect();
         Assert.True(ScreenCapture.CanCaptureWindows(app));
-        using var window = Window(app, "blue window", 0xFF3060C0, out var frames);
+        uint color = 0xFF3060C0;
+        using var window = new Toplevel(app) { Title = "blue window", AppId = "oopshell.capture-test", DefaultSize = new Size(320, 200) };
+        var frames = Draw.SolidColor(window, () => color);
         var toplevels = app.Toplevels!;
         app.RunUntil(() => frames() >= 1 && toplevels.Count == 1, what: "window listed");
 
@@ -79,7 +81,7 @@ public sealed class CaptureTests
         Assert.Equal((0xC0, 0x60, 0x30), Pixel(image, 0, 0));
 
         // The session is reused; a second capture sees new contents.
-        Draw.SolidColor(window, 0xFF20A040);
+        color = 0xFF20A040;
         window.Invalidate();
         app.RunUntil(() => frames() >= 2, what: "redraw");
         app.RunFor(100);

@@ -44,6 +44,15 @@ public class SkiaTests(SwayFixture sway)
         return sway.Screenshot();
     }
 
+    /// <summary>Compares against the SHM golden without rewriting it; GPU rasterization may differ slightly.</summary>
+    private static void AssertCloseToShmGolden(Png shot, string backend)
+    {
+        var golden = Png.Decode(File.ReadAllBytes(Path.Combine(SwayFixture.RepoRoot, "tests/goldens/skia-scene.png")));
+        Assert.Equal(golden.Rgba.Length, shot.Rgba.Length);
+        int maxDiff = golden.Rgba.Zip(shot.Rgba, (a, b) => Math.Abs(a - b)).Max();
+        Assert.True(maxDiff <= 2, $"{backend} and SHM differ by up to {maxDiff} per channel.");
+    }
+
     /// <summary>
     /// Regression: an EGL window created before the first configure presented its first frame from a 1×1
     /// buffer (stretched to a black rectangle by the viewport). EGL surfaces are now created lazily.
@@ -57,7 +66,7 @@ public class SkiaTests(SwayFixture sway)
         var windowFrames = Draw.SolidColor(window, 0xFF000000);
         app.RunUntil(() => windowFrames() >= 1 && window.LogicalSize.Width == 800, what: "window");
 
-        using var popup = new Popup(window, new PopupOptions { Size = new System.Drawing.Size(150, 100), AnchorRect = new System.Drawing.Rectangle(100, 100, 1, 1) });
+        using var popup = new Popup(window, new PopupOptions { Size = new Size(150, 100), AnchorRect = new Rectangle(100, 100, 1, 1) });
         using var skia = new SkiaSurface(popup, SkiaBackend.Auto);
         Assert.SkipUnless(skia.IsGpu, "EGL unavailable");
         int frames = 0;
@@ -98,11 +107,7 @@ public class SkiaTests(SwayFixture sway)
             Assert.Skip("EGL unavailable: " + e.Message);
             return;
         }
-        // Compare against the SHM golden, without rewriting it.
-        var golden = Png.Decode(File.ReadAllBytes(Path.Combine(SwayFixture.RepoRoot, "tests/goldens/skia-scene.png")));
-        Assert.Equal(golden.Rgba.Length, gpu.Rgba.Length);
-        int maxDiff = golden.Rgba.Zip(gpu.Rgba, (a, b) => Math.Abs(a - b)).Max();
-        Assert.True(maxDiff <= 2, $"GPU and SHM differ by up to {maxDiff} per channel.");
+        AssertCloseToShmGolden(gpu, "GPU");
     }
 
     [Fact]
@@ -110,11 +115,7 @@ public class SkiaTests(SwayFixture sway)
     public void Vulkan_backend_renders_the_same_as_shm()
     {
         sway.RequireSway();
-        var vulkan = RenderWith(SkiaBackend.Vulkan);
-        var golden = Png.Decode(File.ReadAllBytes(Path.Combine(SwayFixture.RepoRoot, "tests/goldens/skia-scene.png")));
-        Assert.Equal(golden.Rgba.Length, vulkan.Rgba.Length);
-        int maxDiff = golden.Rgba.Zip(vulkan.Rgba, (a, b) => Math.Abs(a - b)).Max();
-        Assert.True(maxDiff <= 2, $"Vulkan and SHM differ by up to {maxDiff} per channel.");
+        AssertCloseToShmGolden(RenderWith(SkiaBackend.Vulkan), "Vulkan");
     }
 
     /// <summary>

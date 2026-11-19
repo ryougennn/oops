@@ -102,8 +102,8 @@ public sealed class MediaPlayer
             for (int i = 0; i < dict.Count; i++)
             {
                 var entry = dict.GetDictionaryEntry(i);
-                var value = Unwrap(entry.Value);
-                // Any player can put anything here: check every type, clip strings, bound the length.
+                var value = entry.Value;
+                // Untrusted input: check every type, clip strings, bound the length.
                 switch (entry.Key.AsString())
                 {
                     case "xesam:title": Title = value.AsString()?.Clip(1024) ?? Title; break;
@@ -203,15 +203,9 @@ public sealed class MediaService : IDisposable
             return;
         var player = new MediaPlayer(_connection, busName);
         player.Changed += () => Changed?.Invoke();
-        try
-        {
-            player.Owner = await _connection.CallAsync("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "GetNameOwner",
-                (message, _) => message.GetBodyReader().ReadString(), (ref MessageWriter w) => w.WriteString(busName), "s");
-        }
-        catch (DBusErrorReplyException)
-        {
-            return; // quit meanwhile
-        }
+        if (await _connection.GetNameOwnerAsync(busName) is not { } owner)
+            return; // Quit meanwhile.
+        player.Owner = owner;
         try
         {
             if (!await player.RefreshAsync(_app).WaitAsync(TimeSpan.FromSeconds(3)))
@@ -219,7 +213,7 @@ public sealed class MediaService : IDisposable
         }
         catch (Exception)
         {
-            return; // a player that hangs or answers nonsense is left out; the others still show
+            return; // Unresponsive or malformed player: leave it out.
         }
         await _app.InvokeAsync(() =>
         {

@@ -14,17 +14,15 @@ public sealed class Seat
     private WpCursorShapeDeviceV1? _cursorShapeDevice;
     private CursorThemeFallback? _cursorFallback;
 
-    // Pointer state, plus what has accumulated since the last wl_pointer.frame.
-    private uint _pointerEnterSerial;
-    private PendingPointerFrame _frame;
     private readonly List<(PointerButton Button, bool Pressed, uint Time)> _pendingButtons = new();
-
-    // Key repeat.
-    private int _repeatRate = 25;
-    private int _repeatDelay = 600;
-    private IDisposable? _repeatTimer;
-
     private readonly Dictionary<int, Surface> _touchPoints = new();
+    private uint _pointerEnterSerial;
+    private PendingPointerFrame _frame; // accumulated since the last wl_pointer.frame
+
+    private int _repeatRate = 25;   // keys per second
+    private int _repeatDelay = 600; // milliseconds
+    private uint _repeatKey;
+    private IDisposable? _repeatTimer;
 
     internal Seat(OopsApp app, GlobalInfo global)
     {
@@ -45,11 +43,11 @@ public sealed class Seat
 
     public WlSeatCapability Capabilities { get; private set; }
 
-    /// <summary>
-    /// Serial of the latest button, key or touch event. Popup grabs, move/resize and activation tokens use it.
-    /// (Enter/leave/modifier serials are deliberately excluded: a click that moves keyboard focus is followed
-    /// by a <c>wl_keyboard.enter</c>, and its serial is not valid for a grab.)
-    /// </summary>
+    /// <summary>Serial of the latest button, key or touch event; used for popup grabs, move/resize and activation tokens.</summary>
+    /// <remarks>
+    /// Enter, leave and modifier serials are excluded: a click that moves keyboard focus is followed by a
+    /// <c>wl_keyboard.enter</c> whose serial is not valid for a grab.
+    /// </remarks>
     public uint LastSerial { get; private set; }
 
     /// <summary>The surface under the pointer, if it is one of ours.</summary>
@@ -113,8 +111,6 @@ public sealed class Seat
         }
         Changed?.Invoke();
     }
-
-    // ---- pointer ------------------------------------------------------------------------
 
     private struct PendingPointerFrame
     {
@@ -187,7 +183,7 @@ public sealed class Seat
         };
         p.AxisDiscrete += e =>
         {
-            // Pre-v8 compositors send discrete steps; express them as value120.
+            // Before v8, discrete steps arrive here instead of axis_value120.
             if (p.BoundVersion >= 8)
                 return;
             if (e.Axis == WlPointerAxis.VerticalScroll)
@@ -256,8 +252,6 @@ public sealed class Seat
             _cursorFallback?.Apply(_pointer, _pointerEnterSerial, surface.Cursor, (int)Math.Ceiling(surface.Scale));
     }
 
-    // ---- keyboard -----------------------------------------------------------------------
-
     private unsafe void SetUpKeyboard()
     {
         var k = _keyboard = Proxy.GetKeyboard();
@@ -265,8 +259,8 @@ public sealed class Seat
         {
             if (e.Format != WlKeyboardKeymapFormat.XkbV1)
                 return;
-            // Map no more than the file holds (reading past its end is SIGBUS); a keymap that cannot be mapped
-            // leaves the previous one in place rather than stopping the app.
+            // Map no more than the file holds: reading past its end raises SIGBUS.
+            // A keymap that cannot be mapped leaves the previous one in place.
             long fileSize = LibC.lseek(e.Fd, 0, LibC.SEEK_END);
             uint size = (uint)Math.Min(e.Size, fileSize < 0 ? 0 : fileSize);
             if (size == 0 || size > 64 * 1024 * 1024)
@@ -304,11 +298,10 @@ public sealed class Seat
         k.Key += e =>
         {
             LastSerial = e.Serial;
-            bool pressed = e.State == WlKeyboardKeyState.Pressed;
-            if (pressed)
+            if (e.State == WlKeyboardKeyState.Pressed)
             {
                 PressKey(e.Key, e.Time, isRepeat: false);
-                StartRepeat(e.Key);
+                StartRepeat(e.Key, e.Time);
             }
             else
             {
@@ -330,22 +323,25 @@ public sealed class Seat
         if (target is null)
             return;
         target.RaiseKeyDown(new KeyEvent(this, key, _xkb.GetKeysym(key), _xkb.Modifiers, isRepeat, time));
-        // Repeats bypass compose: the sequence already finished (or never started) on the first press.
+        // Repeats bypass compose: the first press already finished or skipped the sequence.
         if (_xkb.GetText(key, useCompose: !isRepeat) is { } text)
             target.RaiseTextInput(new TextInputEvent(this, text));
     }
 
-    private uint _repeatKey;
-
-    private void StartRepeat(uint key)
+    private void StartRepeat(uint key, uint pressTime)
     {
         StopRepeat();
         if (_repeatRate <= 0 || !_xkb.KeyRepeats(key))
             return;
         _repeatKey = key;
-        uint time = 0;
-        _repeatTimer = _app.SetTimer(TimeSpan.FromMilliseconds(_repeatDelay), TimeSpan.FromMilliseconds(1000.0 / _repeatRate),
-            () => PressKey(key, time++, isRepeat: true));
+        // Synthetic repeats carry timestamps on the compositor's clock, continuing from the press.
+        uint interval = (uint)Math.Max(1, 1000 / _repeatRate);
+        uint time = pressTime + (uint)_repeatDelay;
+        _repeatTimer = _app.SetTimer(TimeSpan.FromMilliseconds(_repeatDelay), TimeSpan.FromMilliseconds(1000.0 / _repeatRate), () =>
+        {
+            PressKey(key, time, isRepeat: true);
+            time += interval;
+        });
     }
 
     private void StopRepeat()
@@ -354,8 +350,6 @@ public sealed class Seat
         _repeatTimer = null;
         _repeatKey = 0;
     }
-
-    // ---- touch --------------------------------------------------------------------------
 
     private void SetUpTouch()
     {

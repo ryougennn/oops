@@ -27,8 +27,12 @@ internal sealed partial class Lab
         _ui.Gap(6);
         _ui.Toggle("Wi-Fi", _network.WifiEnabled, () => Run("Wi-Fi", () => _network.SetWifiEnabledAsync(!_network.WifiEnabled)),
             _network.WifiHardwareEnabled ? null : "(hardware switch off)");
-        _ui.Buttons(("Scan", () => { if (_network.Wifi is { } w) Run("Scan", () => _network.ScanAsync(w)); }
-        ),
+        _ui.Buttons(
+            ("Scan", () =>
+            {
+                if (_network.Wifi is { } w)
+                    Run("Scan", () => _network.ScanAsync(w));
+            }),
             ("Ask me for Wi-Fi passwords (secret agent)", () => Run("Secret agent", async () =>
             {
                 await _network.RegisterSecretAgentAsync();
@@ -310,8 +314,7 @@ internal sealed partial class Lab
             {
                 user = (user + 1) % request.Users.Count;
                 p.Message = $"{request.Message}\n{Who()}";
-            }
-            ));
+            }));
         }
         request.Finished += () =>
         {

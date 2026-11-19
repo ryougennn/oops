@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using System.Net.Sockets;
-using System.Text;
 using System.Text.Json;
 
 namespace oopshell.Services.Greetd;
@@ -50,6 +49,8 @@ public sealed record GreetdLoginResult(GreetdLoginStatus Status, string? Descrip
 /// </summary>
 public sealed class GreetdClient : IDisposable
 {
+    private const int MaxReply = 1 << 20;
+
     private readonly Socket _socket;
     private bool _sessionOpen;
 
@@ -95,11 +96,10 @@ public sealed class GreetdClient : IDisposable
             using (reply)
             {
                 var root = reply.RootElement;
-                type = root.GetProperty("type").GetString() ?? "";
-                text = root.TryGetProperty("description", out var d) ? d.GetString() ?? ""
-                    : root.TryGetProperty("auth_message", out var m) ? m.GetString() ?? "" : root.GetRawText();
-                authError = root.TryGetProperty("error_type", out var t) && t.GetString() == "auth_error";
-                kind = (root.TryGetProperty("auth_message_type", out var k) ? k.GetString() : null) switch
+                type = TypeOf(root);
+                text = Field(root, "description") ?? Field(root, "auth_message") ?? root.GetRawText();
+                authError = Field(root, "error_type") == "auth_error";
+                kind = Field(root, "auth_message_type") switch
                 {
                     "visible" => GreetdPromptKind.Visible,
                     "secret" => GreetdPromptKind.Secret,
@@ -155,8 +155,8 @@ public sealed class GreetdClient : IDisposable
             w.WriteEndArray();
         });
         var root = reply.RootElement;
-        if (root.GetProperty("type").GetString() != "success")
-            throw new InvalidOperationException($"greetd refused to start the session: {(root.TryGetProperty("description", out var d) ? d.GetString() : root.GetRawText())}");
+        if (TypeOf(root) != "success")
+            throw new InvalidOperationException($"greetd refused to start the session: {Field(root, "description") ?? root.GetRawText()}");
         _sessionOpen = false;
     }
 
@@ -169,7 +169,11 @@ public sealed class GreetdClient : IDisposable
         using var _ = await RequestAsync(w => w.WriteString("type", "cancel_session"));
     }
 
-    private const int MaxReply = 1 << 20;
+    private static string? Field(JsonElement reply, string name) =>
+        reply.ValueKind == JsonValueKind.Object && reply.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+
+    private static string TypeOf(JsonElement reply) =>
+        Field(reply, "type") ?? throw new InvalidDataException("greetd sent a reply without a type.");
 
     /// <summary>One request and its reply: a native-endian u32 length, then JSON, each way.</summary>
     private async Task<JsonDocument> RequestAsync(Action<Utf8JsonWriter> write)

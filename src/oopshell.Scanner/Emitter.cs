@@ -361,19 +361,13 @@ public sealed class Emitter(TypeResolver types)
         else
         {
             // Received fds are closed even if the handler throws.
-            w.Line("try");
-            w.Line("{");
-            w.Indent++;
+            w.Open("try");
             w.Line(invoke);
-            w.Indent--;
-            w.Line("}");
-            w.Line("finally");
-            w.Line("{");
-            w.Indent++;
+            w.Close();
+            w.Open("finally");
             foreach (int fd in fds)
                 w.Line($"CloseFd(args[{fd}].h);");
-            w.Indent--;
-            w.Line("}");
+            w.Close();
         }
         w.Line("break;");
         w.Indent--;

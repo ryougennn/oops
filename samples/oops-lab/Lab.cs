@@ -23,6 +23,8 @@ internal sealed partial class Lab
     private readonly string[] _pages = ["Overview", "Wi-Fi", "Bluetooth", "Polkit", "Notifications", "Workspaces", "Inhibit", "Lock", "Audio", "Battery"];
     private string _page = "Overview";
     private Prompt? _prompt;
+    private int _promptHits;
+    private readonly List<(SKRect, Action)> _sidebarHits = new();
 
     private DBusConnection? _systemBus, _sessionBus;
     private NetworkService? _network;
@@ -234,10 +236,6 @@ internal sealed partial class Lab
         _promptHits = _ui.HitCount;
         _prompt?.Draw(c, _ui, width, height);
     }
-
-    private int _promptHits;
-
-    private readonly List<(SKRect, Action)> _sidebarHits = new();
 
     /// <summary>While a prompt is open only its buttons count.</summary>
     private Action? HitTest(double x, double y) => _prompt is not null

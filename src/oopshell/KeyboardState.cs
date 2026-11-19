@@ -1,5 +1,5 @@
 using System.Text;
-using oopshell.Native;
+using oopshell.Protocol;
 using static oopshell.Native.Xkb;
 
 namespace oopshell;
@@ -18,9 +18,9 @@ public enum Modifiers
 }
 
 /// <summary>
-/// xkbcommon keymap + state + compose for one keyboard. Turns evdev keycodes into keysyms and text.
-/// Separate from <see cref="Seat"/> so it can be unit-tested with a fixed keymap.
+/// The xkbcommon keymap, state and compose state of one keyboard; turns evdev keycodes into keysyms and text.
 /// </summary>
+/// <remarks>Separate from <see cref="Seat"/> so it can be tested with a fixed keymap.</remarks>
 internal sealed unsafe class KeyboardState : IDisposable
 {
     private readonly nint _context = xkb_context_new(0);
@@ -34,8 +34,6 @@ internal sealed unsafe class KeyboardState : IDisposable
         if (_context == 0)
             throw new InvalidOperationException("xkb_context_new failed.");
     }
-
-    public bool HasKeymap => _state != 0;
 
     /// <summary>Loads a keymap in xkb text format (what the compositor sends).</summary>
     public void SetKeymap(ReadOnlySpan<byte> text)
@@ -56,7 +54,7 @@ internal sealed unsafe class KeyboardState : IDisposable
     public void LoadComposeFromLocale()
     {
         string locale = FirstNonEmpty("LC_ALL", "LC_CTYPE", "LANG") ?? "C";
-        using var localeUtf8 = new Protocol.NativeUtf8(locale);
+        using var localeUtf8 = new NativeUtf8(locale);
         SetComposeTable(xkb_compose_table_new_from_locale(_context, localeUtf8.Pointer, 0));
     }
 
@@ -64,7 +62,7 @@ internal sealed unsafe class KeyboardState : IDisposable
     public void LoadCompose(string composeText, string locale = "en_US.UTF-8")
     {
         byte[] bytes = Encoding.UTF8.GetBytes(composeText);
-        using var localeUtf8 = new Protocol.NativeUtf8(locale);
+        using var localeUtf8 = new NativeUtf8(locale);
         fixed (byte* p = bytes)
             SetComposeTable(xkb_compose_table_new_from_buffer(_context, p, (nuint)bytes.Length, localeUtf8.Pointer, ComposeFormatTextV1, 0));
     }
@@ -85,7 +83,7 @@ internal sealed unsafe class KeyboardState : IDisposable
             xkb_state_update_mask(_state, depressed, latched, locked, 0, 0, group);
     }
 
-    /// <summary>Updates state from a raw key press/release. Only needed without compositor modifier events (tests).</summary>
+    /// <summary>Updates state from a raw key press or release; only needed without compositor modifier events (tests).</summary>
     public void UpdateKey(uint evdevKey, bool pressed)
     {
         if (_state != 0)
@@ -144,11 +142,11 @@ internal sealed unsafe class KeyboardState : IDisposable
 
     /// <summary>The name of the active layout, e.g. "English (US)".</summary>
     public string? LayoutName =>
-        _state == 0 ? null : Protocol.WlProxy.ReadString(xkb_keymap_layout_get_name(_keymap, xkb_state_serialize_layout(_state, 1 << 7)));
+        _state == 0 ? null : WlProxy.ReadString(xkb_keymap_layout_get_name(_keymap, xkb_state_serialize_layout(_state, 1 << 7)));
 
     private bool IsActive(string modifier)
     {
-        using var name = new Protocol.NativeUtf8(modifier);
+        using var name = new NativeUtf8(modifier);
         return xkb_state_mod_name_is_active(_state, name.Pointer, StateModsEffective) > 0;
     }
 

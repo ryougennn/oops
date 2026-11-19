@@ -10,6 +10,9 @@ namespace oopshell.Services.Notifications;
 /// </summary>
 public sealed class NotificationServer : ExportedObject, IDisposable
 {
+    /// <summary>Largest image accepted, in pixels per side.</summary>
+    public const int MaxImageSide = 1024;
+
     private const string Interface = "org.freedesktop.Notifications";
     private const string ObjectPath = "/org/freedesktop/Notifications";
 
@@ -43,6 +46,9 @@ public sealed class NotificationServer : ExportedObject, IDisposable
     public IReadOnlyList<string> Capabilities { get; set; } = ["actions", "body", "body-markup", "icon-static", "persistence"];
 
     public string ServerName { get; set; } = "oopshell";
+
+    /// <summary>Maximum number of notifications kept; beyond it the oldest expires, so one app cannot flood the shell.</summary>
+    public int MaxNotifications { get; set; } = 200;
 
     /// <summary>A new notification arrived (it is already in <see cref="Notifications"/>).</summary>
     public event Action<Notification>? Added;
@@ -129,13 +135,10 @@ public sealed class NotificationServer : ExportedObject, IDisposable
         return _nextId++;
     }
 
-    /// <summary>At most this many notifications are kept; beyond it the oldest expires (one app could flood the shell).</summary>
-    public int MaxNotifications { get; set; } = 200;
-
     private uint Notify(Reader reader)
     {
-        // Everything comes from another app: read into locals with type checks, then apply all at once, so a
-        // malformed notification is refused without half-changing the one it replaces.
+        // Untrusted input: read and validate everything first, so a malformed call cannot half-update the
+        // notification it replaces.
         string appName = reader.ReadString().Clip(256);
         uint replacesId = reader.ReadUInt32();
         string appIcon = reader.ReadString().Clip(4096);
@@ -173,7 +176,7 @@ public sealed class NotificationServer : ExportedObject, IDisposable
         return notification.Id;
     }
 
-    /// <summary>The hints oopshell understands, read with type checks (a wrong type is ignored, not fatal).</summary>
+    /// <summary>The supported hints. A hint of the wrong type is ignored.</summary>
     private readonly record struct Hints(Urgency Urgency, string? Category, string? DesktopEntry, bool Resident, bool Transient, string? ImagePath, NotificationImage? Image)
     {
         public static Hints Parse(Dictionary<string, VariantValue> hints)
@@ -210,9 +213,6 @@ public sealed class NotificationServer : ExportedObject, IDisposable
         }
     }
 
-    /// <summary>Largest image accepted, per side (an icon or a thumbnail, never a screenful).</summary>
-    public const int MaxImageSide = 1024;
-
     /// <summary>
     /// Decodes the <c>(iiibiiay)</c> image struct. Null unless it is consistent: 1..1024 pixels per side, 8 bits
     /// per sample, 3 or 4 channels matching HasAlpha, a row stride that fits a row, and enough data for every row.
@@ -236,7 +236,7 @@ public sealed class NotificationServer : ExportedObject, IDisposable
             old.Dispose();
         var timeout = notification.ExpireTimeout ?? DefaultTimeout;
         if (timeout == TimeSpan.Zero || notification.Urgency == Urgency.Critical && notification.ExpireTimeout is null)
-            return; // never expires (critical notifications stay until dismissed)
+            return; // Critical notifications without an explicit timeout stay until dismissed.
         uint id = notification.Id;
         _expiryTimers[id] = App.SetTimer(timeout, null, () => Close(id, CloseReason.Expired));
     }

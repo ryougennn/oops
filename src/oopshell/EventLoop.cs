@@ -30,19 +30,8 @@ internal sealed unsafe class EventLoop : IDisposable
     private readonly HashSet<int> _removedThisBatch = new();
     private bool _running;
 
-    /// <summary>Called with an exception a callback threw; true means it was dealt with and the loop goes on.</summary>
+    /// <summary>Receives exceptions thrown by callbacks; returning true keeps the loop running.</summary>
     public Func<Exception, bool>? ErrorHandler { get; set; }
-
-    private void Guard(Action action)
-    {
-        try
-        {
-            action();
-        }
-        catch (Exception e) when (ErrorHandler?.Invoke(e) == true)
-        {
-        }
-    }
 
     public EventLoop()
     {
@@ -124,10 +113,12 @@ internal sealed unsafe class EventLoop : IDisposable
     }
 
     /// <summary>
-    /// Calls <paramref name="callback"/> at every multiple of <paramref name="interval"/> of local wall-clock
-    /// time (every minute on the minute…), from an absolute CLOCK_REALTIME deadline re-armed each time: one
-    /// that passed during suspend fires on resume, and setting the clock fires it at once and realigns it.
+    /// Calls <paramref name="callback"/> at every multiple of <paramref name="interval"/> of local wall-clock time.
     /// </summary>
+    /// <remarks>
+    /// Uses an absolute CLOCK_REALTIME deadline, re-armed after each tick. A deadline that passed during suspend
+    /// fires on resume; setting the clock fires it at once and realigns it.
+    /// </remarks>
     public IDisposable SetClockTimer(TimeSpan interval, Action callback)
     {
         if (interval < TimeSpan.FromMilliseconds(1))
@@ -137,7 +128,7 @@ internal sealed unsafe class EventLoop : IDisposable
             throw LastError("timerfd_create");
         void Arm()
         {
-            // The next boundary in local time (so hours and days follow the time zone), as an absolute UTC deadline.
+            // Align in local time so hour and day boundaries follow the time zone.
             long local = DateTime.Now.Ticks;
             var next = new DateTime((local / interval.Ticks + 1) * interval.Ticks, DateTimeKind.Local).ToUniversalTime();
             var spec = new ITimerSpec { Value = TimeSpec.From(next - DateTime.UnixEpoch) };
@@ -197,9 +188,10 @@ internal sealed unsafe class EventLoop : IDisposable
                 if ((int)events[i].Data == source.Fd)
                     sourceEvents = (FdEvents)events[i].Events;
             }
+            // Cleared before dispatching: watches removed by Wayland handlers count for this batch too.
+            _removedThisBatch.Clear();
             Guard(() => source.AfterWait(sourceEvents));
 
-            _removedThisBatch.Clear();
             for (int i = 0; i < count; i++)
             {
                 int fd = (int)events[i].Data;
@@ -232,6 +224,17 @@ internal sealed unsafe class EventLoop : IDisposable
         int count = _posted.Count;
         for (int i = 0; i < count && _posted.TryDequeue(out var action); i++)
             Guard(action);
+    }
+
+    private void Guard(Action action)
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception e) when (ErrorHandler?.Invoke(e) == true)
+        {
+        }
     }
 
     private void Add(int fd, uint events)
